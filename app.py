@@ -1,6 +1,5 @@
 import streamlit as st
 import os
-import tempfile
 import base64
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -12,23 +11,30 @@ from openai import OpenAI
 load_dotenv()
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-st.set_page_config(page_title="Luxury AI Hair Expert", layout="centered")
+st.set_page_config(page_title="Luxury Caribbean AI Hair Advisor", layout="centered")
 
 # -------------------------
-# SESSION STATE
+# LUXURY UI THEME
 # -------------------------
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-if "voice_count" not in st.session_state:
-    st.session_state.voice_count = 0
-
-# -------------------------
-# AVATAR
-# -------------------------
 st.markdown("""
 <style>
+body {
+    background-color: #0f0f0f;
+}
+.stApp {
+    background: linear-gradient(135deg, #111 0%, #1c1c1c 100%);
+    color: white;
+}
+h1 {
+    font-weight: 600;
+    letter-spacing: 1px;
+}
+.stButton>button {
+    background-color: #c6a86b;
+    color: black;
+    border-radius: 25px;
+}
 .avatar {
     width:170px;
     border-radius:50%;
@@ -43,124 +49,27 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
-# -------------------------
-# AUDIO TRANSCRIPTION
-# -------------------------
-
-def transcribe_audio(audio_bytes):
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(audio_bytes)
-        tmp_path = tmp.name
-
-    with open(tmp_path, "rb") as audio_file:
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="verbose_json"
-        )
-
-    return transcript.text, transcript.language
 
 # -------------------------
-# EMOTION DETECTION
+# SESSION STATE
 # -------------------------
 
-def detect_emotion(text):
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    emotion_prompt = f"""
-    Analyze emotional tone of this sentence:
-    {text}
-
-    Return one word:
-    calm, stressed, frustrated, excited, neutral
-    """
-
-    stream = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": system_prompt},
-        *st.session_state.messages,
-        {"role": "user", "content": user_text}
-    ],
-    temperature=0.4,
-    stream=True
-)
-
-full_reply = ""
-response_placeholder = st.empty()
-
-for chunk in stream:
-    if chunk.choices[0].delta.content is not None:
-        full_reply += chunk.choices[0].delta.content
-        response_placeholder.markdown(full_reply)
-    )
-
-    return response.choices[0].message.content.strip().lower()
+if "voice_count" not in st.session_state:
+    st.session_state.voice_count = 0
 
 # -------------------------
-# SYSTEM PROMPT BUILDER
+# HEADER
 # -------------------------
 
-def build_system_prompt(language, emotion):
+st.title("Luxury Caribbean AI Hair Advisor")
 
-    base = """
-You are Hair Expert Advisor, a luxury Caribbean salon AI assistant.
-
-Mission:
-Recommend ONE of:
-Formula Exclusiva
-Laciador
-Gotero
-Gotika
-Or Go see medical professional
-
-Style:
-Luxury, confident, premium Caribbean salon tone.
-Professional. Analytical. ROI-focused.
-
-If language detected is Spanish, respond fully in Spanish.
-If English, respond fully in English.
-"""
-
-    if emotion == "stressed":
-        base += "\nSpeak calmly and reassuring."
-    elif emotion == "frustrated":
-        base += "\nBe empathetic and supportive."
-    elif emotion == "excited":
-        base += "\nMatch excitement but remain professional."
-
-    return base
+st.markdown('<img src="https://i.imgur.com/9yG3p8X.png" class="avatar">', unsafe_allow_html=True)
 
 # -------------------------
-# VOICE GENERATION
-# -------------------------
-
-def generate_voice(text):
-
-    speech = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="nova",
-        input=text
-    )
-
-    return speech.read()
-
-# -------------------------
-# AUTO PLAY
-# -------------------------
-
-def autoplay_audio(audio_bytes):
-
-    b64 = base64.b64encode(audio_bytes).decode()
-    audio_html = f"""
-    <audio autoplay>
-    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-    </audio>
-    """
-    st.markdown(audio_html, unsafe_allow_html=True)
-
-# -------------------------
-# CHAT DISPLAY
+# DISPLAY CHAT HISTORY
 # -------------------------
 
 for msg in st.session_state.messages:
@@ -168,7 +77,7 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # -------------------------
-# VOICE INPUT (Native Streamlit)
+# VOICE INPUT SECTION
 # -------------------------
 
 st.markdown("---")
@@ -181,6 +90,9 @@ else:
 
     if audio_file is not None:
 
+        # Trim memory for faster conversational feel
+        st.session_state.messages = st.session_state.messages[-6:]
+
         st.session_state.voice_count += 1
 
         audio_bytes = audio_file.read()
@@ -188,7 +100,9 @@ else:
 
         with st.spinner("Analyzing your hair needs..."):
 
-            # Whisper transcription (auto language detection built-in)
+            # -------------------------
+            # SPEECH TO TEXT (Whisper)
+            # -------------------------
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file
@@ -196,14 +110,16 @@ else:
 
             user_text = transcript.text
 
-            # Emotion detection
+            # -------------------------
+            # EMOTION DETECTION
+            # -------------------------
             emotion_prompt = f"""
-            Analyze emotional tone of this sentence:
-            {user_text}
+Analyze emotional tone of this sentence:
+{user_text}
 
-            Return one word:
-            calm, stressed, frustrated, excited, neutral
-            """
+Return one word:
+calm, stressed, frustrated, excited, neutral
+"""
 
             emotion_response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -213,7 +129,9 @@ else:
 
             emotion = emotion_response.choices[0].message.content.strip().lower()
 
-            # System prompt (Caribbean luxury branding)
+            # -------------------------
+            # SYSTEM PROMPT
+            # -------------------------
             system_prompt = f"""
 You are Hair Expert Advisor, a luxury Caribbean salon AI assistant.
 
@@ -226,35 +144,52 @@ Gotika
 Or Go see medical professional
 
 Style:
-Luxury, confident, premium Caribbean salon tone.
+Luxury, confident, premium Caribbean tone.
 Professional. Analytical.
 
-Language rule:
 Respond in the same language as the user.
 
 Emotion detected: {emotion}
 Adapt your tone accordingly.
 """
 
-            response = client.chat.completions.create(
+            # -------------------------
+            # STREAMING GPT RESPONSE
+            # -------------------------
+
+            stream = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     *st.session_state.messages,
                     {"role": "user", "content": user_text}
                 ],
-                temperature=0.4
+                temperature=0.4,
+                stream=True
             )
 
+            full_reply = ""
+            response_placeholder = st.empty()
+
+            for chunk in stream:
+                if chunk.choices[0].delta.content is not None:
+                    full_reply += chunk.choices[0].delta.content
+                    response_placeholder.markdown(full_reply)
+
             ai_reply = full_reply
+
             # Save conversation memory
             st.session_state.messages.append({"role": "user", "content": user_text})
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
 
-            with st.chat_message("assistant"):
-                st.markdown(ai_reply)
+            # -------------------------
+            # TALKING AVATAR
+            # -------------------------
+            st.markdown('<img src="https://i.imgur.com/9yG3p8X.png" class="avatar talking">', unsafe_allow_html=True)
 
-            # Generate Caribbean premium voice
+            # -------------------------
+            # TEXT TO SPEECH
+            # -------------------------
             speech = client.audio.speech.create(
                 model="gpt-4o-mini-tts",
                 voice="nova",
@@ -263,8 +198,9 @@ Adapt your tone accordingly.
 
             audio_response = speech.read()
 
-            # Auto-play response
-            import base64
+            # -------------------------
+            # AUTO-PLAY AUDIO
+            # -------------------------
             b64 = base64.b64encode(audio_response).decode()
             audio_html = f"""
             <audio autoplay>
@@ -273,5 +209,5 @@ Adapt your tone accordingly.
             """
             st.markdown(audio_html, unsafe_allow_html=True)
 
-
-
+            # Return avatar to idle
+            st.markdown('<img src="https://i.imgur.com/9yG3p8X.png" class="avatar">', unsafe_allow_html=True)
