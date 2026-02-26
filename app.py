@@ -1,5 +1,5 @@
 import os
-from flask import Flask, request, jsonify, session
+from flask import Flask, request, jsonify, session, render_template
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -9,6 +9,15 @@ app = Flask(__name__)
 app.secret_key = "supersecretkey"
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# -----------------------------
+# SERVE FRONTEND
+# -----------------------------
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
 
 # -----------------------------
 # PRODUCT CLASSIFIER
@@ -53,19 +62,12 @@ def process_voice():
 
     audio_file = request.files["audio"]
 
-    # Silence protection (basic size check)
     audio_bytes = audio_file.read()
     audio_file.seek(0)
 
     if len(audio_bytes) < 5000:
-        return jsonify({
-            "transcript": "",
-            "reply": "",
-            "audio": "",
-            "state": "silence"
-        })
+        return jsonify({"state": "silence"})
 
-    # Transcribe
     transcript = client.audio.transcriptions.create(
         model="whisper-1",
         file=audio_file
@@ -73,14 +75,8 @@ def process_voice():
 
     user_text = transcript.text.strip()
 
-    # Reject empty transcript
     if not user_text or len(user_text.split()) < 2:
-        return jsonify({
-            "transcript": "",
-            "reply": "",
-            "audio": "",
-            "state": "silence"
-        })
+        return jsonify({"state": "silence"})
 
     product = classify_product(user_text)
 
@@ -89,7 +85,7 @@ def process_voice():
 
         if session["attempts"] >= 2:
             reply_text = (
-                "For a precise recommendation, please contact our professional support team for personalized assistance. "
+                "For a precise recommendation, please contact our professional support team. "
                 "You may also restart and briefly mention dryness, frizz, styling hold, or hair color."
             )
             session["attempts"] = 0
@@ -113,7 +109,6 @@ Selected product: {product}
 
 Rules:
 - Only respond based on the transcribed speech.
-- Do not introduce yourself.
 - Confidently recommend the product.
 - Explain why it fits.
 - End with confirmation.
@@ -125,7 +120,6 @@ Rules:
 
         reply_text = completion.choices[0].message.content
 
-    # Generate speech
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
@@ -140,11 +134,6 @@ Rules:
         "audio": audio_output.hex(),
         "state": "speaking"
     })
-
-
-@app.route("/")
-def home():
-    return "Bright Clinical AI Running"
 
 
 if __name__ == "__main__":
