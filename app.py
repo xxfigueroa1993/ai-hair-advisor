@@ -1,162 +1,194 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template_string, send_file
+from openai import OpenAI
 import os
+import tempfile
 
 app = Flask(__name__)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.route("/")
 def index():
-
     html = """
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Global Professional Hair Intelligence</title>
+        <title>Global AI Hair Intelligence</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             body {
-                margin: 0;
-                background: radial-gradient(circle at center, #0f1b2e, #050a14);
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-                flex-direction: column;
-                font-family: Arial, sans-serif;
-                color: white;
+                margin:0;
+                background: radial-gradient(circle at center,#0f1c2e,#050a14);
+                display:flex;
+                justify-content:center;
+                align-items:center;
+                height:100vh;
+                flex-direction:column;
+                font-family:Arial;
+                color:white;
             }
 
             #halo {
-                width: 220px;
-                height: 220px;
-                border-radius: 50%;
-                border: 6px solid rgba(0, 170, 255, 0.35);
-                box-shadow: 0 0 40px rgba(0,170,255,0.4);
-                cursor: pointer;
-                transition: all 0.3s ease;
+                width:220px;
+                height:220px;
+                border-radius:50%;
+                border:6px solid rgba(0,170,255,0.35);
+                box-shadow:0 0 40px rgba(0,170,255,0.5);
+                cursor:pointer;
+                transition:all .3s ease;
             }
 
-            #halo.listening {
-                border-color: rgba(255, 0, 0, 0.7);
-                box-shadow: 0 0 60px rgba(255,0,0,0.7);
+            #halo.recording {
+                border-color:rgba(255,0,0,0.8);
+                box-shadow:0 0 60px rgba(255,0,0,0.8);
             }
 
-            #halo.thinking {
-                animation: rotate 2s linear infinite;
+            #halo.processing {
+                animation:rotate 2s linear infinite;
             }
 
             @keyframes rotate {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
+                from { transform:rotate(0deg); }
+                to { transform:rotate(360deg); }
+            }
+
+            select {
+                margin-top:20px;
+                padding:8px;
+                border-radius:8px;
+                border:none;
             }
 
             #status {
-                margin-top: 30px;
-                font-size: 18px;
-                opacity: 0.9;
+                margin-top:20px;
+                opacity:0.9;
             }
         </style>
     </head>
     <body>
 
         <div id="halo"></div>
+
+        <select id="language">
+            <option value="en">English</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+            <option value="de">German</option>
+            <option value="pt">Portuguese</option>
+            <option value="it">Italian</option>
+            <option value="zh">Chinese</option>
+            <option value="ar">Arabic</option>
+        </select>
+
         <div id="status">Click Halo to Speak</div>
 
         <script>
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            let mediaRecorder;
+            let audioChunks = [];
 
-        if (!SpeechRecognition) {
-            document.getElementById("status").innerText = "Speech Recognition not supported.";
-        }
+            const halo = document.getElementById("halo");
+            const status = document.getElementById("status");
+            const languageSelect = document.getElementById("language");
 
-        const recognition = new SpeechRecognition();
-        recognition.lang = "en-GB";
-        recognition.continuous = false;
-        recognition.interimResults = false;
+            halo.onclick = async () => {
 
-        let isListening = false;
+                if (halo.classList.contains("recording")) {
+                    mediaRecorder.stop();
+                    return;
+                }
 
-        const halo = document.getElementById("halo");
-        const status = document.getElementById("status");
+                const stream = await navigator.mediaDevices.getUserMedia({ audio:true });
 
-        halo.addEventListener("click", () => {
-            if (!isListening) startListening();
-        });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
 
-        function startListening() {
-            try {
-                isListening = true;
-                halo.classList.add("listening");
-                status.innerText = "Listening...";
-                recognition.start();
-            } catch (e) {
-                console.error("Start error:", e);
-                status.innerText = "Mic start failed.";
-            }
-        }
+                mediaRecorder.ondataavailable = e => {
+                    audioChunks.push(e.data);
+                };
 
-        function stopListening() {
-            isListening = false;
-            halo.classList.remove("listening");
-        }
+                mediaRecorder.onstop = async () => {
+                    const blob = new Blob(audioChunks, { type:'audio/webm' });
 
-        recognition.onresult = function(event) {
-            const transcript = event.results[0][0].transcript;
-            stopListening();
-            sendToAI(transcript);
-        };
+                    halo.classList.remove("recording");
+                    halo.classList.add("processing");
+                    status.innerText = "Processing...";
 
-        recognition.onerror = function(event) {
-            console.error("Speech Error Code:", event.error);
-            stopListening();
-            status.innerText = "Speech error: " + event.error;
-        };
+                    const formData = new FormData();
+                    formData.append("audio", blob);
+                    formData.append("language", languageSelect.value);
 
-        recognition.onend = function() {
-            if (isListening) stopListening();
-        };
+                    const response = await fetch("/process", {
+                        method:"POST",
+                        body:formData
+                    });
 
-        function sendToAI(text) {
-            halo.classList.remove("listening");
-            halo.classList.add("thinking");
-            status.innerText = "Processing...";
+                    const data = await response.json();
 
-            fetch("/ask", {
-                method: "POST",
-                headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({ message: text })
-            })
-            .then(res => res.json())
-            .then(data => {
-                halo.classList.remove("thinking");
-                status.innerText = data.reply;
+                    status.innerText = data.text;
 
-                const speech = new SpeechSynthesisUtterance(data.reply);
-                speechSynthesis.speak(speech);
-            })
-            .catch(err => {
-                halo.classList.remove("thinking");
-                console.error("Fetch error:", err);
-                status.innerText = "Server error.";
-            });
-        }
+                    const audio = new Audio("data:audio/mp3;base64," + data.audio);
+                    audio.play();
+
+                    halo.classList.remove("processing");
+                };
+
+                mediaRecorder.start();
+                halo.classList.add("recording");
+                status.innerText = "Recording...";
+            };
         </script>
 
     </body>
     </html>
     """
-
     return render_template_string(html)
 
-@app.route("/ask", methods=["POST"])
-def ask():
-    data = request.get_json()
-    user_message = data.get("message", "")
 
-    # SAFE TEST RESPONSE (no OpenAI yet)
-    return jsonify({"reply": f"You said: {user_message}"})
+@app.route("/process", methods=["POST"])
+def process_audio():
+    audio_file = request.files["audio"]
+    language = request.form.get("language","en")
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
+        audio_file.save(tmp.name)
+
+        # 1️⃣ Transcribe with Whisper
+        with open(tmp.name, "rb") as f:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=f
+            )
+
+    user_text = transcript.text
+
+    # 2️⃣ GPT Response
+    completion = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role":"system","content":"You are a professional salon hair expert."},
+            {"role":"user","content":user_text}
+        ]
+    )
+
+    reply_text = completion.choices[0].message.content
+
+    # 3️⃣ Neural TTS
+    speech = client.audio.speech.create(
+        model="gpt-4o-mini-tts",
+        voice="alloy",
+        input=reply_text
+    )
+
+    audio_bytes = speech.read()
+
+    import base64
+    encoded_audio = base64.b64encode(audio_bytes).decode("utf-8")
+
+    return jsonify({
+        "text": reply_text,
+        "audio": encoded_audio
+    })
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT",10000))
     app.run(host="0.0.0.0", port=port)
-
