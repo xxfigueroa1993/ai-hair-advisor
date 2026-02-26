@@ -1,4 +1,3 @@
-import os
 from flask import Flask
 
 app = Flask(__name__)
@@ -22,11 +21,11 @@ def home():
     </head>
     <body>
         <h1>Bright Clinical AI is Running</h1>
-        <p>If you see this, Render is working correctly.</p>
+        <p>Render port binding successful.</p>
     </body>
     </html>
     """
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+# IMPORTANT:
+# REMOVE app.run() COMPLETELY.
+# Gunicorn handles server startup.
