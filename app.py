@@ -21,7 +21,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-html = """
+html = <div id="halo"></div>
+<p id="status">Click to Speak</p>"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -265,5 +266,6 @@ async def websocket_endpoint(websocket: WebSocket):
     audio_bytes = speech.read()
     encoded = base64.b64encode(audio_bytes).decode("utf-8")
     await websocket.send_text("AUDIO:" + encoded)
+
 
 
