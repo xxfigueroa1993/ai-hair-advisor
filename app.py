@@ -11,8 +11,7 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 SYSTEM_PROMPT = """
 You are an Elite Professional Salon Hair Consultant.
 Only answer hair-related questions.
-If asked anything outside hair, respond:
-"I am a Professional Salon Hair Consultant. How may I assist you with your hair needs today?"
+If unrelated, redirect politely.
 """
 
 app.add_middleware(
@@ -22,10 +21,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ================================
-# FRONTEND (FULL ELITE UI)
-# ================================
-
 html = """
 <!DOCTYPE html>
 <html>
@@ -34,7 +29,7 @@ html = """
 
 <style>
 body {
-    background: radial-gradient(circle at center, #0b1220 0%, #050a14 100%);
+    background: radial-gradient(circle at center, #0a0f1c 0%, #030712 100%);
     font-family: 'Segoe UI', sans-serif;
     text-align: center;
     color: white;
@@ -44,95 +39,83 @@ body {
 h1 {
     font-size: 38px;
     font-weight: 500;
-    letter-spacing: 1px;
 }
 
 select {
     margin-top: 30px;
     padding: 10px 20px;
     font-size: 15px;
-    background: rgba(31,41,55,0.8);
+    background: rgba(30,41,59,0.6);
     color: white;
     border: 1px solid rgba(255,255,255,0.1);
     border-radius: 8px;
 }
 
+/* ===== TRUE SEAMLESS HALO ===== */
+
 .halo-container {
     position: relative;
-    width: 220px;
-    height: 220px;
-    margin: 70px auto;
-}
-
-.halo-ring {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    border: 4px solid rgba(59,130,246,0.35);
-    background: transparent;
-    transition: all 0.3s ease;
+    width: 240px;
+    height: 240px;
+    margin: 80px auto;
     cursor: pointer;
-    z-index: 2;
 }
 
-.halo-glow {
+.halo-core {
     position: absolute;
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: radial-gradient(circle, rgba(59,130,246,0.35) 0%, transparent 70%);
+    background: radial-gradient(circle at center,
+        rgba(59,130,246,0.25) 0%,
+        rgba(59,130,246,0.15) 40%,
+        transparent 70%);
+    animation: pulse 3s infinite ease-in-out;
+}
+
+.halo-energy {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+        rgba(59,130,246,0.5) 0%,
+        rgba(59,130,246,0.2) 40%,
+        transparent 70%);
     animation: breathe 2.5s infinite ease-in-out;
-    z-index: 1;
-    transition: all 0.3s ease;
 }
 
 @keyframes breathe {
-    0% { transform: scale(1); opacity: 0.6; }
-    50% { transform: scale(1.15); opacity: 1; }
-    100% { transform: scale(1); opacity: 0.6; }
+    0% { transform: scale(1); opacity: 0.5; }
+    50% { transform: scale(1.2); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.5; }
 }
 
-.listening .halo-ring {
-    border-color: rgba(239,68,68,0.7);
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
 }
 
-.listening .halo-glow {
-    background: radial-gradient(circle, rgba(239,68,68,0.4) 0%, transparent 70%);
+.listening .halo-energy {
+    background: radial-gradient(circle,
+        rgba(239,68,68,0.6) 0%,
+        rgba(239,68,68,0.2) 40%,
+        transparent 70%);
 }
 
-.thinking .halo-ring {
-    animation: rotate 1.2s linear infinite;
+.thinking .halo-core {
+    animation: spin 1.2s linear infinite;
 }
 
-@keyframes rotate {
+@keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
 }
 
-.waveform {
+.status {
     margin-top: 30px;
-    height: 20px;
-    display: flex;
-    justify-content: center;
-    gap: 4px;
-}
-
-.bar {
-    width: 4px;
-    height: 5px;
-    background: #3b82f6;
-    animation: wave 1s infinite ease-in-out;
-}
-
-.bar:nth-child(2) { animation-delay: 0.1s; }
-.bar:nth-child(3) { animation-delay: 0.2s; }
-.bar:nth-child(4) { animation-delay: 0.3s; }
-.bar:nth-child(5) { animation-delay: 0.4s; }
-
-@keyframes wave {
-    0%, 100% { height: 5px; }
-    50% { height: 20px; }
+    color: #9ca3af;
 }
 
 #response {
@@ -141,13 +124,6 @@ select {
     margin-left: auto;
     margin-right: auto;
     font-size: 18px;
-    line-height: 1.6;
-}
-
-.status {
-    margin-top: 20px;
-    font-size: 14px;
-    color: #9ca3af;
 }
 </style>
 </head>
@@ -171,42 +147,30 @@ select {
 </select>
 
 <div id="halo" class="halo-container" onclick="startListening()">
-    <div class="halo-glow"></div>
-    <div class="halo-ring"></div>
+    <div class="halo-core"></div>
+    <div class="halo-energy"></div>
 </div>
 
 <div class="status" id="status">Click the halo to speak</div>
-
-<div class="waveform" id="waveform" style="display:none;">
-    <div class="bar"></div>
-    <div class="bar"></div>
-    <div class="bar"></div>
-    <div class="bar"></div>
-    <div class="bar"></div>
-</div>
-
 <div id="response"></div>
-
 <audio id="ttsAudio"></audio>
 
 <script>
+
 let recognition;
 let ws;
 
-function playStartupSound() {
-    let audio = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
-    audio.volume = 0.2;
-    audio.play();
+function getWebSocketURL() {
+    let protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    return protocol + window.location.host + "/ws";
 }
 
 function startListening() {
 
     if (!('webkitSpeechRecognition' in window)) {
-        alert("Use Chrome browser.");
+        alert("Use Google Chrome.");
         return;
     }
-
-    playStartupSound();
 
     const halo = document.getElementById("halo");
     halo.classList.add("listening");
@@ -223,40 +187,42 @@ function startListening() {
         let transcript = event.results[0][0].transcript;
         recognition.stop();
         halo.classList.remove("listening");
-        connectWebSocket(transcript);
+        sendToAI(transcript);
     };
 
     recognition.onend = function() {
         halo.classList.remove("listening");
     };
+
+    // Safety fallback (forces stop after 8 sec)
+    setTimeout(() => {
+        if (recognition) recognition.stop();
+    }, 8000);
 }
 
-function connectWebSocket(question) {
+function sendToAI(text) {
 
     const halo = document.getElementById("halo");
-    document.getElementById("response").innerHTML = "";
     halo.classList.add("thinking");
+    document.getElementById("status").innerText = "Thinking...";
+    document.getElementById("response").innerHTML = "";
 
-    ws = new WebSocket("wss://" + location.host + "/ws");
+    ws = new WebSocket(getWebSocketURL());
+
+    ws.onopen = function() {
+        let language = document.getElementById("language").value;
+        ws.send(JSON.stringify({question: text, language: language}));
+    };
 
     ws.onmessage = function(event) {
         if(event.data.startsWith("AUDIO:")) {
             let audioData = event.data.replace("AUDIO:", "");
             let audio = document.getElementById("ttsAudio");
             audio.src = "data:audio/mp3;base64," + audioData;
-            document.getElementById("waveform").style.display = "flex";
             audio.play();
-            audio.onended = () => {
-                document.getElementById("waveform").style.display = "none";
-            };
         } else {
             document.getElementById("response").innerHTML += event.data;
         }
-    };
-
-    ws.onopen = function() {
-        let language = document.getElementById("language").value;
-        ws.send(JSON.stringify({question: question, language: language}));
     };
 
     ws.onclose = function() {
@@ -264,6 +230,7 @@ function connectWebSocket(question) {
         document.getElementById("status").innerText = "Click the halo to speak";
     };
 }
+
 </script>
 
 </body>
@@ -274,45 +241,36 @@ function connectWebSocket(question) {
 async def home():
     return HTMLResponse(html)
 
-# ================================
-# BACKEND
-# ================================
-
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     data = await websocket.receive_json()
 
-    user_question = data["question"]
-    language = data["language"]
+    final_prompt = SYSTEM_PROMPT + f"\nRespond in {data['language']}."
 
-    final_prompt = SYSTEM_PROMPT + f"\nRespond in {language}."
-
-    response_text = ""
+    full_text = ""
 
     response = client.chat.completions.create(
         model="gpt-4o",
         stream=True,
         messages=[
             {"role": "system", "content": final_prompt},
-            {"role": "user", "content": user_question}
+            {"role": "user", "content": data["question"]}
         ]
     )
 
     for chunk in response:
         if chunk.choices[0].delta.content:
             content = chunk.choices[0].delta.content
-            response_text += content
+            full_text += content
             await websocket.send_text(content)
 
-    # Generate TTS after full response
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
-        input=response_text
+        input=full_text
     )
 
     audio_bytes = speech.read()
-    audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-    await websocket.send_text("AUDIO:" + audio_base64)
+    encoded = base64.b64encode(audio_bytes).decode("utf-8")
+    await websocket.send_text("AUDIO:" + encoded)
