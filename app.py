@@ -5,6 +5,9 @@ import os, tempfile, base64
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+# ---- MEMORY TRACKING (very light session-based logic) ----
+conversation_memory = {}
+
 @app.route("/")
 def index():
     return render_template_string("""
@@ -13,7 +16,6 @@ def index():
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Clinical AI Hair Specialist</title>
-
 <style>
 body{
     margin:0;
@@ -26,7 +28,6 @@ body{
     font-family:Arial;
     color:#1a2b3c;
 }
-
 h1{ margin-bottom:50px; }
 
 #sphere{
@@ -35,19 +36,15 @@ h1{ margin-bottom:50px; }
     border-radius:50%;
     background:radial-gradient(circle at 30% 30%,white,#cfe6fb);
     box-shadow:0 0 40px rgba(0,140,255,0.25);
+    animation:breathe 3s ease-in-out infinite;
     transition:transform .1s linear, box-shadow .1s linear;
     cursor:pointer;
 }
 
-/* Idle breathing animation */
 @keyframes breathe {
     0%{ transform:scale(1); }
     50%{ transform:scale(1.05); }
     100%{ transform:scale(1); }
-}
-
-#sphere.idle{
-    animation:breathe 3s ease-in-out infinite;
 }
 
 #sphere.recording{
@@ -64,71 +61,54 @@ select{
     margin-top:40px;
     padding:10px 14px;
     border-radius:8px;
-    border:1px solid #cde0f5;
-    background:white;
 }
 
 #status{
     margin-top:40px;
-    max-width:420px;
+    max-width:450px;
     text-align:center;
     font-size:15px;
-    opacity:0.85;
 }
 </style>
 </head>
 <body>
 
 <h1>Clinical AI Hair Specialist</h1>
-
-<div id="sphere" class="idle"></div>
+<div id="sphere"></div>
 
 <select id="language">
 <option value="en">English</option>
-<option value="es">Spanish</option>
-<option value="fr">French</option>
-<option value="de">German</option>
-<option value="pt">Portuguese</option>
-<option value="it">Italian</option>
-<option value="zh">Chinese</option>
-<option value="ar">Arabic</option>
 </select>
 
 <div id="status">Tap Sphere to Begin Consultation</div>
 
 <script>
-
 let mediaRecorder;
 let audioChunks=[];
 let analyser;
-let audioContext = new AudioContext();
-let currentSource=null;
+let audioContext=new AudioContext();
 
 const sphere=document.getElementById("sphere");
 const status=document.getElementById("status");
-const language=document.getElementById("language");
 
-sphere.onclick = async ()=>{
-
+sphere.onclick=async()=>{
     if(sphere.classList.contains("recording")){
         mediaRecorder.stop();
         return;
     }
 
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-
-    const source = audioContext.createMediaStreamSource(stream);
-    analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const source=audioContext.createMediaStreamSource(stream);
+    analyser=audioContext.createAnalyser();
+    analyser.fftSize=256;
     source.connect(analyser);
 
-    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder=new MediaRecorder(stream);
     audioChunks=[];
 
     mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
 
-    mediaRecorder.onstop = async ()=>{
-
+    mediaRecorder.onstop=async()=>{
         stream.getTracks().forEach(track=>track.stop());
 
         sphere.classList.remove("recording");
@@ -138,7 +118,6 @@ sphere.onclick = async ()=>{
         const blob=new Blob(audioChunks,{type:"audio/webm"});
         const formData=new FormData();
         formData.append("audio",blob);
-        formData.append("language",language.value);
 
         const response=await fetch("/process",{method:"POST",body:formData});
         const data=await response.json();
@@ -146,73 +125,15 @@ sphere.onclick = async ()=>{
         status.innerText=data.text;
 
         const audio=new Audio("data:audio/mp3;base64,"+data.audio);
-        await audioContext.resume();
-
-        currentSource = audioContext.createMediaElementSource(audio);
-        const analyserVoice = audioContext.createAnalyser();
-        analyserVoice.fftSize = 256;
-
-        currentSource.connect(analyserVoice);
-        analyserVoice.connect(audioContext.destination);
-
-        syncVoicePulse(analyserVoice, audio);
-
         audio.play();
 
         sphere.classList.remove("processing");
-        sphere.classList.add("idle");
     };
 
-    sphere.classList.remove("idle");
     sphere.classList.add("recording");
     status.innerText="Recording... Click again to stop.";
-
     mediaRecorder.start();
-    monitorMic();
 };
-
-function monitorMic(){
-
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    function detect(){
-        if(!mediaRecorder || mediaRecorder.state!=="recording") return;
-
-        analyser.getByteFrequencyData(dataArray);
-        let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
-        updateScale(avg/200);
-
-        requestAnimationFrame(detect);
-    }
-
-    detect();
-}
-
-function syncVoicePulse(analyserVoice, audio){
-
-    const bufferLength=analyserVoice.frequencyBinCount;
-    const dataArray=new Uint8Array(bufferLength);
-
-    function pulse(){
-        analyserVoice.getByteFrequencyData(dataArray);
-        let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
-        updateScale(avg/250);
-
-        if(!audio.paused){
-            requestAnimationFrame(pulse);
-        }
-    }
-
-    pulse();
-}
-
-function updateScale(intensity){
-    let scale = 1 + intensity;
-    sphere.style.transform = "scale("+scale+")";
-    sphere.style.boxShadow = "0 0 "+(40 + intensity*120)+"px rgba(0,140,255,0.35)";
-}
-
 </script>
 </body>
 </html>
@@ -226,7 +147,6 @@ def process_audio():
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
         audio_file.save(tmp.name)
-
         with open(tmp.name, "rb") as f:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -236,32 +156,60 @@ def process_audio():
     user_text = transcript.text.strip()
 
     if not user_text:
-        reply_text = "Please describe your hair concern clearly so I can recommend a clinical solution."
+        reply_text = "I did not detect a clear hair concern. Please briefly describe your hair issue so I can recommend the correct treatment."
     else:
+
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
-                    "role":"system",
-                    "content":"You are an elite clinical hair specialist. Do not greet. Provide direct professional hair solutions and product recommendations."
+                    "role": "system",
+                    "content": """
+You are a clinical AI hair product specialist.
+
+You ONLY recommend ONE of these four products:
+
+1. Formula Exclusiva – Professional all-in-one treatment for dry, damaged, or weakened hair.
+2. Laciador – Natural smoothing solution for frizz, texture control, and sleek styling.
+3. Gotero – Natural hair gel for hold and structure.
+4. Gotika – Natural hair color treatment.
+
+STRICT RULES:
+
+- Never greet.
+- Never discuss non-hair topics.
+- If off-topic: politely redirect to hair products.
+- Always narrow vague answers.
+- If user says "my hair is dry", ask ONE clarifying question such as:
+  "Is the dryness accompanied by breakage, frizz, or color damage?"
+
+- After 2 vague exchanges, choose the closest matching product and explain why.
+
+- If still unclear after multiple attempts, say:
+  "To ensure precision, I recommend contacting our professional support team for a personalized consultation. We can also restart if you'd like."
+
+- Keep responses concise, professional, and solution-oriented.
+- Always end by guiding toward ONE product OR a clear next step.
+"""
                 },
-                {"role":"user","content":user_text}
+                {"role": "user", "content": user_text}
             ]
         )
+
         reply_text = completion.choices[0].message.content
 
-    speech=client.audio.speech.create(
+    speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
         input=reply_text
     )
 
-    audio_bytes=speech.read()
-    encoded=base64.b64encode(audio_bytes).decode("utf-8")
+    audio_bytes = speech.read()
+    encoded = base64.b64encode(audio_bytes).decode("utf-8")
 
-    return jsonify({"text":reply_text,"audio":encoded})
+    return jsonify({"text": reply_text, "audio": encoded})
 
 
-if __name__=="__main__":
-    port=int(os.environ.get("PORT",10000))
-    app.run(host="0.0.0.0",port=port)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
