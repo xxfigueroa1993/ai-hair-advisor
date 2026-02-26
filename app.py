@@ -1,271 +1,129 @@
-from fastapi import FastAPI, WebSocket
-from fastapi.responses import HTMLResponse
-from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
+from flask import Flask, request, jsonify, render_template_string
+import openai
 import os
-import base64
 
-app = FastAPI()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+app = Flask(__name__)
 
-SYSTEM_PROMPT = """
-You are an Elite Professional Salon Hair Consultant.
-Only answer hair-related questions.
-If unrelated, redirect politely.
-"""
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+@app.route("/")
+def index():
 
-html = <div id="halo"></div>
-<p id="status">Click to Speak</p>"""
-<!DOCTYPE html>
-<html>
-<head>
-<title>Global Professional Hair Intelligence</title>
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Luxury AI Voice Assistant</title>
+        <style>
+            body {
+                background: #f8fafc;
+                text-align: center;
+                font-family: Arial, sans-serif;
+                padding-top: 150px;
+            }
 
-<style>
-body {
-    background: radial-gradient(circle at center, #0a0f1c 0%, #030712 100%);
-    font-family: 'Segoe UI', sans-serif;
-    text-align: center;
-    color: white;
-    margin-top: 80px;
-}
+            #halo {
+                width: 200px;
+                height: 200px;
+                border-radius: 50%;
+                border: 6px solid rgba(0, 150, 255, 0.4);
+                margin: auto;
+                cursor: pointer;
+                transition: 0.3s ease;
+            }
 
-h1 {
-    font-size: 38px;
-    font-weight: 500;
-}
+            #halo.listening {
+                border-color: red;
+                box-shadow: 0 0 40px red;
+            }
+        </style>
+    </head>
+    <body>
 
-select {
-    margin-top: 30px;
-    padding: 10px 20px;
-    font-size: 15px;
-    background: rgba(30,41,59,0.6);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-}
+        <div id="halo"></div>
+        <p id="status">Click to Speak</p>
 
-/* ===== TRUE SEAMLESS HALO ===== */
+        <script>
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        const recognition = new SpeechRecognition();
 
-.halo-container {
-    position: relative;
-    width: 240px;
-    height: 240px;
-    margin: 80px auto;
-    cursor: pointer;
-}
+        recognition.lang = "en-US";
+        recognition.continuous = false;
+        recognition.interimResults = false;
 
-.halo-core {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    background: radial-gradient(circle at center,
-        rgba(59,130,246,0.25) 0%,
-        rgba(59,130,246,0.15) 40%,
-        transparent 70%);
-    animation: pulse 3s infinite ease-in-out;
-}
+        let isListening = false;
 
-.halo-energy {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-    background: radial-gradient(circle,
-        rgba(59,130,246,0.5) 0%,
-        rgba(59,130,246,0.2) 40%,
-        transparent 70%);
-    animation: breathe 2.5s infinite ease-in-out;
-}
+        const halo = document.getElementById("halo");
+        const statusText = document.getElementById("status");
 
-@keyframes breathe {
-    0% { transform: scale(1); opacity: 0.5; }
-    50% { transform: scale(1.2); opacity: 1; }
-    100% { transform: scale(1); opacity: 0.5; }
-}
+        halo.addEventListener("click", () => {
+            if (!isListening) {
+                startListening();
+            }
+        });
 
-@keyframes pulse {
-    0% { opacity: 0.6; }
-    50% { opacity: 1; }
-    100% { opacity: 0.6; }
-}
+        function startListening() {
+            isListening = true;
+            statusText.innerText = "Listening...";
+            halo.classList.add("listening");
+            recognition.start();
+        }
 
-.listening .halo-energy {
-    background: radial-gradient(circle,
-        rgba(239,68,68,0.6) 0%,
-        rgba(239,68,68,0.2) 40%,
-        transparent 70%);
-}
+        recognition.onresult = function(event) {
+            const transcript = event.results[0][0].transcript;
+            stopListening();
+            sendToAI(transcript);
+        };
 
-.thinking .halo-core {
-    animation: spin 1.2s linear infinite;
-}
+        recognition.onerror = function(event) {
+            stopListening();
+        };
 
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
+        recognition.onend = function() {
+            if (isListening) stopListening();
+        };
 
-.status {
-    margin-top: 30px;
-    color: #9ca3af;
-}
+        function stopListening() {
+            isListening = false;
+            statusText.innerText = "Processing...";
+            halo.classList.remove("listening");
+        }
 
-#response {
-    margin-top: 40px;
-    width: 60%;
-    margin-left: auto;
-    margin-right: auto;
-    font-size: 18px;
-}
-</style>
-</head>
+        function sendToAI(text) {
+            fetch("/ask", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({message: text})
+            })
+            .then(res => res.json())
+            .then(data => {
+                statusText.innerText = data.reply;
 
-<body>
+                const utter = new SpeechSynthesisUtterance(data.reply);
+                speechSynthesis.speak(utter);
+            });
+        }
+        </script>
 
-<h1>Global Professional Hair Intelligence</h1>
+    </body>
+    </html>
+    """
 
-<select id="language">
-<option>English</option>
-<option>Spanish</option>
-<option>French</option>
-<option>Portuguese</option>
-<option>German</option>
-<option>Arabic</option>
-<option>Hindi</option>
-<option>Mandarin Chinese</option>
-<option>Japanese</option>
-<option>Korean</option>
-<option>Russian</option>
-</select>
+    return render_template_string(html)
 
-<div id="halo" class="halo-container" onclick="startListening()">
-    <div class="halo-core"></div>
-    <div class="halo-energy"></div>
-</div>
+@app.route("/ask", methods=["POST"])
+def ask():
+    user_message = request.json["message"]
 
-<div class="status" id="status">Click the halo to speak</div>
-<div id="response"></div>
-<audio id="ttsAudio"></audio>
-
-<script>
-
-let recognition;
-let ws;
-
-function getWebSocketURL() {
-    let protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
-    return protocol + window.location.host + "/ws";
-}
-
-function startListening() {
-
-    if (!('webkitSpeechRecognition' in window)) {
-        alert("Use Google Chrome.");
-        return;
-    }
-const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-const recognition = new SpeechRecognition();
-
-recognition.lang = "en-US";
-recognition.continuous = false;
-recognition.interimResults = false;
-
-let isListening = false;
-
-const halo = document.getElementById("halo");
-const statusText = document.getElementById("status");
-
-halo.addEventListener("click", () => {
-    if (!isListening) {
-        startListening();
-    }
-});
-
-function startListening() {
-    isListening = true;
-    statusText.innerText = "Listening...";
-    halo.classList.add("listening");
-    recognition.start();
-}
-
-recognition.onresult = function(event) {
-    console.log("RESULT FIRED");
-
-    const transcript = event.results[0][0].transcript;
-    console.log("Transcript:", transcript);
-
-    stopListening();
-    sendToAI(transcript);
-};
-
-recognition.onerror = function(event) {
-    console.error("Speech error:", event.error);
-    stopListening();
-};
-
-recognition.onend = function() {
-    if (isListening) {
-        stopListening();
-    }
-};
-
-function stopListening() {
-    isListening = false;
-    statusText.innerText = "Processing...";
-    halo.classList.remove("listening");
-}
-</script>
-
-</body>
-</html>
-"""
-
-@app.get("/")
-async def home():
-    return HTMLResponse(html)
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await websocket.accept()
-    data = await websocket.receive_json()
-
-    final_prompt = SYSTEM_PROMPT + f"\nRespond in {data['language']}."
-
-    full_text = ""
-
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        stream=True,
+    response = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": final_prompt},
-            {"role": "user", "content": data["question"]}
+            {"role": "system", "content": "You are a professional salon hair expert."},
+            {"role": "user", "content": user_message}
         ]
     )
 
-    for chunk in response:
-        if chunk.choices[0].delta.content:
-            content = chunk.choices[0].delta.content
-            full_text += content
-            await websocket.send_text(content)
+    return jsonify({"reply": response.choices[0].message.content})
 
-    speech = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=full_text
-    )
-
-    audio_bytes = speech.read()
-    encoded = base64.b64encode(audio_bytes).decode("utf-8")
-    await websocket.send_text("AUDIO:" + encoded)
-
-
-
+if __name__ == "__main__":
+    app.run()
