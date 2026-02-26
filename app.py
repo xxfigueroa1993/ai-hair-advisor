@@ -11,54 +11,59 @@ from openai import OpenAI
 load_dotenv()
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-st.set_page_config(page_title="Luxury Caribbean AI Hair Advisor", layout="centered")
+st.set_page_config(
+    page_title="Luxury AI Concierge",
+    layout="centered",
+)
 
 # -------------------------
-# LUXURY UI + ANIMATED FACE STYLES
+# STYLING
 # -------------------------
 
 st.markdown("""
 <style>
 body {
-    background-color: #0f0f0f;
+    background-color: #0c0c0c;
 }
+
 .stApp {
-    background: linear-gradient(135deg, #111 0%, #1c1c1c 100%);
-    color: white;
+    background: radial-gradient(circle at top, #1a1a1a 0%, #0c0c0c 70%);
+    color: #ffffff;
+    font-family: 'Helvetica Neue', sans-serif;
 }
+
 h1 {
-    font-weight: 600;
-    letter-spacing: 1px;
     text-align: center;
+    letter-spacing: 2px;
+    font-weight: 300;
 }
-.face-container {
-    display:flex;
-    justify-content:center;
-    margin-bottom:20px;
+
+/* Floating motion */
+.silhouette-container {
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+    margin-bottom: 30px;
+    animation: float 7s ease-in-out infinite;
 }
-.eye {
-    animation: blink 4s infinite;
-    transform-origin: center;
+
+@keyframes float {
+    0%   { transform: translateY(0px); }
+    50%  { transform: translateY(-12px); }
+    100% { transform: translateY(0px); }
 }
-@keyframes blink {
-    0%, 95%, 100% { transform: scaleY(1); }
-    97% { transform: scaleY(0.1); }
+
+/* Glow when speaking */
+.speaking path, 
+.speaking circle, 
+.speaking line {
+    stroke: #f0d27a;
+    filter: drop-shadow(0px 0px 15px #f0d27a);
 }
-.mouth {
-    transition: all 0.2s ease;
-    transform-origin: center;
-}
-.talking .mouth {
-    animation: talk 0.4s infinite alternate;
-}
-@keyframes talk {
-    from { transform: scaleY(1); }
-    to { transform: scaleY(1.6); }
-}
-.stButton>button {
-    background-color: #c6a86b;
-    color: black;
-    border-radius: 25px;
+
+/* Chat spacing */
+.block-container {
+    padding-top: 2rem;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -74,23 +79,48 @@ if "voice_count" not in st.session_state:
     st.session_state.voice_count = 0
 
 # -------------------------
-# FACE RENDER FUNCTION
+# SILHOUETTE RENDER
 # -------------------------
 
-def render_face(talking=False):
-    state_class = "talking" if talking else ""
+def render_silhouette(speaking=False):
+    state = "speaking" if speaking else ""
+
     st.markdown(f"""
-    <div class="face-container {state_class}">
-        <svg width="200" height="200" viewBox="0 0 200 200">
-            <!-- Face -->
-            <circle cx="100" cy="100" r="90" fill="#c6a86b"/>
-            
-            <!-- Eyes -->
-            <circle class="eye" cx="70" cy="85" r="10" fill="#111"/>
-            <circle class="eye" cx="130" cy="85" r="10" fill="#111"/>
-            
-            <!-- Mouth -->
-            <ellipse class="mouth" cx="100" cy="135" rx="30" ry="12" fill="#111"/>
+    <div class="silhouette-container {state}">
+        <svg width="260" height="260" viewBox="0 0 200 200">
+
+            <!-- Head outline (no features) -->
+            <circle 
+                cx="100" 
+                cy="60" 
+                r="28" 
+                stroke="#d4af37" 
+                stroke-width="3" 
+                fill="none" />
+
+            <!-- Shoulders -->
+            <path 
+                d="M35 150 Q100 105 165 150" 
+                stroke="#d4af37" 
+                stroke-width="3" 
+                fill="none" />
+
+            <!-- Suit lapels -->
+            <path 
+                d="M60 150 L100 115 L140 150" 
+                stroke="#d4af37" 
+                stroke-width="3" 
+                fill="none" />
+
+            <!-- Tie line -->
+            <line 
+                x1="100" 
+                y1="115" 
+                x2="100" 
+                y2="160" 
+                stroke="#d4af37" 
+                stroke-width="3"/>
+
         </svg>
     </div>
     """, unsafe_allow_html=True)
@@ -99,9 +129,10 @@ def render_face(talking=False):
 # HEADER
 # -------------------------
 
-st.title("Luxury Caribbean AI Hair Advisor")
+st.title("Luxury Caribbean AI Concierge")
+st.caption("Refined. Private. Discreet.")
 
-render_face(talking=False)
+render_silhouette(False)
 
 # -------------------------
 # DISPLAY CHAT HISTORY
@@ -116,24 +147,20 @@ for msg in st.session_state.messages:
 # -------------------------
 
 st.markdown("---")
-st.subheader("🎤 Speak to Your AI Salon Expert")
+st.subheader("🎤 Speak to Your Private Advisor")
 
-if st.session_state.voice_count >= 10:
-    st.warning("Free voice session limit reached.")
-else:
+if st.session_state.voice_count < 10:
+
     audio_file = st.audio_input("Tap and speak")
 
     if audio_file is not None:
 
-        # Keep conversation light & fast
-        st.session_state.messages = st.session_state.messages[-6:]
         st.session_state.voice_count += 1
+        st.session_state.messages = st.session_state.messages[-6:]
 
-        with st.spinner("Analyzing your hair needs..."):
+        with st.spinner("Listening carefully..."):
 
-            # -------------------------
-            # SPEECH TO TEXT
-            # -------------------------
+            # Transcribe voice
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file
@@ -141,100 +168,51 @@ else:
 
             user_text = transcript.text
 
-            # -------------------------
-            # EMOTION DETECTION
-            # -------------------------
-            emotion_prompt = f"""
-Analyze emotional tone of this sentence:
-{user_text}
-
-Return one word:
-calm, stressed, frustrated, excited, neutral
+            system_prompt = """
+You are a refined luxury concierge.
+Tone: Calm, elegant, composed.
+Provide clear, confident, premium guidance.
+Keep responses concise but valuable.
 """
 
-            emotion_response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": emotion_prompt}],
-                temperature=0
-            )
-
-            emotion = emotion_response.choices[0].message.content.strip().lower()
-
-            # -------------------------
-            # SYSTEM PROMPT
-            # -------------------------
-            system_prompt = f"""
-You are Hair Expert Advisor, a luxury Caribbean salon AI assistant.
-
-Mission:
-Recommend ONE of:
-Formula Exclusiva
-Laciador
-Gotero
-Gotika
-Or Go see medical professional
-
-Luxury Caribbean tone.
-Respond in same language as user.
-Emotion detected: {emotion}
-Adapt tone accordingly.
-"""
-
-            # -------------------------
-            # STREAMING GPT RESPONSE
-            # -------------------------
-
-            stream = client.chat.completions.create(
+            response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     *st.session_state.messages,
                     {"role": "user", "content": user_text}
-                ],
-                temperature=0.4,
-                stream=True
+                ]
             )
 
-            full_reply = ""
-            response_placeholder = st.empty()
+            ai_reply = response.choices[0].message.content
 
-            for chunk in stream:
-                if chunk.choices[0].delta.content is not None:
-                    full_reply += chunk.choices[0].delta.content
-                    response_placeholder.markdown(full_reply)
+            st.session_state.messages.append(
+                {"role": "user", "content": user_text}
+            )
+            st.session_state.messages.append(
+                {"role": "assistant", "content": ai_reply}
+            )
 
-            ai_reply = full_reply
+            # Animate speaking glow
+            render_silhouette(True)
 
-            # Save conversation
-            st.session_state.messages.append({"role": "user", "content": user_text})
-            st.session_state.messages.append({"role": "assistant", "content": ai_reply})
-
-            # -------------------------
-            # TALKING FACE
-            # -------------------------
-            render_face(talking=True)
-
-            # -------------------------
-            # TEXT TO SPEECH
-            # -------------------------
+            # Text-to-speech
             speech = client.audio.speech.create(
                 model="gpt-4o-mini-tts",
                 voice="nova",
                 input=ai_reply
             )
 
-            audio_response = speech.read()
+            audio_bytes = speech.read()
+            b64 = base64.b64encode(audio_bytes).decode()
 
-            # -------------------------
-            # AUTO-PLAY AUDIO
-            # -------------------------
-            b64 = base64.b64encode(audio_response).decode()
-            audio_html = f"""
+            st.markdown(f"""
             <audio autoplay>
                 <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
             </audio>
-            """
-            st.markdown(audio_html, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
 
-            # Return to idle face
-            render_face(talking=False)
+            render_silhouette(False)
+
+else:
+    st.warning("Voice limit reached for this session.")
