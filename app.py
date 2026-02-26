@@ -27,10 +27,7 @@ body{
     color:#1a2b3c;
 }
 
-h1{
-    margin-bottom:50px;
-    font-weight:600;
-}
+h1{ margin-bottom:50px; }
 
 #sphere{
     width:220px;
@@ -38,15 +35,28 @@ h1{
     border-radius:50%;
     background:radial-gradient(circle at 30% 30%,white,#cfe6fb);
     box-shadow:0 0 40px rgba(0,140,255,0.25);
-    transition:transform .08s linear, box-shadow .08s linear;
+    transition:transform .1s linear, box-shadow .1s linear;
     cursor:pointer;
 }
 
+/* Idle breathing animation */
+@keyframes breathe {
+    0%{ transform:scale(1); }
+    50%{ transform:scale(1.05); }
+    100%{ transform:scale(1); }
+}
+
+#sphere.idle{
+    animation:breathe 3s ease-in-out infinite;
+}
+
 #sphere.recording{
+    animation:none;
     box-shadow:0 0 60px rgba(255,0,0,0.35);
 }
 
 #sphere.processing{
+    animation:none;
     box-shadow:0 0 70px rgba(0,140,255,0.5);
 }
 
@@ -71,7 +81,7 @@ select{
 
 <h1>Clinical AI Hair Specialist</h1>
 
-<div id="sphere"></div>
+<div id="sphere" class="idle"></div>
 
 <select id="language">
 <option value="en">English</option>
@@ -91,19 +101,12 @@ select{
 let mediaRecorder;
 let audioChunks=[];
 let analyser;
-let silenceTimer=null;
-let audioContext;
-let recordingStartTime=0;
+let audioContext = new AudioContext();
+let currentSource=null;
 
 const sphere=document.getElementById("sphere");
 const status=document.getElementById("status");
 const language=document.getElementById("language");
-
-const SILENCE_THRESHOLD = 22;
-const SILENCE_TIME = 2200;
-const MIN_RECORD_TIME = 800;
-
-let currentScale=1;
 
 sphere.onclick = async ()=>{
 
@@ -113,24 +116,20 @@ sphere.onclick = async ()=>{
     }
 
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(stream);
 
+    const source = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
     source.connect(analyser);
 
     mediaRecorder = new MediaRecorder(stream);
     audioChunks=[];
-    silenceTimer=null;
-    recordingStartTime=Date.now();
 
     mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
 
     mediaRecorder.onstop = async ()=>{
 
         stream.getTracks().forEach(track=>track.stop());
-        audioContext.close();
 
         sphere.classList.remove("recording");
         sphere.classList.add("processing");
@@ -147,20 +146,33 @@ sphere.onclick = async ()=>{
         status.innerText=data.text;
 
         const audio=new Audio("data:audio/mp3;base64,"+data.audio);
-        syncVoicePulse(audio);
+        await audioContext.resume();
+
+        currentSource = audioContext.createMediaElementSource(audio);
+        const analyserVoice = audioContext.createAnalyser();
+        analyserVoice.fftSize = 256;
+
+        currentSource.connect(analyserVoice);
+        analyserVoice.connect(audioContext.destination);
+
+        syncVoicePulse(analyserVoice, audio);
+
         audio.play();
 
         sphere.classList.remove("processing");
+        sphere.classList.add("idle");
     };
 
-    mediaRecorder.start();
+    sphere.classList.remove("idle");
     sphere.classList.add("recording");
-    status.innerText="Listening...";
+    status.innerText="Recording... Click again to stop.";
 
+    mediaRecorder.start();
     monitorMic();
 };
 
 function monitorMic(){
+
     const bufferLength = analyser.frequencyBinCount;
     const dataArray = new Uint8Array(bufferLength);
 
@@ -169,38 +181,15 @@ function monitorMic(){
 
         analyser.getByteFrequencyData(dataArray);
         let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
-
-        updateScale(avg/180);
-
-        if(avg < SILENCE_THRESHOLD){
-
-            if(!silenceTimer && Date.now()-recordingStartTime > MIN_RECORD_TIME){
-                silenceTimer=setTimeout(()=>{
-                    if(mediaRecorder.state==="recording"){
-                        mediaRecorder.stop();
-                    }
-                },SILENCE_TIME);
-            }
-
-        }else{
-            clearTimeout(silenceTimer);
-            silenceTimer=null;
-        }
+        updateScale(avg/200);
 
         requestAnimationFrame(detect);
     }
+
     detect();
 }
 
-function syncVoicePulse(audio){
-
-    const ctx=new AudioContext();
-    const src=ctx.createMediaElementSource(audio);
-    const analyserVoice=ctx.createAnalyser();
-    analyserVoice.fftSize=256;
-
-    src.connect(analyserVoice);
-    analyserVoice.connect(ctx.destination);
+function syncVoicePulse(analyserVoice, audio){
 
     const bufferLength=analyserVoice.frequencyBinCount;
     const dataArray=new Uint8Array(bufferLength);
@@ -214,12 +203,13 @@ function syncVoicePulse(audio){
             requestAnimationFrame(pulse);
         }
     }
+
     pulse();
 }
 
 function updateScale(intensity){
-    currentScale = 1 + intensity;
-    sphere.style.transform = "scale("+currentScale+")";
+    let scale = 1 + intensity;
+    sphere.style.transform = "scale("+scale+")";
     sphere.style.boxShadow = "0 0 "+(40 + intensity*120)+"px rgba(0,140,255,0.35)";
 }
 
@@ -253,14 +243,7 @@ def process_audio():
             messages=[
                 {
                     "role":"system",
-                    "content":"""
-You are an elite clinical salon hair expert.
-
-Do not greet.
-Provide direct hair solutions.
-Recommend a professional product.
-Only redirect if clearly unrelated to hair care.
-"""
+                    "content":"You are an elite clinical hair specialist. Do not greet. Provide direct professional hair solutions and product recommendations."
                 },
                 {"role":"user","content":user_text}
             ]
