@@ -1,119 +1,142 @@
-import streamlit as st
+from fastapi import FastAPI, WebSocket
+from fastapi.responses import HTMLResponse
+from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 import os
-import hashlib
-import tempfile
 
-# ==========================
-# CONFIG
-# ==========================
-
+app = FastAPI()
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-CACHE_FOLDER = "audio_cache"
-os.makedirs(CACHE_FOLDER, exist_ok=True)
-
-# ==========================
-# SYSTEM PROMPT
-# ==========================
 
 SYSTEM_PROMPT = """
 You are a Professional Salon Hair Expert.
-
 Only answer hair-related questions.
-
 If asked anything outside hair, respond:
-"I am a Professional Salon Hair Expert here to recommend hair solutions available within our company support. How may I assist you with your hair needs today?"
-
-Always guide toward:
-
-1. Formula Exclusiva – Deep repair & professional restoration.
-2. Laciador – Advanced smoothing & frizz control.
-3. Gotero – Scalp strengthening & growth-focused care.
-4. Gotika – Intensive hydration luxury treatment.
+"I am a Professional Salon Hair Expert. How may I assist you with your hair needs today?"
 """
 
-# ==========================
-# CACHE FUNCTION
-# ==========================
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-def generate_cache_key(text):
-    return hashlib.sha256(text.encode()).hexdigest() + ".mp3"
+# ==============================
+# FRONTEND (Embedded)
+# ==============================
 
-# ==========================
-# UI
-# ==========================
+html = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Professional Hair AI</title>
+<style>
+body {
+    background: #0f172a;
+    font-family: Arial;
+    text-align: center;
+    color: white;
+    margin-top: 100px;
+}
+.halo {
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    border: none;
+    background: radial-gradient(circle, #3b82f6, #1e3a8a);
+    box-shadow: 0 0 40px #3b82f6;
+    animation: pulse 2s infinite;
+    cursor: pointer;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 20px #3b82f6; }
+    50% { box-shadow: 0 0 60px #60a5fa; }
+    100% { box-shadow: 0 0 20px #3b82f6; }
+}
+select {
+    margin-top: 40px;
+    padding: 10px;
+    font-size: 16px;
+}
+#response {
+    margin-top: 40px;
+    width: 60%;
+    margin-left: auto;
+    margin-right: auto;
+    font-size: 18px;
+}
+</style>
+</head>
+<body>
 
-st.set_page_config(page_title="Professional Hair AI", layout="centered")
+<h1>Professional Hair AI</h1>
 
-st.title("💎 Professional Hair AI Consultant")
+<select id="language">
+<option>English</option>
+<option>Spanish</option>
+<option>French</option>
+<option>Portuguese</option>
+</select>
 
-st.markdown("### Our Solutions")
-st.markdown("""
-**Formula Exclusiva** – Deep repair & professional restoration  
-**Laciador** – Advanced smoothing & frizz control  
-**Gotero** – Scalp strengthening & growth-focused care  
-**Gotika** – Intensive hydration luxury treatment  
-""")
+<br><br>
 
-st.divider()
+<button class="halo" onclick="startChat()"></button>
 
-# ==========================
-# AUDIO INPUT
-# ==========================
+<div id="response"></div>
 
-audio_file = st.file_uploader("Upload a voice question (wav/mp3/webm)", type=["wav", "mp3", "webm"])
+<script>
+let ws;
 
-if audio_file:
+function startChat() {
+    document.getElementById("response").innerHTML = "";
+    ws = new WebSocket("wss://" + location.host + "/ws");
 
-    st.info("Processing your request...")
+    ws.onmessage = function(event) {
+        document.getElementById("response").innerHTML += event.data;
+    };
 
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        tmp.write(audio_file.read())
-        tmp_path = tmp.name
+    ws.onopen = function() {
+        let question = prompt("Ask your hair question:");
+        let language = document.getElementById("language").value;
+        ws.send(JSON.stringify({
+            question: question,
+            language: language
+        }));
+    };
+}
+</script>
 
-    # 1️⃣ Transcribe
-    transcript = client.audio.transcriptions.create(
-        model="whisper-1",
-        file=open(tmp_path, "rb")
-    )
+</body>
+</html>
+"""
 
-    user_text = transcript.text
+@app.get("/")
+async def get():
+    return HTMLResponse(html)
 
-    st.write("🗣 You asked:", user_text)
+# ==============================
+# WEBSOCKET BACKEND
+# ==============================
 
-    # 2️⃣ GPT Response
-    completion = client.chat.completions.create(
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    data = await websocket.receive_json()
+
+    user_question = data["question"]
+    language = data["language"]
+
+    final_prompt = SYSTEM_PROMPT + f"\nRespond in {language}."
+
+    response = client.chat.completions.create(
         model="gpt-4o",
+        stream=True,
         messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_text}
+            {"role": "system", "content": final_prompt},
+            {"role": "user", "content": user_question}
         ]
     )
 
-    reply = completion.choices[0].message.content
-
-    st.write("💬 AI Response:")
-    st.success(reply)
-
-    # 3️⃣ Check Cache
-    cache_key = generate_cache_key(reply)
-    file_path = os.path.join(CACHE_FOLDER, cache_key)
-
-    if os.path.exists(file_path):
-        audio_bytes = open(file_path, "rb").read()
-    else:
-        speech = client.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice="alloy",
-            input=reply
-        )
-
-        audio_bytes = speech.read()
-
-        with open(file_path, "wb") as f:
-            f.write(audio_bytes)
-
-    # 4️⃣ Play Audio
-    st.audio(audio_bytes, format="audio/mp3")
+    for chunk in response:
+        if chunk.choices[0].delta.content:
+            await websocket.send_text(chunk.choices[0].delta.content)
