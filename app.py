@@ -1,140 +1,87 @@
 import os
 from flask import Flask, request, jsonify, session, render_template
-from openai import OpenAI
 from dotenv import load_dotenv
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = "supersecretkey"
+app.secret_key = os.environ.get("SECRET_KEY", "supersecretkey")
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # -----------------------------
-# SERVE FRONTEND
+# ROOT ROUTE (SAFE)
 # -----------------------------
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return """
+    <html>
+        <head><title>Bright Clinical AI</title></head>
+        <body style="background:black;color:white;text-align:center;margin-top:100px;font-family:sans-serif;">
+            <h1>Bright Clinical AI Running</h1>
+            <p>Server is active.</p>
+        </body>
+    </html>
+    """
 
 
 # -----------------------------
-# PRODUCT CLASSIFIER
-# -----------------------------
-
-def classify_product(text):
-    text = text.lower()
-
-    formula_keywords = ["dry","damaged","breakage","weak","brittle","split","repair","restore"]
-    laciador_keywords = ["frizz","smooth","straight","puffy","texture","sleek"]
-    gotero_keywords = ["gel","hold","style","spike","shape","structure"]
-    gotika_keywords = ["color","dye","grey","gray","blonde","shade","tint"]
-
-    for word in formula_keywords:
-        if word in text:
-            return "Formula Exclusiva"
-
-    for word in laciador_keywords:
-        if word in text:
-            return "Laciador"
-
-    for word in gotero_keywords:
-        if word in text:
-            return "Gotero"
-
-    for word in gotika_keywords:
-        if word in text:
-            return "Gotika"
-
-    return None
-
-
-# -----------------------------
-# PROCESS VOICE
+# PROCESS ROUTE
 # -----------------------------
 
 @app.route("/process", methods=["POST"])
 def process_voice():
 
-    if "attempts" not in session:
-        session["attempts"] = 0
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-    audio_file = request.files["audio"]
+        if not client.api_key:
+            return jsonify({"error": "Missing OPENAI_API_KEY"}), 500
 
-    audio_bytes = audio_file.read()
-    audio_file.seek(0)
+        audio_file = request.files.get("audio")
+        if not audio_file:
+            return jsonify({"error": "No audio uploaded"}), 400
 
-    if len(audio_bytes) < 5000:
-        return jsonify({"state": "silence"})
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
 
-    transcript = client.audio.transcriptions.create(
-        model="whisper-1",
-        file=audio_file
-    )
-
-    user_text = transcript.text.strip()
-
-    if not user_text or len(user_text.split()) < 2:
-        return jsonify({"state": "silence"})
-
-    product = classify_product(user_text)
-
-    if not product:
-        session["attempts"] += 1
-
-        if session["attempts"] >= 2:
-            reply_text = (
-                "For a precise recommendation, please contact our professional support team. "
-                "You may also restart and briefly mention dryness, frizz, styling hold, or hair color."
-            )
-            session["attempts"] = 0
-        else:
-            reply_text = (
-                "Please briefly describe if your concern involves dryness, frizz, styling hold, or hair color."
-            )
-
-    else:
-        session["attempts"] = 0
+        user_text = transcript.text.strip()
 
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": f"""
-You are a professional salon specialist.
-
-Selected product: {product}
-
-Rules:
-- Only respond based on the transcribed speech.
-- Confidently recommend the product.
-- Explain why it fits.
-- End with confirmation.
-"""
-                },
+                {"role": "system", "content": "You are a professional salon specialist."},
                 {"role": "user", "content": user_text}
             ]
         )
 
         reply_text = completion.choices[0].message.content
 
-    speech = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=reply_text
-    )
+        speech = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=reply_text
+        )
 
-    audio_output = speech.read()
+        audio_output = speech.read()
 
-    return jsonify({
-        "transcript": user_text,
-        "reply": reply_text,
-        "audio": audio_output.hex(),
-        "state": "speaking"
-    })
+        return jsonify({
+            "transcript": user_text,
+            "reply": reply_text,
+            "audio": audio_output.hex()
+        })
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# -----------------------------
+# RENDER PORT BIND
+# -----------------------------
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
