@@ -79,10 +79,24 @@ def detect_emotion(text):
     calm, stressed, frustrated, excited, neutral
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": emotion_prompt}],
-        temperature=0
+    stream = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": system_prompt},
+        *st.session_state.messages,
+        {"role": "user", "content": user_text}
+    ],
+    temperature=0.4,
+    stream=True
+)
+
+full_reply = ""
+response_placeholder = st.empty()
+
+for chunk in stream:
+    if chunk.choices[0].delta.content is not None:
+        full_reply += chunk.choices[0].delta.content
+        response_placeholder.markdown(full_reply)
     )
 
     return response.choices[0].message.content.strip().lower()
@@ -263,3 +277,4 @@ Adapt your tone accordingly.
             </audio>
             """
             st.markdown(audio_html, unsafe_allow_html=True)
+
