@@ -4,7 +4,6 @@ import tempfile
 import base64
 from dotenv import load_dotenv
 from openai import OpenAI
-from audiorecorder import audiorecorder
 
 # -------------------------
 # CONFIG
@@ -159,7 +158,7 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # -------------------------
-# VOICE SECTION
+# VOICE INPUT (Native Streamlit)
 # -------------------------
 
 st.markdown("---")
@@ -168,21 +167,64 @@ st.subheader("🎤 Speak to Your AI Salon Expert")
 if st.session_state.voice_count >= 10:
     st.warning("Free voice session limit reached.")
 else:
-    audio = audiorecorder("Click to Speak", "Recording...")
+    audio_file = st.audio_input("Tap and speak")
 
-    if len(audio) > 0:
+    if audio_file is not None:
 
         st.session_state.voice_count += 1
 
-        audio_bytes = audio.export().read()
+        audio_bytes = audio_file.read()
         st.audio(audio_bytes)
 
         with st.spinner("Analyzing your hair needs..."):
 
-            user_text, language = transcribe_audio(audio_bytes)
-            emotion = detect_emotion(user_text)
+            # Whisper transcription (auto language detection built-in)
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file
+            )
 
-            system_prompt = build_system_prompt(language, emotion)
+            user_text = transcript.text
+
+            # Emotion detection
+            emotion_prompt = f"""
+            Analyze emotional tone of this sentence:
+            {user_text}
+
+            Return one word:
+            calm, stressed, frustrated, excited, neutral
+            """
+
+            emotion_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": emotion_prompt}],
+                temperature=0
+            )
+
+            emotion = emotion_response.choices[0].message.content.strip().lower()
+
+            # System prompt (Caribbean luxury branding)
+            system_prompt = f"""
+You are Hair Expert Advisor, a luxury Caribbean salon AI assistant.
+
+Mission:
+Recommend ONE of:
+Formula Exclusiva
+Laciador
+Gotero
+Gotika
+Or Go see medical professional
+
+Style:
+Luxury, confident, premium Caribbean salon tone.
+Professional. Analytical.
+
+Language rule:
+Respond in the same language as the user.
+
+Emotion detected: {emotion}
+Adapt your tone accordingly.
+"""
 
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -196,16 +238,28 @@ else:
 
             ai_reply = response.choices[0].message.content
 
-            # Save memory
+            # Save conversation memory
             st.session_state.messages.append({"role": "user", "content": user_text})
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
 
-            # Display response
             with st.chat_message("assistant"):
                 st.markdown(ai_reply)
 
-            # Generate voice
-            audio_reply = generate_voice(ai_reply)
+            # Generate Caribbean premium voice
+            speech = client.audio.speech.create(
+                model="gpt-4o-mini-tts",
+                voice="nova",
+                input=ai_reply
+            )
 
-            # Auto-play
-            autoplay_audio(audio_reply)
+            audio_response = speech.read()
+
+            # Auto-play response
+            import base64
+            b64 = base64.b64encode(audio_response).decode()
+            audio_html = f"""
+            <audio autoplay>
+                <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+            st.markdown(audio_html, unsafe_allow_html=True)
