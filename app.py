@@ -250,8 +250,7 @@ Adapt your tone accordingly.
                 temperature=0.4
             )
 
-            ai_reply = response.choices[0].message.content
-
+            ai_reply = full_reply
             # Save conversation memory
             st.session_state.messages.append({"role": "user", "content": user_text})
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
@@ -277,4 +276,5 @@ Adapt your tone accordingly.
             </audio>
             """
             st.markdown(audio_html, unsafe_allow_html=True)
+
 
