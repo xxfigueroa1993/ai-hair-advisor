@@ -1,15 +1,14 @@
-from flask import Flask, request, Response, render_template_string
+import streamlit as st
 from openai import OpenAI
 import os
 import hashlib
+import tempfile
 
-app = Flask(__name__)
+# ==========================
+# CONFIG
+# ==========================
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ==========================
-# CREATE LOCAL CACHE FOLDER
-# ==========================
 
 CACHE_FOLDER = "audio_cache"
 os.makedirs(CACHE_FOLDER, exist_ok=True)
@@ -35,131 +34,86 @@ Always guide toward:
 """
 
 # ==========================
-# HELPER FUNCTION
+# CACHE FUNCTION
 # ==========================
 
 def generate_cache_key(text):
     return hashlib.sha256(text.encode()).hexdigest() + ".mp3"
 
 # ==========================
-# FRONTEND
+# UI
 # ==========================
 
-HTML = """
-<!DOCTYPE html>
-<html>
-<head>
-<title>Professional Hair AI</title>
-<style>
-body { margin:0; text-align:center; font-family:Arial; background:#ffffff; }
-canvas { margin-top:80px; }
-</style>
-</head>
-<body>
+st.set_page_config(page_title="Professional Hair AI", layout="centered")
 
-<h2>Professional Hair AI</h2>
-<canvas id="ring" width="300" height="300"></canvas>
+st.title("💎 Professional Hair AI Consultant")
 
-<script>
-let canvas = document.getElementById("ring");
-let ctx = canvas.getContext("2d");
+st.markdown("### Our Solutions")
+st.markdown("""
+**Formula Exclusiva** – Deep repair & professional restoration  
+**Laciador** – Advanced smoothing & frizz control  
+**Gotero** – Scalp strengthening & growth-focused care  
+**Gotika** – Intensive hydration luxury treatment  
+""")
 
-function draw() {
-    ctx.clearRect(0,0,300,300);
-    ctx.beginPath();
-    ctx.arc(150,150,100,0,2*Math.PI);
-    ctx.strokeStyle="#d4af37";
-    ctx.lineWidth=4;
-    ctx.stroke();
-}
-
-draw();
-
-canvas.addEventListener("click", async () => {
-
-    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    const recorder = new MediaRecorder(stream);
-    let chunks=[];
-
-    recorder.ondataavailable=e=>chunks.push(e.data);
-
-    recorder.onstop=async()=>{
-        let blob=new Blob(chunks,{type:"audio/webm"});
-        let form=new FormData();
-        form.append("audio",blob);
-
-        let response=await fetch("/voice",{method:"POST",body:form});
-        let audioBlob=await response.blob();
-        let audio=new Audio(URL.createObjectURL(audioBlob));
-        audio.play();
-    };
-
-    recorder.start();
-    setTimeout(()=>recorder.stop(),4000);
-});
-</script>
-</body>
-</html>
-"""
+st.divider()
 
 # ==========================
-# ROUTES
+# AUDIO INPUT
 # ==========================
 
-@app.route("/")
-def home():
-    return render_template_string(HTML)
+audio_file = st.file_uploader("Upload a voice question (wav/mp3/webm)", type=["wav", "mp3", "webm"])
 
-@app.route("/voice", methods=["POST"])
-def voice():
+if audio_file:
 
-    audio_file = request.files["audio"]
+    st.info("Processing your request...")
+
+    # Save uploaded file temporarily
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(audio_file.read())
+        tmp_path = tmp.name
 
     # 1️⃣ Transcribe
     transcript = client.audio.transcriptions.create(
         model="whisper-1",
-        file=audio_file
+        file=open(tmp_path, "rb")
     )
 
     user_text = transcript.text
 
-    # 2️⃣ GPT
+    st.write("🗣 You asked:", user_text)
+
+    # 2️⃣ GPT Response
     completion = client.chat.completions.create(
         model="gpt-4o",
         messages=[
-            {"role":"system","content":SYSTEM_PROMPT},
-            {"role":"user","content":user_text}
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_text}
         ]
     )
 
     reply = completion.choices[0].message.content
 
-    # 3️⃣ Generate cache filename
+    st.write("💬 AI Response:")
+    st.success(reply)
+
+    # 3️⃣ Check Cache
     cache_key = generate_cache_key(reply)
     file_path = os.path.join(CACHE_FOLDER, cache_key)
 
-    # 4️⃣ If file exists → return instantly
     if os.path.exists(file_path):
-        print("Serving from local cache")
-        return Response(open(file_path, "rb").read(), mimetype="audio/mpeg")
+        audio_bytes = open(file_path, "rb").read()
+    else:
+        speech = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=reply
+        )
 
-    # 5️⃣ Generate TTS
-    print("Generating new TTS")
-    speech = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=reply
-    )
+        audio_bytes = speech.read()
 
-    audio_bytes = speech.read()
+        with open(file_path, "wb") as f:
+            f.write(audio_bytes)
 
-    # 6️⃣ Save locally
-    with open(file_path, "wb") as f:
-        f.write(audio_bytes)
-
-    return Response(audio_bytes, mimetype="audio/mpeg")
-
-# ==========================
-
-if __name__ == "__main__":
-    app.run(debug=True)
+    # 4️⃣ Play Audio
+    st.audio(audio_bytes, format="audio/mp3")
