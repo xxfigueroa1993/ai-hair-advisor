@@ -13,11 +13,33 @@ client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
 st.set_page_config(
     page_title="Luxury AI Concierge",
-    layout="centered",
+    layout="centered"
 )
 
 # -------------------------
-# STYLING
+# LANGUAGE OPTIONS
+# -------------------------
+
+languages = {
+    "English": "Respond in English.",
+    "Arabic": "Respond in Modern Standard Arabic.",
+    "Spanish": "Respond in Spanish.",
+    "French": "Respond in French.",
+    "German": "Respond in German.",
+    "Portuguese": "Respond in Portuguese.",
+    "Hindi": "Respond in Hindi.",
+    "Urdu": "Respond in Urdu.",
+    "Bengali": "Respond in Bengali.",
+    "Turkish": "Respond in Turkish.",
+    "Indonesian": "Respond in Indonesian.",
+    "Chinese (Simplified)": "Respond in Simplified Chinese.",
+    "Japanese": "Respond in Japanese.",
+    "Korean": "Respond in Korean.",
+    "Russian": "Respond in Russian."
+}
+
+# -------------------------
+# STYLE
 # -------------------------
 
 st.markdown("""
@@ -27,43 +49,49 @@ body {
 }
 
 .stApp {
-    background: radial-gradient(circle at top, #1a1a1a 0%, #0c0c0c 70%);
-    color: #ffffff;
+    background: radial-gradient(circle at center, #1a1a1a 0%, #0c0c0c 70%);
+    color: white;
     font-family: 'Helvetica Neue', sans-serif;
 }
 
 h1 {
     text-align: center;
-    letter-spacing: 2px;
     font-weight: 300;
+    letter-spacing: 2px;
 }
 
-/* Floating motion */
-.silhouette-container {
+.halo-container {
     display: flex;
     justify-content: center;
-    margin-top: 20px;
+    margin-top: 30px;
     margin-bottom: 30px;
-    animation: float 7s ease-in-out infinite;
+    animation: float 6s ease-in-out infinite;
 }
 
 @keyframes float {
-    0%   { transform: translateY(0px); }
-    50%  { transform: translateY(-12px); }
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
     100% { transform: translateY(0px); }
 }
 
-/* Glow when speaking */
-.speaking path, 
-.speaking circle, 
-.speaking line {
-    stroke: #f0d27a;
-    filter: drop-shadow(0px 0px 15px #f0d27a);
+.idle-circle {
+    stroke: #777;
+    stroke-width: 2;
+    fill: none;
+    opacity: 0.6;
 }
 
-/* Chat spacing */
-.block-container {
-    padding-top: 2rem;
+.speaking .wave {
+    stroke: #d4af37;
+    stroke-width: 3;
+    fill: none;
+    animation: pulse 0.8s ease-in-out infinite alternate;
+    filter: drop-shadow(0px 0px 10px #d4af37);
+}
+
+@keyframes pulse {
+    from { transform: scale(1); }
+    to { transform: scale(1.08); }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -78,49 +106,33 @@ if "messages" not in st.session_state:
 if "voice_count" not in st.session_state:
     st.session_state.voice_count = 0
 
+if "language" not in st.session_state:
+    st.session_state.language = "English"
+
 # -------------------------
-# SILHOUETTE RENDER
+# HALO RENDER
 # -------------------------
 
-def render_silhouette(speaking=False):
-    state = "speaking" if speaking else ""
+def render_halo(speaking=False):
+    state_class = "speaking" if speaking else ""
 
     st.markdown(f"""
-    <div class="silhouette-container {state}">
+    <div class="halo-container {state_class}">
         <svg width="260" height="260" viewBox="0 0 200 200">
-
-            <!-- Head outline (no features) -->
-            <circle 
-                cx="100" 
-                cy="60" 
-                r="28" 
-                stroke="#d4af37" 
-                stroke-width="3" 
-                fill="none" />
-
-            <!-- Shoulders -->
-            <path 
-                d="M35 150 Q100 105 165 150" 
-                stroke="#d4af37" 
-                stroke-width="3" 
-                fill="none" />
-
-            <!-- Suit lapels -->
-            <path 
-                d="M60 150 L100 115 L140 150" 
-                stroke="#d4af37" 
-                stroke-width="3" 
-                fill="none" />
-
-            <!-- Tie line -->
-            <line 
-                x1="100" 
-                y1="115" 
-                x2="100" 
-                y2="160" 
-                stroke="#d4af37" 
-                stroke-width="3"/>
-
+            <circle cx="100" cy="100" r="70" class="idle-circle"/>
+            <path class="wave"
+                d="
+                M100 30
+                Q120 40 140 60
+                Q160 80 170 100
+                Q160 120 140 140
+                Q120 160 100 170
+                Q80 160 60 140
+                Q40 120 30 100
+                Q40 80 60 60
+                Q80 40 100 30
+                "
+            />
         </svg>
     </div>
     """, unsafe_allow_html=True)
@@ -130,12 +142,23 @@ def render_silhouette(speaking=False):
 # -------------------------
 
 st.title("Luxury Caribbean AI Concierge")
-st.caption("Refined. Private. Discreet.")
+st.caption("An Intelligent Voice. Nothing More.")
 
-render_silhouette(False)
+render_halo(False)
 
 # -------------------------
-# DISPLAY CHAT HISTORY
+# LANGUAGE SELECTOR
+# -------------------------
+
+selected_language = st.selectbox(
+    "🌍 Select Language",
+    list(languages.keys())
+)
+
+st.session_state.language = selected_language
+
+# -------------------------
+# CHAT HISTORY
 # -------------------------
 
 for msg in st.session_state.messages:
@@ -143,7 +166,7 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # -------------------------
-# VOICE INPUT SECTION
+# VOICE INPUT
 # -------------------------
 
 st.markdown("---")
@@ -160,7 +183,6 @@ if st.session_state.voice_count < 10:
 
         with st.spinner("Listening carefully..."):
 
-            # Transcribe voice
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=audio_file
@@ -168,10 +190,12 @@ if st.session_state.voice_count < 10:
 
             user_text = transcript.text
 
-            system_prompt = """
+            language_instruction = languages[selected_language]
+
+            system_prompt = f"""
 You are a refined luxury concierge.
-Tone: Calm, elegant, composed.
-Provide clear, confident, premium guidance.
+Tone: Calm, confident, elegant.
+{language_instruction}
 Keep responses concise but valuable.
 """
 
@@ -193,10 +217,8 @@ Keep responses concise but valuable.
                 {"role": "assistant", "content": ai_reply}
             )
 
-            # Animate speaking glow
-            render_silhouette(True)
+            render_halo(True)
 
-            # Text-to-speech
             speech = client.audio.speech.create(
                 model="gpt-4o-mini-tts",
                 voice="nova",
@@ -212,7 +234,7 @@ Keep responses concise but valuable.
             </audio>
             """, unsafe_allow_html=True)
 
-            render_silhouette(False)
+            render_halo(False)
 
 else:
     st.warning("Voice limit reached for this session.")
