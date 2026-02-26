@@ -69,7 +69,7 @@ def index():
         }
 
         const recognition = new SpeechRecognition();
-        recognition.lang = "en-US";
+        recognition.lang = "en-GB";
         recognition.continuous = false;
         recognition.interimResults = false;
 
@@ -159,3 +159,4 @@ def ask():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
