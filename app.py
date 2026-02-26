@@ -14,7 +14,7 @@ client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 st.set_page_config(page_title="Luxury Caribbean AI Hair Advisor", layout="centered")
 
 # -------------------------
-# LUXURY UI THEME
+# LUXURY UI + ANIMATED FACE STYLES
 # -------------------------
 
 st.markdown("""
@@ -29,23 +29,36 @@ body {
 h1 {
     font-weight: 600;
     letter-spacing: 1px;
+    text-align: center;
+}
+.face-container {
+    display:flex;
+    justify-content:center;
+    margin-bottom:20px;
+}
+.eye {
+    animation: blink 4s infinite;
+    transform-origin: center;
+}
+@keyframes blink {
+    0%, 95%, 100% { transform: scaleY(1); }
+    97% { transform: scaleY(0.1); }
+}
+.mouth {
+    transition: all 0.2s ease;
+    transform-origin: center;
+}
+.talking .mouth {
+    animation: talk 0.4s infinite alternate;
+}
+@keyframes talk {
+    from { transform: scaleY(1); }
+    to { transform: scaleY(1.6); }
 }
 .stButton>button {
     background-color: #c6a86b;
     color: black;
     border-radius: 25px;
-}
-.avatar {
-    width:170px;
-    border-radius:50%;
-}
-.talking {
-    animation: pulse 0.6s infinite;
-}
-@keyframes pulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.05); }
-    100% { transform: scale(1); }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -61,12 +74,34 @@ if "voice_count" not in st.session_state:
     st.session_state.voice_count = 0
 
 # -------------------------
+# FACE RENDER FUNCTION
+# -------------------------
+
+def render_face(talking=False):
+    state_class = "talking" if talking else ""
+    st.markdown(f"""
+    <div class="face-container {state_class}">
+        <svg width="200" height="200" viewBox="0 0 200 200">
+            <!-- Face -->
+            <circle cx="100" cy="100" r="90" fill="#c6a86b"/>
+            
+            <!-- Eyes -->
+            <circle class="eye" cx="70" cy="85" r="10" fill="#111"/>
+            <circle class="eye" cx="130" cy="85" r="10" fill="#111"/>
+            
+            <!-- Mouth -->
+            <ellipse class="mouth" cx="100" cy="135" rx="30" ry="12" fill="#111"/>
+        </svg>
+    </div>
+    """, unsafe_allow_html=True)
+
+# -------------------------
 # HEADER
 # -------------------------
 
 st.title("Luxury Caribbean AI Hair Advisor")
 
-st.markdown('<img src="https://i.imgur.com/9yG3p8X.png" class="avatar">', unsafe_allow_html=True)
+render_face(talking=False)
 
 # -------------------------
 # DISPLAY CHAT HISTORY
@@ -90,18 +125,14 @@ else:
 
     if audio_file is not None:
 
-        # Trim memory for faster conversational feel
+        # Keep conversation light & fast
         st.session_state.messages = st.session_state.messages[-6:]
-
         st.session_state.voice_count += 1
-
-        audio_bytes = audio_file.read()
-        st.audio(audio_bytes)
 
         with st.spinner("Analyzing your hair needs..."):
 
             # -------------------------
-            # SPEECH TO TEXT (Whisper)
+            # SPEECH TO TEXT
             # -------------------------
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -143,14 +174,10 @@ Gotero
 Gotika
 Or Go see medical professional
 
-Style:
-Luxury, confident, premium Caribbean tone.
-Professional. Analytical.
-
-Respond in the same language as the user.
-
+Luxury Caribbean tone.
+Respond in same language as user.
 Emotion detected: {emotion}
-Adapt your tone accordingly.
+Adapt tone accordingly.
 """
 
             # -------------------------
@@ -178,14 +205,14 @@ Adapt your tone accordingly.
 
             ai_reply = full_reply
 
-            # Save conversation memory
+            # Save conversation
             st.session_state.messages.append({"role": "user", "content": user_text})
             st.session_state.messages.append({"role": "assistant", "content": ai_reply})
 
             # -------------------------
-            # TALKING AVATAR
+            # TALKING FACE
             # -------------------------
-            st.markdown('<img src="https://i.imgur.com/9yG3p8X.png" class="avatar talking">', unsafe_allow_html=True)
+            render_face(talking=True)
 
             # -------------------------
             # TEXT TO SPEECH
@@ -209,5 +236,5 @@ Adapt your tone accordingly.
             """
             st.markdown(audio_html, unsafe_allow_html=True)
 
-            # Return avatar to idle
-            st.markdown('<img src="https://i.imgur.com/9yG3p8X.png" class="avatar">', unsafe_allow_html=True)
+            # Return to idle face
+            render_face(talking=False)
