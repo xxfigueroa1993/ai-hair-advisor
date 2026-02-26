@@ -1,10 +1,7 @@
 from flask import Flask, request, jsonify, render_template_string
-import openai
 import os
 
 app = Flask(__name__)
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/")
 def index():
@@ -13,35 +10,56 @@ def index():
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Luxury AI Voice Assistant</title>
+        <title>Global Professional Hair Intelligence</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
             body {
-                background: #f8fafc;
-                text-align: center;
+                margin: 0;
+                background: #0b1220;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                flex-direction: column;
                 font-family: Arial, sans-serif;
-                padding-top: 150px;
+                color: white;
             }
 
             #halo {
-                width: 200px;
-                height: 200px;
+                width: 220px;
+                height: 220px;
                 border-radius: 50%;
-                border: 6px solid rgba(0, 150, 255, 0.4);
-                margin: auto;
+                border: 6px solid rgba(0, 170, 255, 0.35);
+                box-shadow: 0 0 40px rgba(0,170,255,0.4);
                 cursor: pointer;
-                transition: 0.3s ease;
+                transition: all 0.3s ease;
             }
 
             #halo.listening {
                 border-color: red;
-                box-shadow: 0 0 40px red;
+                box-shadow: 0 0 60px red;
+            }
+
+            #halo.thinking {
+                animation: rotate 2s linear infinite;
+            }
+
+            @keyframes rotate {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+            }
+
+            #status {
+                margin-top: 30px;
+                font-size: 18px;
+                opacity: 0.8;
             }
         </style>
     </head>
     <body>
 
         <div id="halo"></div>
-        <p id="status">Click to Speak</p>
+        <div id="status">Click Halo to Speak</div>
 
         <script>
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -54,19 +72,22 @@ def index():
         let isListening = false;
 
         const halo = document.getElementById("halo");
-        const statusText = document.getElementById("status");
+        const status = document.getElementById("status");
 
         halo.addEventListener("click", () => {
-            if (!isListening) {
-                startListening();
-            }
+            if (!isListening) startListening();
         });
 
         function startListening() {
             isListening = true;
-            statusText.innerText = "Listening...";
             halo.classList.add("listening");
+            status.innerText = "Listening...";
             recognition.start();
+        }
+
+        function stopListening() {
+            isListening = false;
+            halo.classList.remove("listening");
         }
 
         recognition.onresult = function(event) {
@@ -77,30 +98,34 @@ def index():
 
         recognition.onerror = function(event) {
             stopListening();
+            status.innerText = "Speech error.";
         };
 
         recognition.onend = function() {
             if (isListening) stopListening();
         };
 
-        function stopListening() {
-            isListening = false;
-            statusText.innerText = "Processing...";
-            halo.classList.remove("listening");
-        }
-
         function sendToAI(text) {
+            halo.classList.add("thinking");
+            status.innerText = "Processing...";
+
             fetch("/ask", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({message: text})
+                body: JSON.stringify({ message: text })
             })
             .then(res => res.json())
             .then(data => {
-                statusText.innerText = data.reply;
+                halo.classList.remove("thinking");
+                status.innerText = data.reply;
 
-                const utter = new SpeechSynthesisUtterance(data.reply);
-                speechSynthesis.speak(utter);
+                const speech = new SpeechSynthesisUtterance(data.reply);
+                speechSynthesis.speak(speech);
+            })
+            .catch(err => {
+                halo.classList.remove("thinking");
+                status.innerText = "Server error.";
+                console.error(err);
             });
         }
         </script>
@@ -113,21 +138,12 @@ def index():
 
 @app.route("/ask", methods=["POST"])
 def ask():
-    user_message = request.json["message"]
+    data = request.get_json()
+    user_message = data.get("message", "")
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a professional salon hair expert."},
-            {"role": "user", "content": user_message}
-        ]
-    )
-
-    return jsonify({"reply": response.choices[0].message.content})
-
-import os
+    # TEMP SAFE RESPONSE (no OpenAI yet)
+    return jsonify({"reply": f"You said: {user_message}"})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
