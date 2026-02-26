@@ -1,5 +1,4 @@
 import os
-import audioop
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from openai import OpenAI
@@ -12,24 +11,6 @@ app.secret_key = "supersecretkey"
 CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-# ---------------------------------
-# AUDIO SILENCE DETECTION
-# ---------------------------------
-
-def is_silence(audio_file):
-    audio_bytes = audio_file.read()
-    audio_file.seek(0)
-
-    if len(audio_bytes) < 1000:
-        return True
-
-    try:
-        rms = audioop.rms(audio_bytes, 2)
-        return rms < 300  # Adjust sensitivity if needed
-    except:
-        return False
-
 
 # ---------------------------------
 # PRODUCT CLASSIFIER (DETERMINISTIC)
@@ -74,8 +55,11 @@ def process_voice():
 
     audio_file = request.files["audio"]
 
-    # 🛑 Reject Silence Immediately
-    if is_silence(audio_file):
+    # 1️⃣ Basic silence protection (file size check)
+    audio_bytes = audio_file.read()
+    audio_file.seek(0)
+
+    if len(audio_bytes) < 5000:
         return jsonify({
             "transcript": "",
             "reply": "",
@@ -83,7 +67,7 @@ def process_voice():
             "state": "silence"
         })
 
-    # 1️⃣ Transcribe
+    # 2️⃣ Transcribe
     transcript = client.audio.transcriptions.create(
         model="whisper-1",
         file=audio_file
@@ -91,8 +75,8 @@ def process_voice():
 
     user_text = transcript.text.strip()
 
-    # 🛑 Reject if too short
-    if len(user_text) < 3:
+    # 3️⃣ Reject empty or meaningless transcript
+    if not user_text or len(user_text.split()) < 2:
         return jsonify({
             "transcript": "",
             "reply": "",
@@ -100,12 +84,10 @@ def process_voice():
             "state": "silence"
         })
 
-    # 2️⃣ Classify Product
+    # 4️⃣ Classify product
     product = classify_product(user_text)
 
-    # 3️⃣ Clarification Logic
     if not product:
-
         session["attempts"] += 1
 
         if session["attempts"] >= 2:
@@ -120,7 +102,6 @@ def process_voice():
             )
 
     else:
-
         session["attempts"] = 0
 
         completion = client.chat.completions.create(
@@ -129,17 +110,17 @@ def process_voice():
                 {
                     "role": "system",
                     "content": f"""
-You are a professional clinical salon specialist.
+You are a professional salon specialist.
 
 Selected product: {product}
 
 Rules:
-- Only respond based on what the user said.
+- Only respond based on the sound you transcribed.
 - Do not introduce yourself.
 - Do not ask unrelated questions.
 - Confidently recommend the selected product.
 - Explain why it matches the user's concern.
-- End with a confirmation question.
+- End with confirmation.
 """
                 },
                 {"role": "user", "content": user_text}
@@ -148,7 +129,7 @@ Rules:
 
         reply_text = completion.choices[0].message.content
 
-    # 4️⃣ Generate Speech
+    # 5️⃣ Generate TTS
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
@@ -164,10 +145,6 @@ Rules:
         "state": "speaking"
     })
 
-
-# ---------------------------------
-# ROOT CHECK
-# ---------------------------------
 
 @app.route("/")
 def home():
