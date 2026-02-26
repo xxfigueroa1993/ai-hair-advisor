@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import base64
+import time
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -11,10 +12,7 @@ from openai import OpenAI
 load_dotenv()
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-st.set_page_config(
-    page_title="Luxury AI Concierge",
-    layout="centered"
-)
+st.set_page_config(page_title="Luxury AI Salon Concierge", layout="centered")
 
 # -------------------------
 # LANGUAGE OPTIONS
@@ -25,17 +23,7 @@ languages = {
     "Arabic": "Respond in Modern Standard Arabic.",
     "Spanish": "Respond in Spanish.",
     "French": "Respond in French.",
-    "German": "Respond in German.",
-    "Portuguese": "Respond in Portuguese.",
-    "Hindi": "Respond in Hindi.",
-    "Urdu": "Respond in Urdu.",
-    "Bengali": "Respond in Bengali.",
-    "Turkish": "Respond in Turkish.",
-    "Indonesian": "Respond in Indonesian.",
-    "Chinese (Simplified)": "Respond in Simplified Chinese.",
-    "Japanese": "Respond in Japanese.",
-    "Korean": "Respond in Korean.",
-    "Russian": "Respond in Russian."
+    "German": "Respond in German."
 }
 
 # -------------------------
@@ -44,20 +32,11 @@ languages = {
 
 st.markdown("""
 <style>
-body {
-    background-color: #0c0c0c;
-}
+body { background-color: #0c0c0c; }
 
 .stApp {
     background: radial-gradient(circle at center, #1a1a1a 0%, #0c0c0c 70%);
     color: white;
-    font-family: 'Helvetica Neue', sans-serif;
-}
-
-h1 {
-    text-align: center;
-    font-weight: 300;
-    letter-spacing: 2px;
 }
 
 .halo-container {
@@ -65,33 +44,26 @@ h1 {
     justify-content: center;
     margin-top: 30px;
     margin-bottom: 30px;
-    animation: float 6s ease-in-out infinite;
-}
-
-@keyframes float {
-    0% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-    100% { transform: translateY(0px); }
 }
 
 .idle-circle {
-    stroke: #777;
+    stroke: #666;
     stroke-width: 2;
     fill: none;
-    opacity: 0.6;
+    opacity: 0.5;
 }
 
 .speaking .wave {
     stroke: #d4af37;
     stroke-width: 3;
     fill: none;
-    animation: pulse 0.8s ease-in-out infinite alternate;
-    filter: drop-shadow(0px 0px 10px #d4af37);
+    animation: pulse 0.6s ease-in-out infinite alternate;
+    filter: drop-shadow(0px 0px 12px #d4af37);
 }
 
 @keyframes pulse {
     from { transform: scale(1); }
-    to { transform: scale(1.08); }
+    to { transform: scale(1.12); }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -103,36 +75,27 @@ h1 {
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "voice_count" not in st.session_state:
-    st.session_state.voice_count = 0
-
-if "language" not in st.session_state:
-    st.session_state.language = "English"
+if "speaking" not in st.session_state:
+    st.session_state.speaking = False
 
 # -------------------------
 # HALO RENDER
 # -------------------------
 
-def render_halo(speaking=False):
-    state_class = "speaking" if speaking else ""
-
+def render_halo():
+    speaking_class = "speaking" if st.session_state.speaking else ""
     st.markdown(f"""
-    <div class="halo-container {state_class}">
-        <svg width="260" height="260" viewBox="0 0 200 200">
+    <div class="halo-container {speaking_class}">
+        <svg width="240" height="240" viewBox="0 0 200 200">
             <circle cx="100" cy="100" r="70" class="idle-circle"/>
             <path class="wave"
-                d="
-                M100 30
-                Q120 40 140 60
-                Q160 80 170 100
-                Q160 120 140 140
-                Q120 160 100 170
-                Q80 160 60 140
-                Q40 120 30 100
-                Q40 80 60 60
-                Q80 40 100 30
-                "
-            />
+                d="M100 30
+                Q130 40 160 70
+                Q180 100 160 130
+                Q130 160 100 170
+                Q70 160 40 130
+                Q20 100 40 70
+                Q70 40 100 30"/>
         </svg>
     </div>
     """, unsafe_allow_html=True)
@@ -141,21 +104,11 @@ def render_halo(speaking=False):
 # HEADER
 # -------------------------
 
-st.title("Luxury Caribbean AI Concierge")
-st.caption("An Intelligent Voice. Nothing More.")
+st.title("Luxury Salon AI Concierge")
+render_halo()
 
-render_halo(False)
-
-# -------------------------
-# LANGUAGE SELECTOR
-# -------------------------
-
-selected_language = st.selectbox(
-    "🌍 Select Language",
-    list(languages.keys())
-)
-
-st.session_state.language = selected_language
+selected_language = st.selectbox("🌍 Language", list(languages.keys()))
+language_instruction = languages[selected_language]
 
 # -------------------------
 # CHAT HISTORY
@@ -169,72 +122,78 @@ for msg in st.session_state.messages:
 # VOICE INPUT
 # -------------------------
 
-st.markdown("---")
-st.subheader("🎤 Speak to Your Private Advisor")
+audio_file = st.audio_input("🎤 Speak")
 
-if st.session_state.voice_count < 10:
+if audio_file:
 
-    audio_file = st.audio_input("Tap and speak")
+    transcript = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file
+    )
 
-    if audio_file is not None:
+    user_text = transcript.text
 
-        st.session_state.voice_count += 1
-        st.session_state.messages = st.session_state.messages[-6:]
+    # -------------------------
+    # STRICT SALON SYSTEM RULE
+    # -------------------------
 
-        with st.spinner("Listening carefully..."):
+    system_prompt = f"""
+You are a Professional Salon Hair Expert working for our company.
 
-            transcript = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file
-            )
+ONLY recommend:
+- Formula Exclusiva
+- Laciador
+- Gotero
+- Gotika
 
-            user_text = transcript.text
+If the user asks anything unrelated to salon hair solutions,
+reply politely with something similar to:
 
-            language_instruction = languages[selected_language]
+"I am a Professional Salon Hair Expert here to recommend hair solutions available within our company support."
 
-            system_prompt = f"""
-You are a refined luxury concierge.
-Tone: Calm, confident, elegant.
+Do NOT answer unrelated questions.
+Remain elegant and professional.
+
 {language_instruction}
-Keep responses concise but valuable.
 """
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    *st.session_state.messages,
-                    {"role": "user", "content": user_text}
-                ]
-            )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text}
+        ]
+    )
 
-            ai_reply = response.choices[0].message.content
+    ai_reply = response.choices[0].message.content
 
-            st.session_state.messages.append(
-                {"role": "user", "content": user_text}
-            )
-            st.session_state.messages.append(
-                {"role": "assistant", "content": ai_reply}
-            )
+    st.session_state.messages.append({"role": "user", "content": user_text})
+    st.session_state.messages.append({"role": "assistant", "content": ai_reply})
 
-            render_halo(True)
+    # -------------------------
+    # SPEAKING MODE ON
+    # -------------------------
 
-            speech = client.audio.speech.create(
-                model="gpt-4o-mini-tts",
-                voice="nova",
-                input=ai_reply
-            )
+    st.session_state.speaking = True
+    render_halo()
 
-            audio_bytes = speech.read()
-            b64 = base64.b64encode(audio_bytes).decode()
+    speech = client.audio.speech.create(
+        model="gpt-4o-mini-tts",
+        voice="nova",
+        input=ai_reply
+    )
 
-            st.markdown(f"""
-            <audio autoplay>
-                <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-            </audio>
-            """, unsafe_allow_html=True)
+    audio_bytes = speech.read()
+    b64 = base64.b64encode(audio_bytes).decode()
 
-            render_halo(False)
+    st.markdown(f"""
+    <audio autoplay>
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+    </audio>
+    """, unsafe_allow_html=True)
 
-else:
-    st.warning("Voice limit reached for this session.")
+    # Wait to keep animation during playback
+    time.sleep(2.5)
+
+    st.session_state.speaking = False
+    render_halo()
