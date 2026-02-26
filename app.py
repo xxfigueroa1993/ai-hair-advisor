@@ -1,6 +1,5 @@
 import os
 from flask import Flask, request, jsonify, session
-from flask_cors import CORS
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -8,13 +7,12 @@ load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = "supersecretkey"
-CORS(app)
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ---------------------------------
-# PRODUCT CLASSIFIER (DETERMINISTIC)
-# ---------------------------------
+# -----------------------------
+# PRODUCT CLASSIFIER
+# -----------------------------
 
 def classify_product(text):
     text = text.lower()
@@ -43,9 +41,9 @@ def classify_product(text):
     return None
 
 
-# ---------------------------------
-# VOICE PROCESSING
-# ---------------------------------
+# -----------------------------
+# PROCESS VOICE
+# -----------------------------
 
 @app.route("/process", methods=["POST"])
 def process_voice():
@@ -55,7 +53,7 @@ def process_voice():
 
     audio_file = request.files["audio"]
 
-    # 1️⃣ Basic silence protection (file size check)
+    # Silence protection (basic size check)
     audio_bytes = audio_file.read()
     audio_file.seek(0)
 
@@ -67,7 +65,7 @@ def process_voice():
             "state": "silence"
         })
 
-    # 2️⃣ Transcribe
+    # Transcribe
     transcript = client.audio.transcriptions.create(
         model="whisper-1",
         file=audio_file
@@ -75,7 +73,7 @@ def process_voice():
 
     user_text = transcript.text.strip()
 
-    # 3️⃣ Reject empty or meaningless transcript
+    # Reject empty transcript
     if not user_text or len(user_text.split()) < 2:
         return jsonify({
             "transcript": "",
@@ -84,7 +82,6 @@ def process_voice():
             "state": "silence"
         })
 
-    # 4️⃣ Classify product
     product = classify_product(user_text)
 
     if not product:
@@ -92,13 +89,13 @@ def process_voice():
 
         if session["attempts"] >= 2:
             reply_text = (
-                "For a precise recommendation, please contact our professional support team for a personalized consultation. "
-                "You may also restart and briefly mention if your concern involves dryness, frizz, styling hold, or hair color."
+                "For a precise recommendation, please contact our professional support team for personalized assistance. "
+                "You may also restart and briefly mention dryness, frizz, styling hold, or hair color."
             )
             session["attempts"] = 0
         else:
             reply_text = (
-                "Please briefly describe if your concern involves dryness, frizz, styling hold, or hair color so I can recommend the correct product."
+                "Please briefly describe if your concern involves dryness, frizz, styling hold, or hair color."
             )
 
     else:
@@ -115,11 +112,10 @@ You are a professional salon specialist.
 Selected product: {product}
 
 Rules:
-- Only respond based on the sound you transcribed.
+- Only respond based on the transcribed speech.
 - Do not introduce yourself.
-- Do not ask unrelated questions.
-- Confidently recommend the selected product.
-- Explain why it matches the user's concern.
+- Confidently recommend the product.
+- Explain why it fits.
 - End with confirmation.
 """
                 },
@@ -129,7 +125,7 @@ Rules:
 
         reply_text = completion.choices[0].message.content
 
-    # 5️⃣ Generate TTS
+    # Generate speech
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
@@ -152,5 +148,4 @@ def home():
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
