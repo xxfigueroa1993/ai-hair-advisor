@@ -1,152 +1,211 @@
 import streamlit as st
 import os
-from openai import OpenAI
+import tempfile
+import base64
 from dotenv import load_dotenv
+from openai import OpenAI
+from audiorecorder import audiorecorder
 
-# Load API Key
+# -------------------------
+# CONFIG
+# -------------------------
+
 load_dotenv()
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
 
-st.set_page_config(page_title="AI Hair Expert Advisor", layout="centered")
-
-st.title("💇🏽 AI Hair Expert Advisor")
-st.subheader("Salon Professional | Organic | Caribbean Engineered")
+st.set_page_config(page_title="Luxury AI Hair Expert", layout="centered")
 
 # -------------------------
-# USER INPUTS
+# SESSION STATE
 # -------------------------
 
-hair_problems = st.multiselect(
-    "Select Hair Problem(s)",
-    ["Dry", "Damaged", "Tangly", "Lost of Color", "Oily", "Not Bouncy", "Falling Out"]
-)
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-race = st.multiselect(
-    "Hair Race Background",
-    [
-        "American Indian",
-        "Asian",
-        "African",
-        "Hispanic",
-        "Pacific Islander",
-        "Caucasian"
-    ]
-)
-
-age_group = st.selectbox(
-    "Age",
-    ["5-15", "15-35", "35-50", "50+"]
-)
-
-allergic = st.selectbox(
-    "Allergic to Fish Oil?",
-    ["No", "Yes"]
-)
-
-season = st.selectbox(
-    "Season",
-    ["Cold/Winter", "Summer/Hot", "Fall/Cold", "Spring/Warm"]
-)
-
-temperature = st.selectbox(
-    "Temperature",
-    ["-64 - 40", "64 - 75", "75+"]
-)
-
-continent = st.selectbox(
-    "Continent",
-    ["Asia", "Africa", "North America", "South America", "Antarctica", "Europe", "Australia"]
-)
+if "voice_count" not in st.session_state:
+    st.session_state.voice_count = 0
 
 # -------------------------
-# GPT DECISION ENGINE
+# AVATAR
 # -------------------------
 
-def get_ai_recommendation():
+st.markdown("""
+<style>
+.avatar {
+    width:150px;
+    border-radius:50%;
+    animation: float 4s ease-in-out infinite;
+}
+@keyframes float {
+    0% { transform: translatey(0px); }
+    50% { transform: translatey(-12px); }
+    100% { transform: translatey(0px); }
+}
+</style>
+""", unsafe_allow_html=True)
 
-    system_prompt = """
-You are Hair Expert Advisor, a salon professional AI.
+st.image("https://i.imgur.com/9yG3p8X.png", width=150)
 
-Mission:
-Choose ONE of the following products:
-- Formula Exclusiva
-- Laciador
-- Gotero
-- Gotika
-- Or return: "Go see medical professional"
+st.title("Luxury Caribbean AI Hair Advisor")
 
-Style:
-Friendly, Direct, ROI-focused, Analytical.
+# -------------------------
+# AUDIO TRANSCRIPTION
+# -------------------------
 
-You MUST prioritize preset rules first.
-If no exact preset rule applies, use intelligent reasoning.
+def transcribe_audio(audio_bytes):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(audio_bytes)
+        tmp_path = tmp.name
 
-Product Definitions:
-Formula Exclusiva – Full repair & restoration.
-Laciador – Styling & dryness control.
-Gotero – Oil control & bounce & strengthening.
-Gotika – Color restoration.
+    with open(tmp_path, "rb") as audio_file:
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="verbose_json"
+        )
 
-Return format:
-Product Name:
-Reason:
-"""
+    return transcript.text, transcript.language
 
-    user_prompt = f"""
-Hair Problems: {hair_problems}
-Race Background: {race}
-Age Group: {age_group}
-Allergic to Fish Oil: {allergic}
-Season: {season}
-Temperature: {temperature}
-Continent: {continent}
-"""
+# -------------------------
+# EMOTION DETECTION
+# -------------------------
+
+def detect_emotion(text):
+
+    emotion_prompt = f"""
+    Analyze emotional tone of this sentence:
+    {text}
+
+    Return one word:
+    calm, stressed, frustrated, excited, neutral
+    """
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0.4
+        messages=[{"role": "user", "content": emotion_prompt}],
+        temperature=0
     )
 
-    return response.choices[0].message.content
-
-
-# -------------------------
-# BUTTON ACTION
-# -------------------------
-
-if st.button("Generate AI Recommendation"):
-
-    if not hair_problems or not race:
-        st.warning("Please select at least one Hair Problem and one Race Background.")
-    else:
-        with st.spinner("AI analyzing hair profile..."):
-            result = get_ai_recommendation()
-            st.success("🎯 AI Recommendation Ready")
-            st.write(result)
+    return response.choices[0].message.content.strip().lower()
 
 # -------------------------
-# FAQ / CONTACT
+# SYSTEM PROMPT BUILDER
+# -------------------------
+
+def build_system_prompt(language, emotion):
+
+    base = """
+You are Hair Expert Advisor, a luxury Caribbean salon AI assistant.
+
+Mission:
+Recommend ONE of:
+Formula Exclusiva
+Laciador
+Gotero
+Gotika
+Or Go see medical professional
+
+Style:
+Luxury, confident, premium Caribbean salon tone.
+Professional. Analytical. ROI-focused.
+
+If language detected is Spanish, respond fully in Spanish.
+If English, respond fully in English.
+"""
+
+    if emotion == "stressed":
+        base += "\nSpeak calmly and reassuring."
+    elif emotion == "frustrated":
+        base += "\nBe empathetic and supportive."
+    elif emotion == "excited":
+        base += "\nMatch excitement but remain professional."
+
+    return base
+
+# -------------------------
+# VOICE GENERATION
+# -------------------------
+
+def generate_voice(text):
+
+    speech = client.audio.speech.create(
+        model="gpt-4o-mini-tts",
+        voice="nova",
+        input=text
+    )
+
+    return speech.read()
+
+# -------------------------
+# AUTO PLAY
+# -------------------------
+
+def autoplay_audio(audio_bytes):
+
+    b64 = base64.b64encode(audio_bytes).decode()
+    audio_html = f"""
+    <audio autoplay>
+    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+    </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
+
+# -------------------------
+# CHAT DISPLAY
+# -------------------------
+
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# -------------------------
+# VOICE SECTION
 # -------------------------
 
 st.markdown("---")
-st.subheader("Need Help?")
+st.subheader("🎤 Speak to Your AI Salon Expert")
 
-option = st.radio("Choose Option:", ["None", "FAQ", "Contact Us"])
+if st.session_state.voice_count >= 10:
+    st.warning("Free voice session limit reached.")
+else:
+    audio = audiorecorder("Click to Speak", "Recording...")
 
-if option == "FAQ":
-    st.write("""
-    ✔ Organic Salon Grade  
-    ✔ Caribbean Climate Optimized  
-    ✔ Professional Competitive Positioning  
-    ✔ Designed for ROI-driven retail resale  
-    """)
+    if len(audio) > 0:
 
-elif option == "Contact Us":
-    st.write("""
-    📧 support@hairexpertadvisor.com  
-    🌎 Global Distribution  
-    """)
+        st.session_state.voice_count += 1
+
+        audio_bytes = audio.export().read()
+        st.audio(audio_bytes)
+
+        with st.spinner("Analyzing your hair needs..."):
+
+            user_text, language = transcribe_audio(audio_bytes)
+            emotion = detect_emotion(user_text)
+
+            system_prompt = build_system_prompt(language, emotion)
+
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    *st.session_state.messages,
+                    {"role": "user", "content": user_text}
+                ],
+                temperature=0.4
+            )
+
+            ai_reply = response.choices[0].message.content
+
+            # Save memory
+            st.session_state.messages.append({"role": "user", "content": user_text})
+            st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+
+            # Display response
+            with st.chat_message("assistant"):
+                st.markdown(ai_reply)
+
+            # Generate voice
+            audio_reply = generate_voice(ai_reply)
+
+            # Auto-play
+            autoplay_audio(audio_reply)
