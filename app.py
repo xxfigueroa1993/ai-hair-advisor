@@ -1,247 +1,165 @@
-import streamlit as st
-import os
-import base64
-from dotenv import load_dotenv
+from flask import Flask, request, Response, render_template_string
 from openai import OpenAI
+import os
+import hashlib
 
-# -------------------------
-# CONFIG
-# -------------------------
+app = Flask(__name__)
 
-load_dotenv()
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-st.set_page_config(page_title="Professional Salon AI", layout="centered")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# -------------------------
-# BRAND KNOWLEDGE BASE
-# -------------------------
+# ==========================
+# CREATE LOCAL CACHE FOLDER
+# ==========================
 
-BRAND_KNOWLEDGE = """
-Major Hair Brands FAQ Knowledge:
+CACHE_FOLDER = "audio_cache"
+os.makedirs(CACHE_FOLDER, exist_ok=True)
 
-Dove:
-- Focus: moisture, gentle care
-- Known for sulfate-balanced shampoos
-- Good for dry or damaged hair
+# ==========================
+# SYSTEM PROMPT
+# ==========================
 
-L’Oréal:
-- Professional salon science
-- Keratin, bond repair, color protection
-- Targets advanced hair repair
-
-Head & Shoulders:
-- Anti-dandruff specialist
-- Scalp treatment focus
-- Zinc-based formulas
-
-Aussie:
-- Botanical extracts
-- Volume & hydration lines
-- Youthful, fruity positioning
-
-Herbal Essences:
-- Plant-based ingredients
-- Paraben-free ranges
-- Natural positioning
-
-TRESemmé:
-- Salon performance at drugstore price
-- Keratin smooth
-- Heat protection products
-
-Sephora (Hair Category):
-- Premium & luxury hair brands
-- High-end treatments
-- Professional styling lines
-
-Our Professional Solutions:
-
-Formula Exclusiva:
-- Deep repair
-- Advanced smoothing
-- Professional restoration
-
-Laciador:
-- Straightening & smoothing
-- Frizz control
-- Long-lasting sleek finish
-
-Gotero:
-- Scalp & growth treatment
-- Targeted hair strengthening
-
-Gotika:
-- Intensive hydration
-- Luxury conditioning treatment
-"""
-
-# -------------------------
-# LANGUAGE OPTIONS
-# -------------------------
-
-languages = {
-    "English": "Respond in English.",
-    "Spanish": "Respond in Spanish.",
-    "French": "Respond in French.",
-    "Arabic": "Respond in Modern Standard Arabic."
-}
-
-# -------------------------
-# UI STYLE
-# -------------------------
-
-st.markdown("""
-<style>
-body { background-color: #0c0c0c; }
-
-.stApp {
-    background: radial-gradient(circle at center, #1a1a1a 0%, #0c0c0c 70%);
-    color: white;
-    text-align: center;
-}
-
-.halo-button {
-    margin-top: 30px;
-    margin-bottom: 20px;
-}
-
-button[kind="primary"] {
-    background-color: #d4af37;
-    color: black;
-    font-weight: bold;
-    border-radius: 50%;
-    height: 120px;
-    width: 120px;
-    font-size: 18px;
-}
-
-.product-box {
-    border: 1px solid #444;
-    padding: 15px;
-    margin: 10px;
-    border-radius: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -------------------------
-# HEADER
-# -------------------------
-
-st.title("Luxury Professional Salon AI")
-st.caption("Expert Hair Guidance. Intelligent Comparison.")
-
-# -------------------------
-# LANGUAGE SELECT
-# -------------------------
-
-selected_language = st.selectbox("🌍 Select Language", list(languages.keys()))
-language_instruction = languages[selected_language]
-
-# -------------------------
-# PRODUCT INTRO SECTION
-# -------------------------
-
-st.subheader("Our Professional Solutions")
-
-st.markdown("""
-<div class="product-box">
-<b>Formula Exclusiva</b> – Deep repair & professional restoration.
-</div>
-
-<div class="product-box">
-<b>Laciador</b> – Advanced smoothing & frizz control.
-</div>
-
-<div class="product-box">
-<b>Gotero</b> – Scalp strengthening & growth-focused care.
-</div>
-
-<div class="product-box">
-<b>Gotika</b> – Intensive hydration luxury treatment.
-</div>
-""", unsafe_allow_html=True)
-
-# -------------------------
-# CHAT STATE
-# -------------------------
-
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
-# -------------------------
-# DISPLAY CHAT
-# -------------------------
-
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"]):
-        st.markdown(msg["content"])
-
-# -------------------------
-# HALO CLICK INTERACTION
-# -------------------------
-
-st.markdown("<div class='halo-button'>", unsafe_allow_html=True)
-halo_clicked = st.button("Tap To Speak", type="primary")
-st.markdown("</div>", unsafe_allow_html=True)
-
-if halo_clicked:
-
-    audio_file = st.audio_input("Speak now")
-
-    if audio_file:
-
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
-        )
-
-        user_text = transcript.text
-
-        system_prompt = f"""
+SYSTEM_PROMPT = """
 You are a Professional Salon Hair Expert.
 
-You can:
-- Answer hair care questions
-- Compare major brands
-- Recommend the most suitable solution
-- Position our products professionally against global brands
+Only answer hair-related questions.
 
-Use this knowledge:
+If asked anything outside hair, respond:
+"I am a Professional Salon Hair Expert here to recommend hair solutions available within our company support. How may I assist you with your hair needs today?"
 
-{BRAND_KNOWLEDGE}
+Always guide toward:
 
-Always speak confidently and professionally.
-If question is unrelated to hair care,
-respond politely that you specialize in salon hair solutions only.
-
-{language_instruction}
+1. Formula Exclusiva – Deep repair & professional restoration.
+2. Laciador – Advanced smoothing & frizz control.
+3. Gotero – Scalp strengthening & growth-focused care.
+4. Gotika – Intensive hydration luxury treatment.
 """
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text}
-            ]
-        )
+# ==========================
+# HELPER FUNCTION
+# ==========================
 
-        ai_reply = response.choices[0].message.content
+def generate_cache_key(text):
+    return hashlib.sha256(text.encode()).hexdigest() + ".mp3"
 
-        st.session_state.messages.append({"role": "user", "content": user_text})
-        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+# ==========================
+# FRONTEND
+# ==========================
 
-        speech = client.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice="nova",
-            input=ai_reply
-        )
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Professional Hair AI</title>
+<style>
+body { margin:0; text-align:center; font-family:Arial; background:#ffffff; }
+canvas { margin-top:80px; }
+</style>
+</head>
+<body>
 
-        audio_bytes = speech.read()
-        b64 = base64.b64encode(audio_bytes).decode()
+<h2>Professional Hair AI</h2>
+<canvas id="ring" width="300" height="300"></canvas>
 
-        st.markdown(f"""
-        <audio autoplay>
-            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-        </audio>
-        """, unsafe_allow_html=True)
+<script>
+let canvas = document.getElementById("ring");
+let ctx = canvas.getContext("2d");
+
+function draw() {
+    ctx.clearRect(0,0,300,300);
+    ctx.beginPath();
+    ctx.arc(150,150,100,0,2*Math.PI);
+    ctx.strokeStyle="#d4af37";
+    ctx.lineWidth=4;
+    ctx.stroke();
+}
+
+draw();
+
+canvas.addEventListener("click", async () => {
+
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    const recorder = new MediaRecorder(stream);
+    let chunks=[];
+
+    recorder.ondataavailable=e=>chunks.push(e.data);
+
+    recorder.onstop=async()=>{
+        let blob=new Blob(chunks,{type:"audio/webm"});
+        let form=new FormData();
+        form.append("audio",blob);
+
+        let response=await fetch("/voice",{method:"POST",body:form});
+        let audioBlob=await response.blob();
+        let audio=new Audio(URL.createObjectURL(audioBlob));
+        audio.play();
+    };
+
+    recorder.start();
+    setTimeout(()=>recorder.stop(),4000);
+});
+</script>
+</body>
+</html>
+"""
+
+# ==========================
+# ROUTES
+# ==========================
+
+@app.route("/")
+def home():
+    return render_template_string(HTML)
+
+@app.route("/voice", methods=["POST"])
+def voice():
+
+    audio_file = request.files["audio"]
+
+    # 1️⃣ Transcribe
+    transcript = client.audio.transcriptions.create(
+        model="whisper-1",
+        file=audio_file
+    )
+
+    user_text = transcript.text
+
+    # 2️⃣ GPT
+    completion = client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role":"system","content":SYSTEM_PROMPT},
+            {"role":"user","content":user_text}
+        ]
+    )
+
+    reply = completion.choices[0].message.content
+
+    # 3️⃣ Generate cache filename
+    cache_key = generate_cache_key(reply)
+    file_path = os.path.join(CACHE_FOLDER, cache_key)
+
+    # 4️⃣ If file exists → return instantly
+    if os.path.exists(file_path):
+        print("Serving from local cache")
+        return Response(open(file_path, "rb").read(), mimetype="audio/mpeg")
+
+    # 5️⃣ Generate TTS
+    print("Generating new TTS")
+    speech = client.audio.speech.create(
+        model="gpt-4o-mini-tts",
+        voice="alloy",
+        input=reply
+    )
+
+    audio_bytes = speech.read()
+
+    # 6️⃣ Save locally
+    with open(file_path, "wb") as f:
+        f.write(audio_bytes)
+
+    return Response(audio_bytes, mimetype="audio/mpeg")
+
+# ==========================
+
+if __name__ == "__main__":
+    app.run(debug=True)
