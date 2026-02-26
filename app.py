@@ -4,25 +4,27 @@ from flask import Flask, request, jsonify
 from openai import OpenAI
 
 app = Flask(__name__)
+
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
 You are Bright Clinical AI, a professional hair product advisor.
 
 STRICT RULES:
-- Ignore greetings and small talk.
+- Ignore greetings.
 - Extract only the core hair concern.
 - Always select EXACTLY ONE product from:
   Formula Exclusiva, Laciador, Gotero, Gotika
-- Never say "I don't know".
-- If concern unclear, ask one clarifying hair-focused question.
-- Keep response professional and concise.
-- End by asking if recommendation matches concern.
+- Never say you are unsure.
+- If concern is unclear, ask one clarifying hair-related question.
+- Keep response concise and professional.
+- End by asking if the recommendation matches the concern.
 
-Return JSON ONLY:
+Return JSON only:
+
 {
-  "product": "...",
-  "response": "..."
+  "product": "Product Name",
+  "response": "Spoken response here"
 }
 """
 
@@ -52,6 +54,7 @@ body {
   background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
   box-shadow: 0 0 90px rgba(0,200,255,0.9);
   transition: transform 0.1s linear;
+  cursor:pointer;
 }
 #status { margin-top:20px; }
 </style>
@@ -79,7 +82,6 @@ function pulse(scale){
 }
 
 async function startListening(){
-  console.log("Starting listening...")
   const stream = await navigator.mediaDevices.getUserMedia({audio:true})
   mediaRecorder = new MediaRecorder(stream)
 
@@ -99,7 +101,6 @@ async function startListening(){
   mediaRecorder.ondataavailable = e => audioChunks.push(e.data)
 
   mediaRecorder.onstop = async () => {
-    console.log("Stopped recording")
     listening = false
     statusText.innerText = "AI Thinking..."
 
@@ -109,18 +110,20 @@ async function startListening(){
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
     const formData = new FormData()
-    formData.append("audio",blob)
+    formData.append("audio",blob,"speech.webm")
 
-    const res = await fetch("/voice",{method:"POST",body:formData})
-    const data = await res.json()
-
-    speak(data.response)
+    try {
+        const res = await fetch("/voice",{method:"POST",body:formData})
+        const data = await res.json()
+        speak(data.response)
+    } catch (err) {
+        statusText.innerText = "Server error"
+    }
   }
 
-  // HARD STOP at 15 seconds
+  // Hard stop at 15 seconds
   maxDurationTimer = setTimeout(()=>{
     if(listening){
-      console.log("Max duration reached")
       mediaRecorder.stop()
     }
   },15000)
@@ -137,15 +140,12 @@ function monitorVolume(){
   pulse(1 + avg/200)
 
   if(avg < 15){
-    // silence detected
     if(!silenceTimer){
       silenceTimer = setTimeout(()=>{
-        console.log("Silence detected - stopping")
         mediaRecorder.stop()
       },3000)
     }
   } else {
-    // sound detected
     if(silenceTimer){
       clearTimeout(silenceTimer)
       silenceTimer = null
@@ -173,33 +173,41 @@ sphere.onclick = ()=>{
 
 @app.route("/voice", methods=["POST"])
 def voice():
-    audio_file = request.files["audio"]
-
-    transcript = client.audio.transcriptions.create(
-        model="whisper-1",
-        file=audio_file
-    ).text
-
-    completion = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role":"system","content":SYSTEM_PROMPT},
-            {"role":"user","content":transcript}
-        ],
-        temperature=0.2
-    )
-
-    content = completion.choices[0].message.content
-
     try:
-        parsed = json.loads(content)
-    except:
-        parsed = {
-            "product": "Formula Exclusiva",
-            "response": "Based on your concern, Formula Exclusiva is the best solution. Does that match your hair goal?"
-        }
+        if "audio" not in request.files:
+            return jsonify({"response": "No audio received"}), 400
 
-    return jsonify(parsed)
+        audio_file = request.files["audio"]
+
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file.stream
+        ).text
+
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role":"system","content":SYSTEM_PROMPT},
+                {"role":"user","content":transcript}
+            ],
+            temperature=0.2
+        )
+
+        content = completion.choices[0].message.content
+
+        try:
+            parsed = json.loads(content)
+        except:
+            parsed = {
+                "product": "Formula Exclusiva",
+                "response": "Formula Exclusiva is recommended for your concern. Does that match your goal?"
+            }
+
+        return jsonify(parsed)
+
+    except Exception as e:
+        print("VOICE ERROR:", str(e))
+        return jsonify({"response": "Processing error occurred"}), 500
 
 
 if __name__ == "__main__":
