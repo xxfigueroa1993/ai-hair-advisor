@@ -15,7 +15,7 @@ def index():
         <style>
             body {
                 margin: 0;
-                background: #0b1220;
+                background: radial-gradient(circle at center, #0f1b2e, #050a14);
                 display: flex;
                 justify-content: center;
                 align-items: center;
@@ -36,8 +36,8 @@ def index():
             }
 
             #halo.listening {
-                border-color: red;
-                box-shadow: 0 0 60px red;
+                border-color: rgba(255, 0, 0, 0.7);
+                box-shadow: 0 0 60px rgba(255,0,0,0.7);
             }
 
             #halo.thinking {
@@ -52,7 +52,7 @@ def index():
             #status {
                 margin-top: 30px;
                 font-size: 18px;
-                opacity: 0.8;
+                opacity: 0.9;
             }
         </style>
     </head>
@@ -63,8 +63,12 @@ def index():
 
         <script>
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        const recognition = new SpeechRecognition();
 
+        if (!SpeechRecognition) {
+            document.getElementById("status").innerText = "Speech Recognition not supported.";
+        }
+
+        const recognition = new SpeechRecognition();
         recognition.lang = "en-US";
         recognition.continuous = false;
         recognition.interimResults = false;
@@ -79,10 +83,15 @@ def index():
         });
 
         function startListening() {
-            isListening = true;
-            halo.classList.add("listening");
-            status.innerText = "Listening...";
-            recognition.start();
+            try {
+                isListening = true;
+                halo.classList.add("listening");
+                status.innerText = "Listening...";
+                recognition.start();
+            } catch (e) {
+                console.error("Start error:", e);
+                status.innerText = "Mic start failed.";
+            }
         }
 
         function stopListening() {
@@ -97,8 +106,9 @@ def index():
         };
 
         recognition.onerror = function(event) {
+            console.error("Speech Error Code:", event.error);
             stopListening();
-            status.innerText = "Speech error.";
+            status.innerText = "Speech error: " + event.error;
         };
 
         recognition.onend = function() {
@@ -106,6 +116,7 @@ def index():
         };
 
         function sendToAI(text) {
+            halo.classList.remove("listening");
             halo.classList.add("thinking");
             status.innerText = "Processing...";
 
@@ -124,8 +135,8 @@ def index():
             })
             .catch(err => {
                 halo.classList.remove("thinking");
+                console.error("Fetch error:", err);
                 status.innerText = "Server error.";
-                console.error(err);
             });
         }
         </script>
@@ -141,8 +152,9 @@ def ask():
     data = request.get_json()
     user_message = data.get("message", "")
 
-    # TEMP SAFE RESPONSE (no OpenAI yet)
+    # SAFE TEST RESPONSE (no OpenAI yet)
     return jsonify({"reply": f"You said: {user_message}"})
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
