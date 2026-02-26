@@ -27,26 +27,22 @@ if "voice_count" not in st.session_state:
 # -------------------------
 # AVATAR
 # -------------------------
-
 st.markdown("""
 <style>
 .avatar {
-    width:150px;
+    width:170px;
     border-radius:50%;
-    animation: float 4s ease-in-out infinite;
 }
-@keyframes float {
-    0% { transform: translatey(0px); }
-    50% { transform: translatey(-12px); }
-    100% { transform: translatey(0px); }
+.talking {
+    animation: pulse 0.6s infinite;
+}
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
 }
 </style>
 """, unsafe_allow_html=True)
-
-st.image("https://i.imgur.com/9yG3p8X.png", width=150)
-
-st.title("Luxury Caribbean AI Hair Advisor")
-
 # -------------------------
 # AUDIO TRANSCRIPTION
 # -------------------------
@@ -276,5 +272,6 @@ Adapt your tone accordingly.
             </audio>
             """
             st.markdown(audio_html, unsafe_allow_html=True)
+
 
 
