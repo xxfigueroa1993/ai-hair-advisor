@@ -3,12 +3,6 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-# =============================
-# Hair Product Logic
-# =============================
-
 PRODUCTS = {
     "formula": "Formula Exclusiva – All-in-one natural professional salon hair treatment",
     "laciador": "Laciador – All-natural hair styler",
@@ -17,38 +11,36 @@ PRODUCTS = {
 }
 
 def detect_product(text):
-    text = text.lower()
+    t = text.lower()
 
-    if any(word in text for word in ["dry", "damage", "frizz", "repair", "breakage"]):
+    if any(w in t for w in ["dry", "frizz", "damage", "breakage"]):
         return "formula"
-    if any(word in text for word in ["straight", "smooth", "styling", "control"]):
+    if any(w in t for w in ["straight", "smooth", "styling"]):
         return "laciador"
-    if any(word in text for word in ["hold", "gel", "shape", "spike"]):
+    if any(w in t for w in ["gel", "hold", "spike"]):
         return "gotero"
-    if any(word in text for word in ["color", "dye", "gray", "roots"]):
+    if any(w in t for w in ["color", "gray", "dye"]):
         return "gotika"
 
     return None
 
-def generate_response(user_text):
-    product_key = detect_product(user_text)
 
-    if not product_key:
+def generate_response(user_text):
+    key = detect_product(user_text)
+
+    if not key:
         return {
-            "text": "I specialize in professional hair product solutions. Could you describe your concern more specifically, for example: dry hair, frizz, color treatment, or styling needs?",
+            "text": "I specialize in professional hair product solutions. Please describe your concern more clearly, for example: dry hair, frizz, styling, or color treatment.",
             "recommendation": None
         }
 
-    product = PRODUCTS[product_key]
+    product = PRODUCTS[key]
 
     return {
-        "text": f"Based on what you described, I recommend {product}. Does that match what you're looking to improve?",
+        "text": f"Based on what you described, I recommend {product}. Does that match your concern?",
         "recommendation": product
     }
 
-# =============================
-# Routes
-# =============================
 
 @app.route("/")
 def index():
@@ -65,18 +57,18 @@ body {
   justify-content:center;
   align-items:center;
   height:100vh;
+  flex-direction:column;
   color:white;
   font-family:sans-serif;
-  flex-direction:column;
 }
 
 #sphere {
-  width:160px;
-  height:160px;
+  width:180px;
+  height:180px;
   border-radius:50%;
   background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
-  box-shadow: 0 0 60px rgba(0,200,255,0.8);
-  transition: transform 0.1s ease;
+  box-shadow: 0 0 80px rgba(0,200,255,0.9);
+  transition: transform 0.08s linear;
 }
 
 #status {
@@ -87,65 +79,76 @@ body {
 <body>
 
 <div id="sphere"></div>
-<div id="status">Tap to speak</div>
+<div id="status">Initializing...</div>
 
 <script>
 const sphere = document.getElementById("sphere")
 const statusText = document.getElementById("status")
 
-let recognition
-let speaking = false
 let audioContext
 let analyser
-let micStream
+let dataArray
+let recognition
+let listening = false
+let speakingDetected = false
+let speechStartTime = 0
 
-function pulse(size) {
-    sphere.style.transform = "scale(" + size + ")"
+function animateIdle() {
+    let scale = 1 + Math.sin(Date.now()/500) * 0.05
+    sphere.style.transform = "scale(" + scale + ")"
+    requestAnimationFrame(animateIdle)
 }
 
-async function setupMic() {
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+async function initAudio() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     audioContext = new AudioContext()
-    const source = audioContext.createMediaStreamSource(micStream)
+    const source = audioContext.createMediaStreamSource(stream)
     analyser = audioContext.createAnalyser()
     analyser.fftSize = 256
     source.connect(analyser)
+    dataArray = new Uint8Array(analyser.frequencyBinCount)
 
-    const dataArray = new Uint8Array(analyser.frequencyBinCount)
+    monitorVolume()
+}
 
-    function animate() {
-        analyser.getByteFrequencyData(dataArray)
-        let values = 0
-        for (let i = 0; i < dataArray.length; i++) {
-            values += dataArray[i]
+function monitorVolume() {
+    analyser.getByteFrequencyData(dataArray)
+    let sum = 0
+    for (let i=0;i<dataArray.length;i++) sum += dataArray[i]
+    let avg = sum / dataArray.length
+
+    let scale = 1 + (avg / 400)
+    sphere.style.transform = "scale(" + scale + ")"
+
+    if (listening) {
+        if (avg > 25) {
+            if (!speakingDetected) {
+                speechStartTime = Date.now()
+                speakingDetected = true
+            }
         }
-        let average = values / dataArray.length
-        let scale = 1 + (average / 300)
-        pulse(scale)
-        requestAnimationFrame(animate)
     }
-    animate()
+
+    requestAnimationFrame(monitorVolume)
 }
 
-function speak(text) {
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.onstart = () => { speaking = true }
-    utterance.onend = () => { speaking = false }
-    speechSynthesis.speak(utterance)
-}
-
-function startRecognition() {
+function setupRecognition() {
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
     recognition.lang = "en-US"
     recognition.continuous = false
     recognition.interimResults = false
 
-    recognition.onstart = () => {
-        statusText.innerText = "Listening..."
-    }
-
     recognition.onresult = async (event) => {
         let transcript = event.results[0][0].transcript
+
+        let duration = Date.now() - speechStartTime
+
+        if (!transcript || duration < 800) {
+            statusText.innerText = "No clear speech detected. Try again."
+            resetListening()
+            return
+        }
+
         statusText.innerText = "Analyzing..."
 
         let res = await fetch("/chat", {
@@ -156,33 +159,56 @@ function startRecognition() {
 
         let data = await res.json()
         speak(data.text)
-        statusText.innerText = "Tap to speak"
+        resetListening()
     }
+}
 
+function speak(text) {
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.onstart = () => statusText.innerText = "AI Speaking..."
+    utter.onend = () => statusText.innerText = "Tap to speak"
+    speechSynthesis.speak(utter)
+}
+
+function resetListening() {
+    listening = false
+    speakingDetected = false
+}
+
+function startListening() {
+    if (listening) return
+
+    listening = true
+    speakingDetected = false
+    statusText.innerText = "Speak now..."
     recognition.start()
 }
 
-document.body.onclick = () => {
-    if (!recognition) {
-        setupMic()
-        startRecognition()
+document.body.onclick = async () => {
+    if (!audioContext) {
+        await initAudio()
+        setupRecognition()
+        statusText.innerText = "Tap to speak"
     } else {
-        startRecognition()
+        startListening()
     }
 }
+
+animateIdle()
 </script>
 
 </body>
 </html>
 """
 
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json
     user_text = data.get("message", "")
-
     response = generate_response(user_text)
     return jsonify(response)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
