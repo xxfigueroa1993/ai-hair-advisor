@@ -184,11 +184,11 @@ function startListening() {
     recognition.start();
 
     recognition.onresult = function(event) {
-        let transcript = event.results[0][0].transcript;
-        recognition.stop();
-        halo.classList.remove("listening");
-        sendToAI(transcript);
-    };
+    console.log("RESULT FIRED");
+    const transcript = event.results[0][0].transcript;
+    console.log("Transcript:", transcript);
+    sendToAI(transcript);
+};
 
     recognition.onend = function() {
         halo.classList.remove("listening");
@@ -274,3 +274,4 @@ async def websocket_endpoint(websocket: WebSocket):
     audio_bytes = speech.read()
     encoded = base64.b64encode(audio_bytes).decode("utf-8")
     await websocket.send_text("AUDIO:" + encoded)
+
