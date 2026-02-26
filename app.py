@@ -1,17 +1,10 @@
 import os
-import time
-from flask import Flask, request, jsonify, Response
+import json
+from flask import Flask, request, jsonify
 from openai import OpenAI
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
-
-PRODUCTS = {
-    "Formula Exclusiva": "All-in-one natural professional salon hair treatment for dryness, frizz, breakage, damage.",
-    "Laciador": "All-natural smoothing and straightening styling treatment.",
-    "Gotero": "All-natural hair gel for hold and structure.",
-    "Gotika": "All-natural hair color treatment for gray coverage and enhancement."
-}
 
 SYSTEM_PROMPT = """
 You are Bright Clinical AI, a professional hair product advisor.
@@ -25,7 +18,8 @@ STRICT RULES:
 - If concern unclear, ask one clarifying hair-focused question.
 - Keep response professional and concise.
 - End by asking if recommendation matches concern.
-Return JSON ONLY with:
+
+Return JSON ONLY:
 {
   "product": "...",
   "response": "..."
@@ -71,6 +65,7 @@ body {
 let mediaRecorder
 let audioChunks = []
 let silenceTimer = null
+let maxDurationTimer = null
 let audioContext
 let analyser
 let dataArray
@@ -84,12 +79,15 @@ function pulse(scale){
 }
 
 async function startListening(){
+  console.log("Starting listening...")
   const stream = await navigator.mediaDevices.getUserMedia({audio:true})
   mediaRecorder = new MediaRecorder(stream)
+
   audioContext = new AudioContext()
   const source = audioContext.createMediaStreamSource(stream)
   analyser = audioContext.createAnalyser()
   source.connect(analyser)
+
   analyser.fftSize = 256
   dataArray = new Uint8Array(analyser.frequencyBinCount)
 
@@ -98,13 +96,15 @@ async function startListening(){
   listening = true
   statusText.innerText = "Listening..."
 
-  mediaRecorder.ondataavailable = e => {
-    audioChunks.push(e.data)
-  }
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data)
 
   mediaRecorder.onstop = async () => {
+    console.log("Stopped recording")
     listening = false
     statusText.innerText = "AI Thinking..."
+
+    clearTimeout(maxDurationTimer)
+
     await new Promise(r => setTimeout(r,3000))
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
@@ -113,22 +113,45 @@ async function startListening(){
 
     const res = await fetch("/voice",{method:"POST",body:formData})
     const data = await res.json()
+
     speak(data.response)
   }
+
+  // HARD STOP at 15 seconds
+  maxDurationTimer = setTimeout(()=>{
+    if(listening){
+      console.log("Max duration reached")
+      mediaRecorder.stop()
+    }
+  },15000)
 
   monitorVolume()
 }
 
 function monitorVolume(){
   if(!listening) return
+
   analyser.getByteFrequencyData(dataArray)
   let avg = dataArray.reduce((a,b)=>a+b)/dataArray.length
-  pulse(1 + avg/300)
 
-  if(avg > 25){
-    if(silenceTimer) clearTimeout(silenceTimer)
-    silenceTimer = setTimeout(()=>mediaRecorder.stop(),3000)
+  pulse(1 + avg/200)
+
+  if(avg < 15){
+    // silence detected
+    if(!silenceTimer){
+      silenceTimer = setTimeout(()=>{
+        console.log("Silence detected - stopping")
+        mediaRecorder.stop()
+      },3000)
+    }
+  } else {
+    // sound detected
+    if(silenceTimer){
+      clearTimeout(silenceTimer)
+      silenceTimer = null
+    }
   }
+
   requestAnimationFrame(monitorVolume)
 }
 
@@ -143,6 +166,7 @@ sphere.onclick = ()=>{
   if(!listening) startListening()
 }
 </script>
+
 </body>
 </html>
 """
@@ -167,7 +191,15 @@ def voice():
 
     content = completion.choices[0].message.content
 
-    return jsonify(eval(content))
+    try:
+        parsed = json.loads(content)
+    except:
+        parsed = {
+            "product": "Formula Exclusiva",
+            "response": "Based on your concern, Formula Exclusiva is the best solution. Does that match your hair goal?"
+        }
+
+    return jsonify(parsed)
 
 
 if __name__ == "__main__":
