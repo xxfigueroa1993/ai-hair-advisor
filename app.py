@@ -7,85 +7,113 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 @app.route("/")
 def index():
-    html = """
+    return render_template_string("""
 <!DOCTYPE html>
 <html>
 <head>
-<title>Global Clinical Hair Intelligence</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<style>
+<title>Clinical AI Hair Specialist</title>
 
+<style>
 body{
     margin:0;
-    background:linear-gradient(to bottom,#f4f9ff,#e6f1fb);
+    background:linear-gradient(to bottom,#f7fbff,#eaf4fc);
     display:flex;
+    flex-direction:column;
     justify-content:center;
     align-items:center;
     height:100vh;
-    flex-direction:column;
     font-family:Arial;
     color:#1a2b3c;
 }
 
 h1{
     font-weight:600;
-    letter-spacing:1px;
+    margin-bottom:40px;
 }
 
-#halo-container{
-    perspective:800px;
+#scene{
+    perspective:1000px;
 }
 
-#halo{
-    width:220px;
-    height:220px;
-    border-radius:50%;
-    border:6px solid rgba(0,120,255,0.25);
-    background:radial-gradient(circle at center,rgba(255,255,255,0.8),rgba(200,230,255,0.3));
-    box-shadow:0 0 40px rgba(0,140,255,0.2);
-    cursor:pointer;
-    transition:all .2s ease;
+#halo-wrapper{
+    width:260px;
+    height:260px;
+    position:relative;
     transform-style:preserve-3d;
 }
 
-#halo.recording{
-    border-color:rgba(255,0,0,0.6);
-    box-shadow:0 0 60px rgba(255,0,0,0.3);
+.ring{
+    position:absolute;
+    width:100%;
+    height:100%;
+    border-radius:50%;
+    border:5px solid rgba(0,140,255,0.25);
+    box-shadow:0 0 30px rgba(0,140,255,0.2);
+    transition:all .15s linear;
 }
 
-#halo.processing{
-    animation:rotate 2s linear infinite;
+#ring-outer{
+    transform:rotateX(60deg);
 }
 
-@keyframes rotate{
+#ring-inner{
+    transform:rotateY(60deg);
+    border-color:rgba(0,180,255,0.4);
+}
+
+#center-core{
+    position:absolute;
+    width:60%;
+    height:60%;
+    border-radius:50%;
+    top:20%;
+    left:20%;
+    background:radial-gradient(circle,white,#dcefff);
+    box-shadow:0 0 40px rgba(0,140,255,0.3);
+}
+
+.recording .ring{
+    border-color:rgba(255,0,0,0.5);
+    box-shadow:0 0 50px rgba(255,0,0,0.3);
+}
+
+.processing .ring{
+    animation:spin 3s linear infinite;
+}
+
+@keyframes spin{
     from{ transform:rotateY(0deg); }
     to{ transform:rotateY(360deg); }
 }
 
 select{
-    margin-top:20px;
-    padding:8px 12px;
+    margin-top:30px;
+    padding:10px 15px;
     border-radius:8px;
     border:1px solid #cde0f5;
     background:white;
 }
 
 #status{
-    margin-top:25px;
-    font-size:16px;
-    opacity:0.8;
-    max-width:400px;
+    margin-top:30px;
+    max-width:420px;
     text-align:center;
+    font-size:15px;
+    opacity:0.85;
 }
-
 </style>
 </head>
 <body>
 
 <h1>Clinical AI Hair Specialist</h1>
 
-<div id="halo-container">
-    <div id="halo"></div>
+<div id="scene">
+    <div id="halo-wrapper">
+        <div id="ring-outer" class="ring"></div>
+        <div id="ring-inner" class="ring"></div>
+        <div id="center-core"></div>
+    </div>
 </div>
 
 <select id="language">
@@ -107,45 +135,52 @@ let mediaRecorder;
 let audioChunks=[];
 let analyser;
 let silenceTimer;
-const SILENCE_THRESHOLD = 20;
+let audioContext;
+
+const wrapper=document.getElementById("halo-wrapper");
+const outer=document.getElementById("ring-outer");
+const inner=document.getElementById("ring-inner");
+const status=document.getElementById("status");
+const language=document.getElementById("language");
+
+const SILENCE_THRESHOLD = 15;
 const SILENCE_TIME = 1500;
 
-const halo=document.getElementById("halo");
-const status=document.getElementById("status");
-const languageSelect=document.getElementById("language");
+wrapper.onclick = async ()=>{
 
-halo.onclick=async()=>{
-
-    if(halo.classList.contains("recording")){
+    if(wrapper.classList.contains("recording")){
         mediaRecorder.stop();
         return;
     }
 
-    const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    const audioContext=new AudioContext();
-    const source=audioContext.createMediaStreamSource(stream);
-    analyser=audioContext.createAnalyser();
-    source.connect(analyser);
-    analyser.fftSize=256;
+    silenceTimer=null;
 
-    mediaRecorder=new MediaRecorder(stream);
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+    source.connect(analyser);
+
+    mediaRecorder = new MediaRecorder(stream);
     audioChunks=[];
 
-    monitorSilence();
+    mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
 
-    mediaRecorder.ondataavailable=e=>{
-        audioChunks.push(e.data);
-    };
+    mediaRecorder.onstop = async ()=>{
 
-    mediaRecorder.onstop=async()=>{
-        halo.classList.remove("recording");
-        halo.classList.add("processing");
+        stream.getTracks().forEach(track=>track.stop());
+        audioContext.close();
+
+        wrapper.classList.remove("recording");
+        wrapper.classList.add("processing");
         status.innerText="Analyzing...";
 
         const blob=new Blob(audioChunks,{type:"audio/webm"});
         const formData=new FormData();
         formData.append("audio",blob);
-        formData.append("language",languageSelect.value);
+        formData.append("language",language.value);
 
         const response=await fetch("/process",{method:"POST",body:formData});
         const data=await response.json();
@@ -153,94 +188,126 @@ halo.onclick=async()=>{
         status.innerText=data.text;
 
         const audio=new Audio("data:audio/mp3;base64,"+data.audio);
-        audio.play();
 
-        halo.classList.remove("processing");
+        syncVoicePulse(audio);
+
+        audio.play();
+        wrapper.classList.remove("processing");
     };
 
     mediaRecorder.start();
-    halo.classList.add("recording");
+    wrapper.classList.add("recording");
     status.innerText="Listening...";
+
+    monitorMic();
 };
 
-function monitorSilence(){
-    const bufferLength=analyser.frequencyBinCount;
-    const dataArray=new Uint8Array(bufferLength);
+function monitorMic(){
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
 
     function detect(){
+        if(!mediaRecorder || mediaRecorder.state!=="recording") return;
+
         analyser.getByteFrequencyData(dataArray);
         let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
 
-        halo.style.boxShadow="0 0 "+(avg*2)+"px rgba(0,140,255,0.4)";
+        let scale = 1 + avg/200;
+        outer.style.transform="rotateX(60deg) scale("+scale+")";
+        inner.style.transform="rotateY(60deg) scale("+scale+")";
 
         if(avg<SILENCE_THRESHOLD){
             if(!silenceTimer){
                 silenceTimer=setTimeout(()=>{
-                    mediaRecorder.stop();
+                    if(mediaRecorder.state==="recording"){
+                        mediaRecorder.stop();
+                    }
                 },SILENCE_TIME);
             }
-        } else{
+        }else{
             clearTimeout(silenceTimer);
             silenceTimer=null;
         }
 
-        if(mediaRecorder.state==="recording"){
-            requestAnimationFrame(detect);
-        }
+        requestAnimationFrame(detect);
     }
-
     detect();
 }
 
-</script>
+function syncVoicePulse(audio){
 
+    const ctx=new AudioContext();
+    const src=ctx.createMediaElementSource(audio);
+    const analyserVoice=ctx.createAnalyser();
+    analyserVoice.fftSize=256;
+
+    src.connect(analyserVoice);
+    analyserVoice.connect(ctx.destination);
+
+    const bufferLength=analyserVoice.frequencyBinCount;
+    const dataArray=new Uint8Array(bufferLength);
+
+    function pulse(){
+        analyserVoice.getByteFrequencyData(dataArray);
+        let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
+        let scale=1+avg/300;
+
+        outer.style.transform="rotateX(60deg) scale("+scale+")";
+        inner.style.transform="rotateY(60deg) scale("+scale+")";
+
+        if(!audio.paused){
+            requestAnimationFrame(pulse);
+        }
+    }
+    pulse();
+}
+
+</script>
 </body>
 </html>
-"""
-    return render_template_string(html)
+""")
 
 
 @app.route("/process", methods=["POST"])
 def process_audio():
-    audio_file=request.files["audio"]
-    language=request.form.get("language","en")
 
-    with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as tmp:
+    audio_file = request.files["audio"]
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as tmp:
         audio_file.save(tmp.name)
 
-        with open(tmp.name,"rb") as f:
-            transcript=client.audio.transcriptions.create(
+        with open(tmp.name, "rb") as f:
+            transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f
             )
 
-    user_text=transcript.text
+    user_text = transcript.text.strip()
 
-    completion=client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {
-                "role":"system",
-                "content":"""
+    if not user_text:
+        reply_text = "Please describe your hair concern clearly so I can recommend a clinical solution."
+    else:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role":"system",
+                    "content":"""
 You are an elite clinical salon hair expert.
 
-Rules:
-- Do NOT greet.
-- Immediately provide a hair solution.
-- Recommend a professional product solution.
-- If unrelated to hair reply:
-"I am a Professional Salon Hair Expert here to recommend advanced hair solutions available through our company support."
+Do not greet.
+Provide direct hair solutions.
+Recommend a professional product.
+If clearly unrelated to hair, politely redirect to hair consultation.
 """
-            },
-            {"role":"user","content":user_text}
-        ]
-    )
+                },
+                {"role":"user","content":user_text}
+            ]
+        )
+        reply_text = completion.choices[0].message.content
 
-    reply_text=completion.choices[0].message.content
-
-    # Emotion-aware adjustment
     voice="alloy"
-    if "damage" in reply_text.lower():
+    if any(word in reply_text.lower() for word in ["damage","breakage","loss"]):
         voice="verse"
 
     speech=client.audio.speech.create(
