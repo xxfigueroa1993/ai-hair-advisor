@@ -17,86 +17,49 @@ def index():
 <style>
 body{
     margin:0;
-    background:linear-gradient(to bottom,#f7fbff,#eaf4fc);
+    background:linear-gradient(to bottom,#f8fbff,#eaf3fc);
     display:flex;
     flex-direction:column;
-    justify-content:center;
     align-items:center;
+    justify-content:center;
     height:100vh;
     font-family:Arial;
     color:#1a2b3c;
 }
 
 h1{
+    margin-bottom:50px;
     font-weight:600;
-    margin-bottom:40px;
 }
 
-#scene{
-    perspective:1000px;
-}
-
-#halo-wrapper{
-    width:260px;
-    height:260px;
-    position:relative;
-    transform-style:preserve-3d;
-}
-
-.ring{
-    position:absolute;
-    width:100%;
-    height:100%;
+#sphere{
+    width:220px;
+    height:220px;
     border-radius:50%;
-    border:5px solid rgba(0,140,255,0.25);
-    box-shadow:0 0 30px rgba(0,140,255,0.2);
-    transition:all .15s linear;
+    background:radial-gradient(circle at 30% 30%,white,#cfe6fb);
+    box-shadow:0 0 40px rgba(0,140,255,0.25);
+    transition:transform .08s linear, box-shadow .08s linear;
+    cursor:pointer;
 }
 
-#ring-outer{
-    transform:rotateX(60deg);
+#sphere.recording{
+    box-shadow:0 0 60px rgba(255,0,0,0.35);
 }
 
-#ring-inner{
-    transform:rotateY(60deg);
-    border-color:rgba(0,180,255,0.4);
-}
-
-#center-core{
-    position:absolute;
-    width:60%;
-    height:60%;
-    border-radius:50%;
-    top:20%;
-    left:20%;
-    background:radial-gradient(circle,white,#dcefff);
-    box-shadow:0 0 40px rgba(0,140,255,0.3);
-}
-
-.recording .ring{
-    border-color:rgba(255,0,0,0.5);
-    box-shadow:0 0 50px rgba(255,0,0,0.3);
-}
-
-.processing .ring{
-    animation:spin 3s linear infinite;
-}
-
-@keyframes spin{
-    from{ transform:rotateY(0deg); }
-    to{ transform:rotateY(360deg); }
+#sphere.processing{
+    box-shadow:0 0 70px rgba(0,140,255,0.5);
 }
 
 select{
-    margin-top:30px;
-    padding:10px 15px;
+    margin-top:40px;
+    padding:10px 14px;
     border-radius:8px;
     border:1px solid #cde0f5;
     background:white;
 }
 
 #status{
-    margin-top:30px;
+    margin-top:40px;
     max-width:420px;
     text-align:center;
     font-size:15px;
@@ -108,13 +71,7 @@ select{
 
 <h1>Clinical AI Hair Specialist</h1>
 
-<div id="scene">
-    <div id="halo-wrapper">
-        <div id="ring-outer" class="ring"></div>
-        <div id="ring-inner" class="ring"></div>
-        <div id="center-core"></div>
-    </div>
-</div>
+<div id="sphere"></div>
 
 <select id="language">
 <option value="en">English</option>
@@ -127,33 +84,33 @@ select{
 <option value="ar">Arabic</option>
 </select>
 
-<div id="status">Tap Halo to Begin Consultation</div>
+<div id="status">Tap Sphere to Begin Consultation</div>
 
 <script>
 
 let mediaRecorder;
 let audioChunks=[];
 let analyser;
-let silenceTimer;
+let silenceTimer=null;
 let audioContext;
+let recordingStartTime=0;
 
-const wrapper=document.getElementById("halo-wrapper");
-const outer=document.getElementById("ring-outer");
-const inner=document.getElementById("ring-inner");
+const sphere=document.getElementById("sphere");
 const status=document.getElementById("status");
 const language=document.getElementById("language");
 
-const SILENCE_THRESHOLD = 15;
-const SILENCE_TIME = 1500;
+const SILENCE_THRESHOLD = 22;
+const SILENCE_TIME = 2200;
+const MIN_RECORD_TIME = 800;
 
-wrapper.onclick = async ()=>{
+let currentScale=1;
 
-    if(wrapper.classList.contains("recording")){
+sphere.onclick = async ()=>{
+
+    if(sphere.classList.contains("recording")){
         mediaRecorder.stop();
         return;
     }
-
-    silenceTimer=null;
 
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
     audioContext = new AudioContext();
@@ -165,6 +122,8 @@ wrapper.onclick = async ()=>{
 
     mediaRecorder = new MediaRecorder(stream);
     audioChunks=[];
+    silenceTimer=null;
+    recordingStartTime=Date.now();
 
     mediaRecorder.ondataavailable=e=>audioChunks.push(e.data);
 
@@ -173,8 +132,8 @@ wrapper.onclick = async ()=>{
         stream.getTracks().forEach(track=>track.stop());
         audioContext.close();
 
-        wrapper.classList.remove("recording");
-        wrapper.classList.add("processing");
+        sphere.classList.remove("recording");
+        sphere.classList.add("processing");
         status.innerText="Analyzing...";
 
         const blob=new Blob(audioChunks,{type:"audio/webm"});
@@ -188,15 +147,14 @@ wrapper.onclick = async ()=>{
         status.innerText=data.text;
 
         const audio=new Audio("data:audio/mp3;base64,"+data.audio);
-
         syncVoicePulse(audio);
-
         audio.play();
-        wrapper.classList.remove("processing");
+
+        sphere.classList.remove("processing");
     };
 
     mediaRecorder.start();
-    wrapper.classList.add("recording");
+    sphere.classList.add("recording");
     status.innerText="Listening...";
 
     monitorMic();
@@ -212,18 +170,18 @@ function monitorMic(){
         analyser.getByteFrequencyData(dataArray);
         let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
 
-        let scale = 1 + avg/200;
-        outer.style.transform="rotateX(60deg) scale("+scale+")";
-        inner.style.transform="rotateY(60deg) scale("+scale+")";
+        updateScale(avg/180);
 
-        if(avg<SILENCE_THRESHOLD){
-            if(!silenceTimer){
+        if(avg < SILENCE_THRESHOLD){
+
+            if(!silenceTimer && Date.now()-recordingStartTime > MIN_RECORD_TIME){
                 silenceTimer=setTimeout(()=>{
                     if(mediaRecorder.state==="recording"){
                         mediaRecorder.stop();
                     }
                 },SILENCE_TIME);
             }
+
         }else{
             clearTimeout(silenceTimer);
             silenceTimer=null;
@@ -250,16 +208,19 @@ function syncVoicePulse(audio){
     function pulse(){
         analyserVoice.getByteFrequencyData(dataArray);
         let avg=dataArray.reduce((a,b)=>a+b)/bufferLength;
-        let scale=1+avg/300;
-
-        outer.style.transform="rotateX(60deg) scale("+scale+")";
-        inner.style.transform="rotateY(60deg) scale("+scale+")";
+        updateScale(avg/250);
 
         if(!audio.paused){
             requestAnimationFrame(pulse);
         }
     }
     pulse();
+}
+
+function updateScale(intensity){
+    currentScale = 1 + intensity;
+    sphere.style.transform = "scale("+currentScale+")";
+    sphere.style.boxShadow = "0 0 "+(40 + intensity*120)+"px rgba(0,140,255,0.35)";
 }
 
 </script>
@@ -298,7 +259,7 @@ You are an elite clinical salon hair expert.
 Do not greet.
 Provide direct hair solutions.
 Recommend a professional product.
-If clearly unrelated to hair, politely redirect to hair consultation.
+Only redirect if clearly unrelated to hair care.
 """
                 },
                 {"role":"user","content":user_text}
@@ -306,13 +267,9 @@ If clearly unrelated to hair, politely redirect to hair consultation.
         )
         reply_text = completion.choices[0].message.content
 
-    voice="alloy"
-    if any(word in reply_text.lower() for word in ["damage","breakage","loss"]):
-        voice="verse"
-
     speech=client.audio.speech.create(
         model="gpt-4o-mini-tts",
-        voice=voice,
+        voice="alloy",
         input=reply_text
     )
 
