@@ -171,66 +171,57 @@ function startListening() {
         alert("Use Google Chrome.");
         return;
     }
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = new SpeechRecognition();
 
-    const halo = document.getElementById("halo");
+recognition.lang = "en-US";
+recognition.continuous = false;
+recognition.interimResults = false;
+
+let isListening = false;
+
+const halo = document.getElementById("halo");
+const statusText = document.getElementById("status");
+
+halo.addEventListener("click", () => {
+    if (!isListening) {
+        startListening();
+    }
+});
+
+function startListening() {
+    isListening = true;
+    statusText.innerText = "Listening...";
     halo.classList.add("listening");
-
-    recognition = new webkitSpeechRecognition();
-    recognition.lang = "en-US";
-    recognition.continuous = false;
-    recognition.interimResults = false;
-
-    document.getElementById("status").innerText = "Listening...";
     recognition.start();
+}
 
-    recognition.onresult = function(event) {
+recognition.onresult = function(event) {
     console.log("RESULT FIRED");
+
     const transcript = event.results[0][0].transcript;
     console.log("Transcript:", transcript);
+
+    stopListening();
     sendToAI(transcript);
 };
 
-    recognition.onend = function() {
-        halo.classList.remove("listening");
-    };
+recognition.onerror = function(event) {
+    console.error("Speech error:", event.error);
+    stopListening();
+};
 
-    // Safety fallback (forces stop after 8 sec)
-    setTimeout(() => {
-        if (recognition) recognition.stop();
-    }, 8000);
+recognition.onend = function() {
+    if (isListening) {
+        stopListening();
+    }
+};
+
+function stopListening() {
+    isListening = false;
+    statusText.innerText = "Processing...";
+    halo.classList.remove("listening");
 }
-
-function sendToAI(text) {
-
-    const halo = document.getElementById("halo");
-    halo.classList.add("thinking");
-    document.getElementById("status").innerText = "Thinking...";
-    document.getElementById("response").innerHTML = "";
-
-    ws = new WebSocket(getWebSocketURL());
-
-    ws.onopen = function() {
-        let language = document.getElementById("language").value;
-        ws.send(JSON.stringify({question: text, language: language}));
-    };
-
-    ws.onmessage = function(event) {
-        if(event.data.startsWith("AUDIO:")) {
-            let audioData = event.data.replace("AUDIO:", "");
-            let audio = document.getElementById("ttsAudio");
-            audio.src = "data:audio/mp3;base64," + audioData;
-            audio.play();
-        } else {
-            document.getElementById("response").innerHTML += event.data;
-        }
-    };
-
-    ws.onclose = function() {
-        halo.classList.remove("thinking");
-        document.getElementById("status").innerText = "Click the halo to speak";
-    };
-}
-
 </script>
 
 </body>
@@ -274,4 +265,5 @@ async def websocket_endpoint(websocket: WebSocket):
     audio_bytes = speech.read()
     encoded = base64.b64encode(audio_bytes).decode("utf-8")
     await websocket.send_text("AUDIO:" + encoded)
+
 
