@@ -1,7 +1,6 @@
 import streamlit as st
 import os
 import base64
-import time
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -11,8 +10,70 @@ from openai import OpenAI
 
 load_dotenv()
 client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+st.set_page_config(page_title="Professional Salon AI", layout="centered")
 
-st.set_page_config(page_title="Luxury AI Salon Concierge", layout="centered")
+# -------------------------
+# BRAND KNOWLEDGE BASE
+# -------------------------
+
+BRAND_KNOWLEDGE = """
+Major Hair Brands FAQ Knowledge:
+
+Dove:
+- Focus: moisture, gentle care
+- Known for sulfate-balanced shampoos
+- Good for dry or damaged hair
+
+L’Oréal:
+- Professional salon science
+- Keratin, bond repair, color protection
+- Targets advanced hair repair
+
+Head & Shoulders:
+- Anti-dandruff specialist
+- Scalp treatment focus
+- Zinc-based formulas
+
+Aussie:
+- Botanical extracts
+- Volume & hydration lines
+- Youthful, fruity positioning
+
+Herbal Essences:
+- Plant-based ingredients
+- Paraben-free ranges
+- Natural positioning
+
+TRESemmé:
+- Salon performance at drugstore price
+- Keratin smooth
+- Heat protection products
+
+Sephora (Hair Category):
+- Premium & luxury hair brands
+- High-end treatments
+- Professional styling lines
+
+Our Professional Solutions:
+
+Formula Exclusiva:
+- Deep repair
+- Advanced smoothing
+- Professional restoration
+
+Laciador:
+- Straightening & smoothing
+- Frizz control
+- Long-lasting sleek finish
+
+Gotero:
+- Scalp & growth treatment
+- Targeted hair strengthening
+
+Gotika:
+- Intensive hydration
+- Luxury conditioning treatment
+"""
 
 # -------------------------
 # LANGUAGE OPTIONS
@@ -20,14 +81,13 @@ st.set_page_config(page_title="Luxury AI Salon Concierge", layout="centered")
 
 languages = {
     "English": "Respond in English.",
-    "Arabic": "Respond in Modern Standard Arabic.",
     "Spanish": "Respond in Spanish.",
     "French": "Respond in French.",
-    "German": "Respond in German."
+    "Arabic": "Respond in Modern Standard Arabic."
 }
 
 # -------------------------
-# STYLE
+# UI STYLE
 # -------------------------
 
 st.markdown("""
@@ -37,81 +97,80 @@ body { background-color: #0c0c0c; }
 .stApp {
     background: radial-gradient(circle at center, #1a1a1a 0%, #0c0c0c 70%);
     color: white;
+    text-align: center;
 }
 
-.halo-container {
-    display: flex;
-    justify-content: center;
+.halo-button {
     margin-top: 30px;
-    margin-bottom: 30px;
+    margin-bottom: 20px;
 }
 
-.idle-circle {
-    stroke: #666;
-    stroke-width: 2;
-    fill: none;
-    opacity: 0.5;
+button[kind="primary"] {
+    background-color: #d4af37;
+    color: black;
+    font-weight: bold;
+    border-radius: 50%;
+    height: 120px;
+    width: 120px;
+    font-size: 18px;
 }
 
-.speaking .wave {
-    stroke: #d4af37;
-    stroke-width: 3;
-    fill: none;
-    animation: pulse 0.6s ease-in-out infinite alternate;
-    filter: drop-shadow(0px 0px 12px #d4af37);
-}
-
-@keyframes pulse {
-    from { transform: scale(1); }
-    to { transform: scale(1.12); }
+.product-box {
+    border: 1px solid #444;
+    padding: 15px;
+    margin: 10px;
+    border-radius: 10px;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # -------------------------
-# SESSION STATE
+# HEADER
+# -------------------------
+
+st.title("Luxury Professional Salon AI")
+st.caption("Expert Hair Guidance. Intelligent Comparison.")
+
+# -------------------------
+# LANGUAGE SELECT
+# -------------------------
+
+selected_language = st.selectbox("🌍 Select Language", list(languages.keys()))
+language_instruction = languages[selected_language]
+
+# -------------------------
+# PRODUCT INTRO SECTION
+# -------------------------
+
+st.subheader("Our Professional Solutions")
+
+st.markdown("""
+<div class="product-box">
+<b>Formula Exclusiva</b> – Deep repair & professional restoration.
+</div>
+
+<div class="product-box">
+<b>Laciador</b> – Advanced smoothing & frizz control.
+</div>
+
+<div class="product-box">
+<b>Gotero</b> – Scalp strengthening & growth-focused care.
+</div>
+
+<div class="product-box">
+<b>Gotika</b> – Intensive hydration luxury treatment.
+</div>
+""", unsafe_allow_html=True)
+
+# -------------------------
+# CHAT STATE
 # -------------------------
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-if "speaking" not in st.session_state:
-    st.session_state.speaking = False
-
 # -------------------------
-# HALO RENDER
-# -------------------------
-
-def render_halo():
-    speaking_class = "speaking" if st.session_state.speaking else ""
-    st.markdown(f"""
-    <div class="halo-container {speaking_class}">
-        <svg width="240" height="240" viewBox="0 0 200 200">
-            <circle cx="100" cy="100" r="70" class="idle-circle"/>
-            <path class="wave"
-                d="M100 30
-                Q130 40 160 70
-                Q180 100 160 130
-                Q130 160 100 170
-                Q70 160 40 130
-                Q20 100 40 70
-                Q70 40 100 30"/>
-        </svg>
-    </div>
-    """, unsafe_allow_html=True)
-
-# -------------------------
-# HEADER
-# -------------------------
-
-st.title("Luxury Salon AI Concierge")
-render_halo()
-
-selected_language = st.selectbox("🌍 Language", list(languages.keys()))
-language_instruction = languages[selected_language]
-
-# -------------------------
-# CHAT HISTORY
+# DISPLAY CHAT
 # -------------------------
 
 for msg in st.session_state.messages:
@@ -119,81 +178,70 @@ for msg in st.session_state.messages:
         st.markdown(msg["content"])
 
 # -------------------------
-# VOICE INPUT
+# HALO CLICK INTERACTION
 # -------------------------
 
-audio_file = st.audio_input("🎤 Speak")
+st.markdown("<div class='halo-button'>", unsafe_allow_html=True)
+halo_clicked = st.button("Tap To Speak", type="primary")
+st.markdown("</div>", unsafe_allow_html=True)
 
-if audio_file:
+if halo_clicked:
 
-    transcript = client.audio.transcriptions.create(
-        model="whisper-1",
-        file=audio_file
-    )
+    audio_file = st.audio_input("Speak now")
 
-    user_text = transcript.text
+    if audio_file:
 
-    # -------------------------
-    # STRICT SALON SYSTEM RULE
-    # -------------------------
+        transcript = client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file
+        )
 
-    system_prompt = f"""
-You are a Professional Salon Hair Expert working for our company.
+        user_text = transcript.text
 
-ONLY recommend:
-- Formula Exclusiva
-- Laciador
-- Gotero
-- Gotika
+        system_prompt = f"""
+You are a Professional Salon Hair Expert.
 
-If the user asks anything unrelated to salon hair solutions,
-reply politely with something similar to:
+You can:
+- Answer hair care questions
+- Compare major brands
+- Recommend the most suitable solution
+- Position our products professionally against global brands
 
-"I am a Professional Salon Hair Expert here to recommend hair solutions available within our company support."
+Use this knowledge:
 
-Do NOT answer unrelated questions.
-Remain elegant and professional.
+{BRAND_KNOWLEDGE}
+
+Always speak confidently and professionally.
+If question is unrelated to hair care,
+respond politely that you specialize in salon hair solutions only.
 
 {language_instruction}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_text}
-        ]
-    )
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_text}
+            ]
+        )
 
-    ai_reply = response.choices[0].message.content
+        ai_reply = response.choices[0].message.content
 
-    st.session_state.messages.append({"role": "user", "content": user_text})
-    st.session_state.messages.append({"role": "assistant", "content": ai_reply})
+        st.session_state.messages.append({"role": "user", "content": user_text})
+        st.session_state.messages.append({"role": "assistant", "content": ai_reply})
 
-    # -------------------------
-    # SPEAKING MODE ON
-    # -------------------------
+        speech = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="nova",
+            input=ai_reply
+        )
 
-    st.session_state.speaking = True
-    render_halo()
+        audio_bytes = speech.read()
+        b64 = base64.b64encode(audio_bytes).decode()
 
-    speech = client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="nova",
-        input=ai_reply
-    )
-
-    audio_bytes = speech.read()
-    b64 = base64.b64encode(audio_bytes).decode()
-
-    st.markdown(f"""
-    <audio autoplay>
-        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-    </audio>
-    """, unsafe_allow_html=True)
-
-    # Wait to keep animation during playback
-    time.sleep(2.5)
-
-    st.session_state.speaking = False
-    render_halo()
+        st.markdown(f"""
+        <audio autoplay>
+            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+        </audio>
+        """, unsafe_allow_html=True)
