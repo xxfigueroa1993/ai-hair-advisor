@@ -9,42 +9,40 @@ def home():
 <!DOCTYPE html>
 <html>
 <head>
-<title>Mic Device Inspector</title>
+<title>Force Bluetooth Mic</title>
 </head>
 <body style="background:black;color:white;text-align:center;margin-top:80px;font-family:Arial;">
 
-<h1>Microphone Device Inspector</h1>
-<button onclick="listDevices()">List Audio Devices</button>
-<button onclick="testMic()">Test Selected Mic</button>
+<h1>Bluetooth Mic Test</h1>
+<button onclick="start()">Start Listening</button>
 
-<p id="devices"></p>
 <p id="status">Idle</p>
 <p id="volume">Volume: 0</p>
 
 <script>
-let selectedStream = null;
+async function start(){
 
-async function listDevices(){
-    await navigator.mediaDevices.getUserMedia({audio:true});
-
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    let audioInputs = devices.filter(d => d.kind === "audioinput");
-
-    let html = "<h3>Available Microphones:</h3>";
-    audioInputs.forEach((device, i) => {
-        html += i + ": " + device.label + "<br>";
-    });
-
-    document.getElementById("devices").innerHTML = html;
-}
-
-async function testMic(){
     const status = document.getElementById("status");
     const volumeDisplay = document.getElementById("volume");
 
     try{
-        selectedStream = await navigator.mediaDevices.getUserMedia({
+
+        await navigator.mediaDevices.getUserMedia({audio:true});
+        const devices = await navigator.mediaDevices.enumerateDevices();
+
+        const headset = devices.find(d =>
+            d.kind === "audioinput" &&
+            d.label.includes("onn Neckband Pro")
+        );
+
+        if(!headset){
+            status.innerText = "Bluetooth mic not found";
+            return;
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
             audio: {
+                deviceId: { exact: headset.deviceId },
                 echoCancellation: false,
                 noiseSuppression: false,
                 autoGainControl: false
@@ -52,7 +50,7 @@ async function testMic(){
         });
 
         const audioContext = new AudioContext();
-        const source = audioContext.createMediaStreamSource(selectedStream);
+        const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
 
         analyser.fftSize = 2048;
@@ -60,7 +58,7 @@ async function testMic(){
 
         const data = new Uint8Array(analyser.fftSize);
 
-        status.innerText = "Listening... Speak now";
+        status.innerText = "Listening using Bluetooth mic... Speak now";
 
         function detect(){
             analyser.getByteTimeDomainData(data);
