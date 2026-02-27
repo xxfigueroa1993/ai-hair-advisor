@@ -5,7 +5,6 @@ from openai import OpenAI
 
 app = Flask(__name__)
 
-# Lazy init (prevents boot hang)
 client = None
 
 VALID_PRODUCTS = [
@@ -16,19 +15,21 @@ VALID_PRODUCTS = [
 ]
 
 HAIR_KEYWORDS = [
-    "hair","dry","frizz","damage","thin",
-    "break","loss","smooth","volume",
-    "brittle","scalp","growth","repair","hydration"
+    "hair","dry","frizz","frizzy","damage","damaged",
+    "thin","thinning","break","breaking","loss",
+    "smooth","volume","brittle","scalp","growth",
+    "repair","hydration","fall","shedding"
 ]
 
 SYSTEM_PROMPT = """
 You are Bright Clinical AI.
 
-Rules:
-- Analyze the hair concern.
-- Recommend exactly ONE product from:
-  Formula Exclusiva, Laciador, Gotero, Gotika
-- Be confident and concise.
+Analyze the hair concern.
+Recommend exactly ONE product from:
+Formula Exclusiva, Laciador, Gotero, Gotika
+
+Be confident and concise.
+
 Return JSON:
 {"product":"...","response":"..."}
 """
@@ -103,6 +104,11 @@ def home():
                 return
             }
 
+            if(!res.ok){
+                statusText.innerText = "Error occurred"
+                return
+            }
+
             const audioBlob = await res.blob()
             const audioUrl = URL.createObjectURL(audioBlob)
             const audio = new Audio(audioUrl)
@@ -142,7 +148,7 @@ def voice():
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
-        # TRANSCRIBE
+        # 🔹 TRANSCRIBE
         with open(audio_path, "rb") as f:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -155,22 +161,25 @@ def voice():
         words = clean.split()
 
         filler_words = [
-            "uh","um","you","thank you",
-            "thanks","okay","ok","hmm"
+            "uh","um","okay","ok",
+            "thanks","thank you","hmm"
         ]
 
-        # HARD SILENCE / INVALID FILTER
+        # 🔹 REALISTIC SILENCE FILTER
         if (
             clean == "" or
-            len(clean) < 15 or
-            len(words) < 3 or
-            clean in filler_words or
-            not any(k in clean for k in HAIR_KEYWORDS)
+            len(words) < 2 or
+            clean in filler_words
         ):
-            print("Rejected as silence or invalid input")
+            print("Rejected as silence")
             return Response(status=204)
 
-        # GPT ANALYSIS
+        # 🔹 Must contain at least one hair keyword
+        if not any(k in clean for k in HAIR_KEYWORDS):
+            print("No hair concern detected")
+            return Response(status=204)
+
+        # 🔹 GPT CALL
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             response_format={"type":"json_object"},
@@ -183,11 +192,11 @@ def voice():
         parsed = json.loads(completion.choices[0].message.content)
 
         if parsed.get("product") not in VALID_PRODUCTS:
-            response_text = "Please describe your hair concern clearly."
-        else:
-            response_text = parsed["response"]
+            return Response(status=204)
 
-        # TEXT TO SPEECH
+        response_text = parsed["response"]
+
+        # 🔹 TEXT TO SPEECH
         speech_path = "/tmp/output.mp3"
 
         tts = client.audio.speech.create(
