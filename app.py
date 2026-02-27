@@ -1,11 +1,9 @@
 import os
 import json
-from flask import Flask, request, send_file
-from flask_cors import CORS
+from flask import Flask, request, send_file, make_response
 from openai import OpenAI
 
 app = Flask(__name__)
-CORS(app)
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
@@ -27,8 +25,8 @@ Rules:
 4. Do NOT greet repeatedly.
 5. Do NOT ask unnecessary questions.
 6. If unclear concern, ask for clarification.
-7. Sound premium, clinical, and expert.
-Respond in JSON:
+7. Sound premium and clinical.
+Respond ONLY in JSON:
 {
   "product": "...",
   "response": "..."
@@ -50,14 +48,28 @@ HAIR_KEYWORDS = [
 ]
 
 # ==============================
+# MANUAL CORS HANDLING
+# ==============================
+
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS"
+    return response
+
+@app.route("/voice", methods=["OPTIONS"])
+def voice_options():
+    response = make_response()
+    return response
+
+# ==============================
 # HEALTH CHECK
 # ==============================
 
 @app.route("/")
 def home():
-    return """
-    <h1>Bright Clinical AI is Running</h1>
-    """
+    return "Bright Clinical AI is running."
 
 # ==============================
 # VOICE ENDPOINT
@@ -73,10 +85,9 @@ def voice():
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
-        # ---------------------------------
-        # 1. TRANSCRIBE WITH WHISPER
-        # ---------------------------------
-
+        # -----------------------------
+        # 1. TRANSCRIBE (Whisper)
+        # -----------------------------
         with open(audio_path, "rb") as f:
             transcript_response = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -86,9 +97,9 @@ def voice():
         transcript = transcript_response.text.strip()
         print("TRANSCRIPT:", transcript)
 
-        # ---------------------------------
+        # -----------------------------
         # 2. STRICT FILTERING
-        # ---------------------------------
+        # -----------------------------
 
         if (
             transcript == "" or
@@ -96,14 +107,11 @@ def voice():
             transcript.lower() in ["you", "uh", "um", "hello", "thanks"]
         ):
             tts_text = "I did not hear a clear hair concern. Please describe your hair issue."
+
         elif not any(word in transcript.lower() for word in HAIR_KEYWORDS):
             tts_text = "Please describe your specific hair concern so I can recommend the correct product."
+
         else:
-
-            # ---------------------------------
-            # 3. GPT PRODUCT ANALYSIS
-            # ---------------------------------
-
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
                 response_format={"type": "json_object"},
@@ -121,9 +129,9 @@ def voice():
             else:
                 tts_text = parsed["response"]
 
-        # ---------------------------------
-        # 4. TEXT TO SPEECH (REAL OPENAI TTS)
-        # ---------------------------------
+        # -----------------------------
+        # 3. TEXT TO SPEECH
+        # -----------------------------
 
         speech_path = "/tmp/output.mp3"
 
