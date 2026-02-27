@@ -7,7 +7,7 @@ client = None
 
 
 # ===============================
-# HOME PAGE
+# HOME
 # ===============================
 @app.route("/")
 def home():
@@ -59,18 +59,18 @@ sphere.onclick = async () => {
     if(listening) return;
 
     if(!navigator.mediaDevices){
-        statusText.innerText = "Microphone API not supported";
+        statusText.innerText = "Mic API not supported";
         return;
     }
 
     try{
         const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-        statusText.innerText = "Listening...";
         mediaRecorder = new MediaRecorder(stream);
 
         audioChunks = [];
         mediaRecorder.start();
         listening = true;
+        statusText.innerText = "Listening...";
 
         mediaRecorder.ondataavailable = e => {
             if(e.data.size > 0){
@@ -89,36 +89,48 @@ sphere.onclick = async () => {
                 return;
             }
 
-            statusText.innerText = "AI thinking...";
+            statusText.innerText = "Sending to server...";
 
             const formData = new FormData();
             formData.append("audio", blob, "speech.webm");
 
-            const res = await fetch("/voice", {
-                method: "POST",
-                body: formData
-            });
+            try{
 
-            if(res.status === 204){
-                statusText.innerText = "No speech detected";
-                return;
+                // 🔥 IMPORTANT FIX: absolute URL
+                const backendUrl = window.location.origin + "/voice";
+
+                const res = await fetch(backendUrl, {
+                    method: "POST",
+                    body: formData
+                });
+
+                console.log("Server response:", res.status);
+
+                if(res.status === 204){
+                    statusText.innerText = "No speech detected";
+                    return;
+                }
+
+                if(!res.ok){
+                    statusText.innerText = "Server error " + res.status;
+                    return;
+                }
+
+                const audioBlob = await res.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                const audio = new Audio(audioUrl);
+
+                statusText.innerText = "AI speaking...";
+                audio.play();
+
+                audio.onended = () => {
+                    statusText.innerText = "Click sphere to speak";
+                };
+
+            } catch(err){
+                console.error("FETCH FAILED:", err);
+                statusText.innerText = "Connection failed";
             }
-
-            if(!res.ok){
-                statusText.innerText = "Server error";
-                return;
-            }
-
-            const audioBlob = await res.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-            const audio = new Audio(audioUrl);
-
-            statusText.innerText = "AI speaking...";
-            audio.play();
-
-            audio.onended = () => {
-                statusText.innerText = "Click sphere to speak";
-            };
         };
 
         setTimeout(()=>{
@@ -128,7 +140,7 @@ sphere.onclick = async () => {
         }, 5000);
 
     } catch(err){
-        statusText.innerText = "Microphone BLOCKED: " + err.message;
+        statusText.innerText = "Mic BLOCKED: " + err.message;
     }
 };
 </script>
@@ -139,7 +151,7 @@ sphere.onclick = async () => {
 
 
 # ===============================
-# FAVICON FIX
+# FAVICON (prevents 404 noise)
 # ===============================
 @app.route('/favicon.ico')
 def favicon():
@@ -147,7 +159,7 @@ def favicon():
 
 
 # ===============================
-# VOICE ENDPOINT
+# VOICE
 # ===============================
 @app.route("/voice", methods=["POST"])
 def voice():
@@ -174,7 +186,7 @@ def voice():
             print("Silence detected")
             return Response(status=204)
 
-        # ===== TRANSCRIBE =====
+        # TRANSCRIBE
         with open(audio_path, "rb") as f:
             transcript_obj = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -185,16 +197,16 @@ def voice():
         print("RAW TRANSCRIPT:", transcript)
 
         if transcript is None or transcript.strip() == "":
-            print("Empty transcript from Whisper")
+            print("Empty transcript")
             return Response(status=204)
 
-        # ===== GPT =====
+        # GPT
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role":"system",
-                    "content":"User describes a hair issue. Recommend one specific product clearly and professionally. If input is unclear, ask for clarification."
+                    "content":"User describes a hair issue. Recommend one product clearly."
                 },
                 {
                     "role":"user",
@@ -206,7 +218,7 @@ def voice():
         response_text = completion.choices[0].message.content
         print("GPT RESPONSE:", response_text)
 
-        # ===== TEXT TO SPEECH =====
+        # TTS
         speech_path = "/tmp/output.mp3"
 
         tts = client.audio.speech.create(
