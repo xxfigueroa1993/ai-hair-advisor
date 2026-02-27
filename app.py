@@ -7,26 +7,21 @@ app = Flask(__name__)
 
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# ==============================
-# SYSTEM PROMPT
-# ==============================
-
 SYSTEM_PROMPT = """
 You are Bright Clinical AI.
 
 Rules:
-1. Always analyze the user's hair concern.
-2. Always recommend exactly ONE product from:
+1. Analyze the user's hair concern.
+2. Recommend exactly ONE product from:
    - Formula Exclusiva
    - Laciador
    - Gotero
    - Gotika
-3. Give short, confident recommendation.
-4. Do NOT greet repeatedly.
-5. Do NOT ask unnecessary questions.
-6. If unclear concern, ask for clarification.
-7. Sound premium and clinical.
-Respond ONLY in JSON:
+3. Be confident and concise.
+4. Do not greet repeatedly.
+5. If unclear, ask for clarification.
+
+Return ONLY JSON:
 {
   "product": "...",
   "response": "..."
@@ -47,9 +42,9 @@ HAIR_KEYWORDS = [
     "growth", "repair", "hydration"
 ]
 
-# ==============================
-# MANUAL CORS HANDLING
-# ==============================
+# -----------------------------
+# CORS
+# -----------------------------
 
 @app.after_request
 def add_cors_headers(response):
@@ -60,20 +55,113 @@ def add_cors_headers(response):
 
 @app.route("/voice", methods=["OPTIONS"])
 def voice_options():
-    response = make_response()
-    return response
+    return make_response()
 
-# ==============================
-# HEALTH CHECK
-# ==============================
+# -----------------------------
+# FRONTEND
+# -----------------------------
 
 @app.route("/")
 def home():
-    return "Bright Clinical AI is running."
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Bright Clinical AI</title>
+<style>
+body {
+  margin:0;
+  background:black;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+  flex-direction:column;
+  color:white;
+  font-family:sans-serif;
+}
+#sphere {
+  width:200px;
+  height:200px;
+  border-radius:50%;
+  background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
+  box-shadow: 0 0 90px rgba(0,200,255,0.9);
+  cursor:pointer;
+}
+#status { margin-top:20px; }
+</style>
+</head>
+<body>
 
-# ==============================
+<div id="sphere"></div>
+<div id="status">Click sphere to speak (5 sec max)</div>
+
+<script>
+let mediaRecorder
+let audioChunks = []
+let listening = false
+const RECORD_TIME = 5000
+
+const sphere = document.getElementById("sphere")
+const statusText = document.getElementById("status")
+
+async function startListening(){
+  const stream = await navigator.mediaDevices.getUserMedia({audio:true})
+  mediaRecorder = new MediaRecorder(stream)
+
+  audioChunks = []
+  mediaRecorder.start()
+  listening = true
+  statusText.innerText = "Listening..."
+
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data)
+
+  mediaRecorder.onstop = async () => {
+    listening = false
+    statusText.innerText = "AI Thinking..."
+
+    const blob = new Blob(audioChunks,{type:"audio/webm"})
+    const formData = new FormData()
+    formData.append("audio",blob,"speech.webm")
+
+    try {
+        const res = await fetch("/voice",{method:"POST",body:formData})
+        const audioBlob = await res.blob()
+
+        const audioUrl = URL.createObjectURL(audioBlob)
+        const audio = new Audio(audioUrl)
+
+        statusText.innerText = "AI Speaking..."
+        audio.play()
+
+        audio.onended = ()=>{
+            statusText.innerText = "Click sphere to speak"
+        }
+
+    } catch {
+        statusText.innerText = "Server error"
+    }
+  }
+
+  setTimeout(()=>{
+    if(listening){
+      mediaRecorder.stop()
+    }
+  }, RECORD_TIME)
+}
+
+sphere.onclick = ()=>{
+  if(!listening) startListening()
+}
+</script>
+
+</body>
+</html>
+"""
+
+# -----------------------------
 # VOICE ENDPOINT
-# ==============================
+# -----------------------------
 
 @app.route("/voice", methods=["POST"])
 def voice():
@@ -85,39 +173,30 @@ def voice():
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
-        # -----------------------------
-        # 1. TRANSCRIBE (Whisper)
-        # -----------------------------
+        # TRANSCRIBE
         with open(audio_path, "rb") as f:
-            transcript_response = client.audio.transcriptions.create(
+            transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f
-            )
+            ).text.strip()
 
-        transcript = transcript_response.text.strip()
         print("TRANSCRIPT:", transcript)
 
-        # -----------------------------
-        # 2. STRICT FILTERING
-        # -----------------------------
-
+        # FILTER SILENCE / JUNK
         if (
             transcript == "" or
             len(transcript) < 8 or
-            transcript.lower() in ["you", "uh", "um", "hello", "thanks"]
+            not any(word in transcript.lower() for word in HAIR_KEYWORDS)
         ):
             tts_text = "I did not hear a clear hair concern. Please describe your hair issue."
-
-        elif not any(word in transcript.lower() for word in HAIR_KEYWORDS):
-            tts_text = "Please describe your specific hair concern so I can recommend the correct product."
 
         else:
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
                 response_format={"type": "json_object"},
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": transcript}
+                    {"role":"system","content":SYSTEM_PROMPT},
+                    {"role":"user","content":transcript}
                 ],
                 temperature=0.3
             )
@@ -129,12 +208,8 @@ def voice():
             else:
                 tts_text = parsed["response"]
 
-        # -----------------------------
-        # 3. TEXT TO SPEECH
-        # -----------------------------
-
+        # TTS
         speech_path = "/tmp/output.mp3"
-
         tts_response = client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="alloy",
@@ -150,10 +225,6 @@ def voice():
         print("ERROR:", str(e))
         return "Server error", 500
 
-
-# ==============================
-# RUN
-# ==============================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
