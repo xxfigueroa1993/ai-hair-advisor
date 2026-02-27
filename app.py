@@ -4,7 +4,7 @@ from flask import Flask, request
 app = Flask(__name__)
 
 # ===============================
-# FRONTEND WITH REAL SPEECH DETECTION
+# FRONTEND WITH FIXED SPEECH DETECTION
 # ===============================
 @app.route("/")
 def home():
@@ -88,7 +88,8 @@ async function record(){
 
             let volume = Math.sqrt(sum / data.length);
 
-            if(volume > 0.02){
+            // 🔥 LOWERED THRESHOLD (was 0.02)
+            if(volume > 0.005){
                 speakingDetected = true;
             }
 
@@ -104,7 +105,7 @@ async function record(){
         }, 5000);
 
     } catch(err){
-        status.innerText = "Microphone blocked: " + err.message;
+        status.innerText = "Microphone error: " + err.message;
     }
 }
 </script>
