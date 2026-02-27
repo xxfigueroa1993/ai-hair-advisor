@@ -1,19 +1,11 @@
 import os
-import sys
 import json
-import traceback
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
 app = Flask(__name__)
 
-# ✅ FIX 1: Fail loudly at startup if API key is missing
-api_key = os.environ.get("OPENAI_API_KEY")
-if not api_key:
-    print("FATAL: OPENAI_API_KEY is not set", file=sys.stderr)
-    sys.exit(1)
-
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
 You are Bright Clinical AI, a professional hair product advisor.
@@ -21,18 +13,21 @@ You are Bright Clinical AI, a professional hair product advisor.
 STRICT RULES:
 - Ignore greetings.
 - Extract only the core hair concern.
-- Always select EXACTLY ONE product from:
-  Formula Exclusiva, Laciador, Gotero, Gotika
-- Never say you are unsure.
-- If concern is unclear, ask one clarifying hair-related question.
+- ALWAYS select EXACTLY ONE product from:
+  Formula Exclusiva
+  Laciador
+  Gotero
+  Gotika
+- Never leave product empty.
+- If unclear, select the closest product and ask a clarifying question.
 - Keep response concise and professional.
-- End by asking if the recommendation matches the concern.
+- End by confirming the recommendation.
 
-Return JSON only:
+Return ONLY valid JSON:
 
 {
   "product": "Product Name",
-  "response": "Spoken response here"
+  "response": "Professional spoken response recommending the product and asking for confirmation."
 }
 """
 
@@ -82,6 +77,9 @@ let analyser
 let dataArray
 let listening = false
 
+// 🔧 ADJUST THIS NUMBER IF NEEDED
+const SILENCE_THRESHOLD = 18
+
 const sphere = document.getElementById("sphere")
 const statusText = document.getElementById("status")
 
@@ -114,7 +112,7 @@ async function startListening(){
 
     clearTimeout(maxDurationTimer)
 
-    // ✅ FIX: Removed unnecessary 3-second artificial delay
+    await new Promise(r => setTimeout(r,3000))
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
     const formData = new FormData()
@@ -147,7 +145,7 @@ function monitorVolume(){
 
   pulse(1 + avg/200)
 
-  if(avg < 15){
+  if(avg < SILENCE_THRESHOLD){
     if(!silenceTimer){
       silenceTimer = setTimeout(()=>{
         mediaRecorder.stop()
@@ -187,43 +185,46 @@ def voice():
 
         audio_file = request.files["audio"]
 
-        # ✅ FIX 2: Pass a named tuple so Whisper knows the file type
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
-            file=(audio_file.filename or "speech.webm", audio_file.stream, "audio/webm")
+            file=audio_file.stream
         ).text
 
-        print("TRANSCRIPT:", transcript)
-
-        # ✅ FIX 3: Use response_format to guarantee valid JSON from GPT
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             response_format={"type": "json_object"},
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": transcript}
+                {"role":"system","content":SYSTEM_PROMPT},
+                {"role":"user","content":transcript}
             ],
             temperature=0.2
         )
 
-        content = completion.choices[0].message.content
+        parsed = json.loads(completion.choices[0].message.content)
 
-        try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            # ✅ FIX 4: Log bad JSON so you can see when GPT goes off-script
-            print("BAD JSON FROM GPT:", content)
-            parsed = {
-                "product": "Formula Exclusiva",
-                "response": "Formula Exclusiva is recommended for your concern. Does that match your goal?"
-            }
+        # 🔒 HARD ENFORCEMENT SAFETY
+        valid_products = [
+            "Formula Exclusiva",
+            "Laciador",
+            "Gotero",
+            "Gotika"
+        ]
+
+        if parsed.get("product") not in valid_products:
+            parsed["product"] = "Formula Exclusiva"
+            parsed["response"] = (
+                "Based on your concern, Formula Exclusiva is recommended. "
+                "Does that align with your hair goal?"
+            )
 
         return jsonify(parsed)
 
     except Exception as e:
-        # ✅ FIX 5: Full traceback in logs so you can see the real error
-        traceback.print_exc()
-        return jsonify({"response": f"Processing error: {str(e)}"}), 500
+        print("VOICE ERROR:", str(e))
+        return jsonify({
+            "product": "Formula Exclusiva",
+            "response": "Formula Exclusiva is recommended for your concern. Does that match your goal?"
+        }), 200
 
 
 if __name__ == "__main__":
