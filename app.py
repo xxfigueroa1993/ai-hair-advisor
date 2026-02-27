@@ -3,9 +3,12 @@ from flask import Flask, request, send_file, Response
 from openai import OpenAI
 
 app = Flask(__name__)
-
 client = None
 
+
+# =========================
+# FRONTEND
+# =========================
 @app.route("/")
 def home():
     return """
@@ -42,91 +45,90 @@ def home():
         <div id="status">Click sphere to speak</div>
 
         <script>
-            let mediaRecorder
-            let audioChunks = []
-            let listening = false
+            let mediaRecorder;
+            let audioChunks = [];
+            let listening = false;
 
-            const sphere = document.getElementById("sphere")
-            const statusText = document.getElementById("status")
+            const sphere = document.getElementById("sphere");
+            const statusText = document.getElementById("status");
 
             sphere.onclick = async () => {
 
-                if(listening) return
+                if(listening) return;
 
-                const stream = await navigator.mediaDevices.getUserMedia({audio:true})
+                const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+                mediaRecorder = new MediaRecorder(stream);
 
-                mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" })
-
-                audioChunks = []
-                mediaRecorder.start()
-                listening = true
-                statusText.innerText = "Listening..."
+                audioChunks = [];
+                mediaRecorder.start();
+                listening = true;
+                statusText.innerText = "Listening...";
 
                 mediaRecorder.ondataavailable = e => {
                     if(e.data.size > 0){
-                        audioChunks.push(e.data)
+                        audioChunks.push(e.data);
                     }
-                }
+                };
 
                 mediaRecorder.onstop = async () => {
 
-                    listening = false
-                    statusText.innerText = "AI thinking..."
+                    listening = false;
 
-                    const blob = new Blob(audioChunks,{type:"audio/webm"})
+                    const blob = new Blob(audioChunks, { type: "audio/webm" });
 
-                    if(blob.size < 1000){
-                        statusText.innerText = "No speech detected"
-                        return
+                    if(blob.size < 3000){
+                        statusText.innerText = "No speech detected";
+                        return;
                     }
 
-                    const formData = new FormData()
-                    formData.append("audio", blob, "speech.webm")
+                    statusText.innerText = "AI thinking...";
 
-                    try{
-                        const res = await fetch("/voice",{
-                            method:"POST",
-                            body:formData
-                        })
+                    const formData = new FormData();
+                    formData.append("audio", blob, "speech.webm");
 
-                        if(res.status === 204){
-                            statusText.innerText = "No speech detected"
-                            return
-                        }
+                    const res = await fetch("/voice", {
+                        method: "POST",
+                        body: formData
+                    });
 
-                        if(!res.ok){
-                            statusText.innerText = "Server error"
-                            return
-                        }
-
-                        const audioBlob = await res.blob()
-                        const audioUrl = URL.createObjectURL(audioBlob)
-                        const audio = new Audio(audioUrl)
-
-                        statusText.innerText = "AI speaking..."
-                        audio.play()
-
-                        audio.onended = () => {
-                            statusText.innerText = "Click sphere to speak"
-                        }
-
-                    } catch(e){
-                        statusText.innerText = "Error occurred"
+                    if(res.status === 204){
+                        statusText.innerText = "No speech detected";
+                        return;
                     }
-                }
+
+                    if(!res.ok){
+                        statusText.innerText = "Server error";
+                        return;
+                    }
+
+                    const audioBlob = await res.blob();
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+
+                    statusText.innerText = "AI speaking...";
+                    audio.play();
+
+                    audio.onended = () => {
+                        statusText.innerText = "Click sphere to speak";
+                    };
+                };
 
                 setTimeout(()=>{
                     if(listening){
-                        mediaRecorder.stop()
+                        mediaRecorder.stop();
                     }
-                }, 5000)
-            }
+                }, 5000);
+            };
         </script>
 
     </body>
     </html>
     """
 
+
+# =========================
+# VOICE ENDPOINT
+# =========================
 @app.route("/voice", methods=["POST"])
 def voice():
     global client
@@ -135,10 +137,10 @@ def voice():
         if client is None:
             client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-        print("VOICE endpoint hit")
+        print("\n--- VOICE REQUEST RECEIVED ---")
 
         if "audio" not in request.files:
-            print("No audio file received")
+            print("No audio in request")
             return Response(status=400)
 
         audio_file = request.files["audio"]
@@ -148,30 +150,33 @@ def voice():
         size = os.path.getsize(audio_path)
         print("Audio file size:", size)
 
-        if size < 1000:
-            print("Audio too small — likely silence")
+        if size < 3000:
+            print("Silence detected (file too small)")
             return Response(status=204)
 
-        # 🔹 Transcribe with Whisper
+        # ===== TRANSCRIBE =====
         with open(audio_path, "rb") as f:
-            transcript = client.audio.transcriptions.create(
+            transcript_obj = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f
-            ).text.strip()
+            )
+
+        transcript = transcript_obj.text
 
         print("RAW TRANSCRIPT:", transcript)
 
-        if transcript == "":
-            print("Whisper returned empty transcript")
+        # HARD STOP if empty
+        if transcript is None or transcript.strip() == "":
+            print("Whisper returned EMPTY transcript")
             return Response(status=204)
 
-        # 🔹 Ask GPT
+        # ===== GPT =====
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {
                     "role":"system",
-                    "content":"User describes a hair issue. Recommend the best product clearly and confidently."
+                    "content":"User describes a hair issue. Recommend one specific product clearly and professionally."
                 },
                 {
                     "role":"user",
@@ -183,7 +188,7 @@ def voice():
         response_text = completion.choices[0].message.content
         print("GPT RESPONSE:", response_text)
 
-        # 🔹 Convert to Speech
+        # ===== TTS =====
         speech_path = "/tmp/output.mp3"
 
         tts = client.audio.speech.create(
@@ -192,13 +197,15 @@ def voice():
             input=response_text
         )
 
-        with open(speech_path,"wb") as f:
+        with open(speech_path, "wb") as f:
             f.write(tts.read())
+
+        print("Returning audio response\n")
 
         return send_file(speech_path, mimetype="audio/mpeg")
 
     except Exception as e:
-        print("ERROR:", e)
+        print("SERVER ERROR:", e)
         return Response(status=500)
 
 
