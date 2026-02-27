@@ -11,7 +11,7 @@ You are Bright Clinical AI, a professional hair product advisor.
 
 STRICT RULES:
 - Ignore greetings.
-- Extract only the core hair concern.
+- Extract the core hair concern.
 - ALWAYS select EXACTLY ONE product from:
   Formula Exclusiva
   Laciador
@@ -19,7 +19,7 @@ STRICT RULES:
   Gotika
 - Never leave product empty.
 - If unclear, select closest product and ask clarifying question.
-- Keep response concise and professional.
+- Keep response concise and confident.
 - End by confirming the recommendation.
 
 Return ONLY valid JSON:
@@ -55,7 +55,7 @@ body {
   border-radius:50%;
   background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
   box-shadow: 0 0 90px rgba(0,200,255,0.9);
-  transition: transform 0.08s linear;
+  transition: transform 0.07s linear;
   cursor:pointer;
 }
 #status { margin-top:20px; }
@@ -75,13 +75,11 @@ let audioContext
 let analyser
 let dataArray
 let listening = false
-let speechStarted = false
-let speechStartTime = 0
 
-// 🔧 TUNE THESE
-const SILENCE_THRESHOLD = 18
-const SILENCE_DURATION = 3000
-const MIN_SPEECH_TIME = 1200
+// 🔧 TUNE THESE IF NEEDED
+const SILENCE_THRESHOLD = 4
+const SILENCE_DURATION = 3500
+const MAX_RECORDING = 20000
 
 const sphere = document.getElementById("sphere")
 const statusText = document.getElementById("status")
@@ -99,11 +97,10 @@ async function startListening(){
   analyser = audioContext.createAnalyser()
   source.connect(analyser)
 
-  analyser.fftSize = 256
-  dataArray = new Uint8Array(analyser.frequencyBinCount)
+  analyser.fftSize = 2048
+  dataArray = new Uint8Array(analyser.fftSize)
 
   audioChunks = []
-  speechStarted = false
   mediaRecorder.start()
   listening = true
   statusText.innerText = "Listening..."
@@ -112,13 +109,10 @@ async function startListening(){
 
   mediaRecorder.onstop = async () => {
     listening = false
-
-    if(!speechStarted){
-        statusText.innerText = "No speech detected"
-        return
-    }
-
     statusText.innerText = "AI Thinking..."
+
+    clearTimeout(maxDurationTimer)
+
     await new Promise(r => setTimeout(r,3000))
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
@@ -134,11 +128,12 @@ async function startListening(){
     }
   }
 
+  // Hard safety stop
   maxDurationTimer = setTimeout(()=>{
     if(listening){
       mediaRecorder.stop()
     }
-  },20000)
+  }, MAX_RECORDING)
 
   monitorVolume()
 }
@@ -146,28 +141,28 @@ async function startListening(){
 function monitorVolume(){
   if(!listening) return
 
-  analyser.getByteFrequencyData(dataArray)
-  let avg = dataArray.reduce((a,b)=>a+b)/dataArray.length
+  analyser.getByteTimeDomainData(dataArray)
 
-  pulse(1 + avg/200)
+  let sum = 0
+  for(let i=0;i<dataArray.length;i++){
+    let value = (dataArray[i] - 128) / 128
+    sum += Math.abs(value)
+  }
 
-  if(avg > SILENCE_THRESHOLD){
-      if(!speechStarted){
-          speechStarted = true
-          speechStartTime = Date.now()
+  let avg = sum / dataArray.length * 100
+
+  pulse(1 + avg/10)
+
+  if(avg < SILENCE_THRESHOLD){
+      if(!silenceTimer){
+          silenceTimer = setTimeout(()=>{
+              mediaRecorder.stop()
+          }, SILENCE_DURATION)
       }
+  } else {
       if(silenceTimer){
           clearTimeout(silenceTimer)
           silenceTimer = null
-      }
-  } else if(speechStarted){
-      let speakingDuration = Date.now() - speechStartTime
-      if(speakingDuration > MIN_SPEECH_TIME){
-          if(!silenceTimer){
-              silenceTimer = setTimeout(()=>{
-                  mediaRecorder.stop()
-              },SILENCE_DURATION)
-          }
       }
   }
 
@@ -178,6 +173,7 @@ function speak(text){
   const utter = new SpeechSynthesisUtterance(text)
   utter.onstart = ()=> statusText.innerText = "AI Speaking..."
   utter.onend = ()=> statusText.innerText = "Click sphere to begin"
+  speechSynthesis.cancel()
   speechSynthesis.speak(utter)
 }
 
