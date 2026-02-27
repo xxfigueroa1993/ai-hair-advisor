@@ -76,7 +76,7 @@ let analyser
 let dataArray
 let listening = false
 
-// 🔧 TUNE THESE IF NEEDED
+// Tunable values
 const SILENCE_THRESHOLD = 4
 const SILENCE_DURATION = 3500
 const MAX_RECORDING = 20000
@@ -128,7 +128,6 @@ async function startListening(){
     }
   }
 
-  // Hard safety stop
   maxDurationTimer = setTimeout(()=>{
     if(listening){
       mediaRecorder.stop()
@@ -171,9 +170,9 @@ function monitorVolume(){
 
 function speak(text){
   const utter = new SpeechSynthesisUtterance(text)
+  speechSynthesis.cancel()
   utter.onstart = ()=> statusText.innerText = "AI Speaking..."
   utter.onend = ()=> statusText.innerText = "Click sphere to begin"
-  speechSynthesis.cancel()
   speechSynthesis.speak(utter)
 }
 
@@ -189,12 +188,27 @@ sphere.onclick = ()=>{
 @app.route("/voice", methods=["POST"])
 def voice():
     try:
+        if "audio" not in request.files:
+            return jsonify({
+                "product": None,
+                "response": "I did not receive any audio. Please try again."
+            })
+
         audio_file = request.files["audio"]
 
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file.stream
-        ).text
+        ).text.strip()
+
+        print("TRANSCRIPT:", transcript)
+
+        # Real silence protection
+        if len(transcript) < 3:
+            return jsonify({
+                "product": None,
+                "response": "I didn’t hear anything clearly. Please try speaking again."
+            })
 
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -227,10 +241,9 @@ def voice():
     except Exception as e:
         print("VOICE ERROR:", str(e))
         return jsonify({
-            "product": "Formula Exclusiva",
-            "response": "Formula Exclusiva is recommended for your concern. Does that match your goal?"
+            "product": None,
+            "response": "Something went wrong. Please try again."
         })
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
