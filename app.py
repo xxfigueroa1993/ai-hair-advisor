@@ -205,10 +205,12 @@ def voice():
 
         return jsonify(parsed)
 
-    except Exception as e:
-        print("VOICE ERROR:", str(e))
-        return jsonify({"response": "Processing error occurred"}), 500
+    except import traceback
+except Exception as e:
+    traceback.print_exc()
+    return jsonify({"response": str(e)}), 500
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
+
