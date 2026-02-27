@@ -1,11 +1,11 @@
 import os
 import json
-from flask import Flask, request, send_file
+from flask import Flask, request, send_file, Response
 from openai import OpenAI
 
 app = Flask(__name__)
 
-# IMPORTANT: Do not initialize client until first request
+# Lazy init (prevents boot hang)
 client = None
 
 VALID_PRODUCTS = [
@@ -24,11 +24,11 @@ HAIR_KEYWORDS = [
 SYSTEM_PROMPT = """
 You are Bright Clinical AI.
 
-Always:
-- Analyze hair concern
+Rules:
+- Analyze the hair concern.
 - Recommend exactly ONE product from:
   Formula Exclusiva, Laciador, Gotero, Gotika
-- Be confident and concise
+- Be confident and concise.
 Return JSON:
 {"product":"...","response":"..."}
 """
@@ -97,8 +97,13 @@ def home():
             formData.append("audio",blob,"speech.webm")
 
             const res = await fetch("/voice",{method:"POST",body:formData})
-            const audioBlob = await res.blob()
 
+            if(res.status === 204){
+                statusText.innerText = "Click sphere to speak"
+                return
+            }
+
+            const audioBlob = await res.blob()
             const audioUrl = URL.createObjectURL(audioBlob)
             const audio = new Audio(audioUrl)
 
@@ -131,46 +136,58 @@ def voice():
             client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
         if "audio" not in request.files:
-            return "No audio",400
+            return Response(status=400)
 
         audio_file = request.files["audio"]
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
-        # Transcribe
-        with open(audio_path,"rb") as f:
+        # TRANSCRIBE
+        with open(audio_path, "rb") as f:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f
             ).text.strip()
 
-        print("TRANSCRIPT:",transcript)
+        print("TRANSCRIPT:", transcript)
 
-        # Filter junk
+        clean = transcript.lower().strip()
+        words = clean.split()
+
+        filler_words = [
+            "uh","um","you","thank you",
+            "thanks","okay","ok","hmm"
+        ]
+
+        # HARD SILENCE / INVALID FILTER
         if (
-            transcript == "" or
-            len(transcript) < 8 or
-            not any(w in transcript.lower() for w in HAIR_KEYWORDS)
+            clean == "" or
+            len(clean) < 15 or
+            len(words) < 3 or
+            clean in filler_words or
+            not any(k in clean for k in HAIR_KEYWORDS)
         ):
-            response_text = "Please clearly describe your hair concern."
+            print("Rejected as silence or invalid input")
+            return Response(status=204)
+
+        # GPT ANALYSIS
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            response_format={"type":"json_object"},
+            messages=[
+                {"role":"system","content":SYSTEM_PROMPT},
+                {"role":"user","content":transcript}
+            ]
+        )
+
+        parsed = json.loads(completion.choices[0].message.content)
+
+        if parsed.get("product") not in VALID_PRODUCTS:
+            response_text = "Please describe your hair concern clearly."
         else:
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",
-                response_format={"type":"json_object"},
-                messages=[
-                    {"role":"system","content":SYSTEM_PROMPT},
-                    {"role":"user","content":transcript}
-                ]
-            )
+            response_text = parsed["response"]
 
-            parsed = json.loads(completion.choices[0].message.content)
-
-            if parsed.get("product") not in VALID_PRODUCTS:
-                response_text = "Formula Exclusiva is recommended."
-            else:
-                response_text = parsed["response"]
-
-        # TTS
+        # TEXT TO SPEECH
         speech_path = "/tmp/output.mp3"
 
         tts = client.audio.speech.create(
@@ -182,13 +199,13 @@ def voice():
         with open(speech_path,"wb") as f:
             f.write(tts.read())
 
-        return send_file(speech_path,mimetype="audio/mpeg")
+        return send_file(speech_path, mimetype="audio/mpeg")
 
     except Exception as e:
-        print("ERROR:",e)
-        return "Server error",500
+        print("ERROR:", e)
+        return Response(status=500)
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT",10000))
-    app.run(host="0.0.0.0",port=port)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
