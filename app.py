@@ -1,32 +1,32 @@
 import os
 import json
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from openai import OpenAI
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 SYSTEM_PROMPT = """
-You are Bright Clinical AI, a professional hair product advisor.
+You are Bright Clinical AI, a decisive professional hair product advisor.
 
-STRICT RULES:
+RULES:
 - Ignore greetings.
-- Extract the core hair concern.
+- Extract the core hair concern even if vague.
+- Infer the most likely issue if unclear.
+- NEVER ask for clarification before recommending.
 - ALWAYS select EXACTLY ONE product from:
   Formula Exclusiva
   Laciador
   Gotero
   Gotika
-- Never leave product empty.
-- If unclear, select closest product and ask clarifying question.
-- Keep response concise and confident.
-- End by confirming the recommendation.
+- Be confident and direct.
+- End with a short confirmation question.
 
 Return ONLY valid JSON:
 
 {
   "product": "Product Name",
-  "response": "Professional spoken recommendation ending with confirmation question."
+  "response": "Confident professional recommendation ending with short confirmation."
 }
 """
 
@@ -70,15 +70,13 @@ body {
 let mediaRecorder
 let audioChunks = []
 let silenceTimer = null
-let maxDurationTimer = null
 let audioContext
 let analyser
 let dataArray
 let listening = false
 
 const SILENCE_THRESHOLD = 4
-const SILENCE_DURATION = 3500
-const MAX_RECORDING = 20000
+const SILENCE_DURATION = 3000
 
 const sphere = document.getElementById("sphere")
 const statusText = document.getElementById("status")
@@ -110,28 +108,28 @@ async function startListening(){
     listening = false
     statusText.innerText = "AI Thinking..."
 
-    clearTimeout(maxDurationTimer)
-
-    await new Promise(r => setTimeout(r,3000))
-
     const blob = new Blob(audioChunks,{type:"audio/webm"})
     const formData = new FormData()
     formData.append("audio",blob,"speech.webm")
 
     try {
         const res = await fetch("/voice",{method:"POST",body:formData})
-        const data = await res.json()
-        speak(data.response)
+        const audioBlob = await res.blob()
+
+        const audioUrl = URL.createObjectURL(audioBlob)
+        const audio = new Audio(audioUrl)
+
+        statusText.innerText = "AI Speaking..."
+        audio.play()
+
+        audio.onended = ()=>{
+            statusText.innerText = "Click sphere to begin"
+        }
+
     } catch {
         statusText.innerText = "Server error"
     }
   }
-
-  maxDurationTimer = setTimeout(()=>{
-    if(listening){
-      mediaRecorder.stop()
-    }
-  }, MAX_RECORDING)
 
   monitorVolume()
 }
@@ -167,14 +165,6 @@ function monitorVolume(){
   requestAnimationFrame(monitorVolume)
 }
 
-function speak(text){
-  const utter = new SpeechSynthesisUtterance(text)
-  speechSynthesis.cancel()
-  utter.onstart = ()=> statusText.innerText = "AI Speaking..."
-  utter.onend = ()=> statusText.innerText = "Click sphere to begin"
-  speechSynthesis.speak(utter)
-}
-
 sphere.onclick = ()=>{
   if(!listening) startListening()
 }
@@ -187,68 +177,68 @@ sphere.onclick = ()=>{
 @app.route("/voice", methods=["POST"])
 def voice():
     try:
-        print("VOICE ROUTE HIT")
-
         if "audio" not in request.files:
-            print("NO AUDIO FILE")
-            return jsonify({
-                "product": None,
-                "response": "No audio received."
-            })
+            return "No audio", 400
 
         audio_file = request.files["audio"]
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
+        # Transcribe
         with open(audio_path, "rb") as f:
-            transcript_response = client.audio.transcriptions.create(
+            transcript = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f
-            )
-
-        transcript = transcript_response.text.strip()
-        print("TRANSCRIPT:", transcript)
+            ).text.strip()
 
         if len(transcript) < 3:
-            return jsonify({
-                "product": None,
-                "response": "I didn’t hear anything clearly. Please try again."
-            })
-
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            response_format={"type": "json_object"},
-            messages=[
-                {"role":"system","content":SYSTEM_PROMPT},
-                {"role":"user","content":transcript}
-            ],
-            temperature=0.2
-        )
-
-        parsed = json.loads(completion.choices[0].message.content)
-
-        valid_products = [
-            "Formula Exclusiva",
-            "Laciador",
-            "Gotero",
-            "Gotika"
-        ]
-
-        if parsed.get("product") not in valid_products:
-            parsed["product"] = "Formula Exclusiva"
-            parsed["response"] = (
-                "Formula Exclusiva is recommended for your concern. "
-                "Does that align with your goal?"
+            tts_text = "I didn’t hear anything clearly. Please try speaking again."
+        else:
+            completion = client.chat.completions.create(
+                model="gpt-4o-mini",
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role":"system","content":SYSTEM_PROMPT},
+                    {"role":"user","content":transcript}
+                ],
+                temperature=0.3
             )
 
-        return jsonify(parsed)
+            parsed = json.loads(completion.choices[0].message.content)
+
+            valid_products = [
+                "Formula Exclusiva",
+                "Laciador",
+                "Gotero",
+                "Gotika"
+            ]
+
+            if parsed.get("product") not in valid_products:
+                tts_text = "Formula Exclusiva is recommended for your concern. Does that align with your goal?"
+            else:
+                tts_text = parsed["response"]
+
+        # 🔥 OpenAI Real TTS
+        speech_file_path = "/tmp/output.mp3"
+
+        tts_response = client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=tts_text
+        )
+
+        with open(speech_file_path, "wb") as f:
+            f.write(tts_response.read())
+
+        return send_file(
+            speech_file_path,
+            mimetype="audio/mpeg"
+        )
 
     except Exception as e:
-        print("🔥 FULL ERROR:", str(e))
-        return jsonify({
-            "product": None,
-            "response": "Server error occurred. Please try again."
-        })
+        print("TTS ERROR:", str(e))
+        return "Server Error", 500
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
