@@ -3,27 +3,26 @@ from flask import Flask, request
 
 app = Flask(__name__)
 
-# ===============================
-# FRONTEND WITH FIXED SPEECH DETECTION
-# ===============================
 @app.route("/")
 def home():
     return """
 <!DOCTYPE html>
 <html>
 <head>
-<title>Bright Clinical AI</title>
+<title>Bright Clinical AI - Mic Debug</title>
 </head>
 <body style="background:black;color:white;text-align:center;margin-top:100px;font-family:Arial;">
 
-<h1>Bright Clinical AI</h1>
+<h1>Bright Clinical AI - Mic Debug</h1>
 <button onclick="record()">Speak</button>
 <p id="status">Idle</p>
+<p id="volume">Volume: 0</p>
 
 <script>
 async function record(){
 
     const status = document.getElementById("status");
+    const volumeDisplay = document.getElementById("volume");
 
     if(!navigator.mediaDevices){
         status.innerText = "Microphone not supported";
@@ -37,6 +36,7 @@ async function record(){
         const source = audioContext.createMediaStreamSource(stream);
         const analyser = audioContext.createAnalyser();
 
+        analyser.fftSize = 2048;
         source.connect(analyser);
 
         const data = new Uint8Array(analyser.fftSize);
@@ -88,8 +88,13 @@ async function record(){
 
             let volume = Math.sqrt(sum / data.length);
 
-            // 🔥 LOWERED THRESHOLD (was 0.02)
-            if(volume > 0.005){
+            // Show volume on screen
+            volumeDisplay.innerText = "Volume: " + volume.toFixed(6);
+
+            // Also log in console
+            console.log("Volume:", volume);
+
+            if(volume > 0.002){
                 speakingDetected = true;
             }
 
@@ -115,9 +120,6 @@ async function record(){
 """
 
 
-# ===============================
-# BACKEND AUDIO RECEIVER (TEST MODE)
-# ===============================
 @app.route("/voice", methods=["POST"])
 def voice():
 
@@ -136,9 +138,6 @@ def voice():
     return f"Backend received file size: {size} bytes"
 
 
-# ===============================
-# RUN SERVER
-# ===============================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
