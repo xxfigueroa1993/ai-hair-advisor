@@ -1,15 +1,13 @@
 import os
 import tempfile
-import numpy as np
-import wave
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Silence threshold tuned for Bluetooth mic
-SILENCE_THRESHOLD = 0.01
+# Minimum file size to consider real speech (Bluetooth safe)
+MIN_AUDIO_SIZE = 15000  # bytes
 
 @app.route("/")
 def home():
@@ -35,28 +33,7 @@ async function startRecording(){
 
     document.getElementById("status").innerText = "Listening...";
 
-    await navigator.mediaDevices.getUserMedia({audio:true});
-    const devices = await navigator.mediaDevices.enumerateDevices();
-
-    // Force Bluetooth mic
-    const headset = devices.find(d =>
-        d.kind === "audioinput" &&
-        d.label.includes("onn Neckband Pro")
-    );
-
-    if(!headset){
-        document.getElementById("status").innerText = "Bluetooth mic not found";
-        return;
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-            deviceId: { exact: headset.deviceId },
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-        }
-    });
+    const stream = await navigator.mediaDevices.getUserMedia({audio:true});
 
     mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
@@ -94,7 +71,7 @@ async function startRecording(){
 
     setTimeout(() => {
         mediaRecorder.stop();
-    }, 5000); // 5 seconds recording
+    }, 5000); // record 5 seconds
 }
 
 </script>
@@ -111,24 +88,19 @@ def voice():
 
     file = request.files["audio"]
 
+    file.seek(0, os.SEEK_END)
+    file_size = file.tell()
+    file.seek(0)
+
+    print("Backend received file size:", file_size)
+
+    # Silence protection
+    if file_size < MIN_AUDIO_SIZE:
+        return jsonify({"text": "No speech detected"})
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         temp_audio_path = temp_audio.name
-
-    # Convert webm to wav using wave (simple extraction)
-    # Whisper handles webm directly so we skip conversion
-
-    # Check volume to prevent silence triggering GPT
-    try:
-        audio_bytes = file.read()
-        volume = np.mean(np.abs(np.frombuffer(audio_bytes, dtype=np.int16)))
-    except:
-        volume = 0
-
-    print("Volume:", volume)
-
-    if volume < 100:
-        return jsonify({"text": "No speech detected"})
 
     try:
         with open(temp_audio_path, "rb") as audio_file:
