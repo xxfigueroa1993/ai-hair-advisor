@@ -1,6 +1,6 @@
 import os
 import json
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, send_file
 from openai import OpenAI
 
 app = Flask(__name__)
@@ -70,13 +70,17 @@ body {
 let mediaRecorder
 let audioChunks = []
 let silenceTimer = null
+let maxDurationTimer = null
 let audioContext
 let analyser
 let dataArray
 let listening = false
+let speechDetected = false
 
-const SILENCE_THRESHOLD = 4
-const SILENCE_DURATION = 3000
+const SILENCE_THRESHOLD = 5
+const SILENCE_DURATION = 2500
+const MIN_RECORDING_TIME = 1200
+const MAX_RECORDING_TIME = 15000
 
 const sphere = document.getElementById("sphere")
 const statusText = document.getElementById("status")
@@ -98,14 +102,24 @@ async function startListening(){
   dataArray = new Uint8Array(analyser.fftSize)
 
   audioChunks = []
+  speechDetected = false
   mediaRecorder.start()
   listening = true
   statusText.innerText = "Listening..."
+
+  const startTime = Date.now()
 
   mediaRecorder.ondataavailable = e => audioChunks.push(e.data)
 
   mediaRecorder.onstop = async () => {
     listening = false
+    clearTimeout(maxDurationTimer)
+
+    if(Date.now() - startTime < MIN_RECORDING_TIME){
+        statusText.innerText = "Please speak clearly."
+        return
+    }
+
     statusText.innerText = "AI Thinking..."
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
@@ -131,6 +145,12 @@ async function startListening(){
     }
   }
 
+  maxDurationTimer = setTimeout(()=>{
+      if(listening){
+          mediaRecorder.stop()
+      }
+  }, MAX_RECORDING_TIME)
+
   monitorVolume()
 }
 
@@ -146,19 +166,21 @@ function monitorVolume(){
   }
 
   let avg = sum / dataArray.length * 100
-
   pulse(1 + avg/10)
 
-  if(avg < SILENCE_THRESHOLD){
+  if(avg > SILENCE_THRESHOLD){
+      speechDetected = true
+      if(silenceTimer){
+          clearTimeout(silenceTimer)
+          silenceTimer = null
+      }
+  }
+
+  if(speechDetected && avg < SILENCE_THRESHOLD){
       if(!silenceTimer){
           silenceTimer = setTimeout(()=>{
               mediaRecorder.stop()
           }, SILENCE_DURATION)
-      }
-  } else {
-      if(silenceTimer){
-          clearTimeout(silenceTimer)
-          silenceTimer = null
       }
   }
 
@@ -184,7 +206,6 @@ def voice():
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
-        # Transcribe
         with open(audio_path, "rb") as f:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -218,7 +239,6 @@ def voice():
             else:
                 tts_text = parsed["response"]
 
-        # 🔥 OpenAI Real TTS
         speech_file_path = "/tmp/output.mp3"
 
         tts_response = client.audio.speech.create(
@@ -230,13 +250,10 @@ def voice():
         with open(speech_file_path, "wb") as f:
             f.write(tts_response.read())
 
-        return send_file(
-            speech_file_path,
-            mimetype="audio/mpeg"
-        )
+        return send_file(speech_file_path, mimetype="audio/mpeg")
 
     except Exception as e:
-        print("TTS ERROR:", str(e))
+        print("ERROR:", str(e))
         return "Server Error", 500
 
 
