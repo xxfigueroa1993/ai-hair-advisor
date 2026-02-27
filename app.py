@@ -6,129 +6,149 @@ app = Flask(__name__)
 client = None
 
 
-# =========================
-# FRONTEND
-# =========================
+# ===============================
+# HOME PAGE
+# ===============================
 @app.route("/")
 def home():
     return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Bright Clinical AI</title>
-        <style>
-            body {
-                margin:0;
-                background:black;
-                display:flex;
-                justify-content:center;
-                align-items:center;
-                height:100vh;
-                flex-direction:column;
-                color:white;
-                font-family:sans-serif;
+<!DOCTYPE html>
+<html>
+<head>
+<title>Bright Clinical AI</title>
+<style>
+body{
+    margin:0;
+    background:black;
+    color:white;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    flex-direction:column;
+    font-family:Arial;
+}
+#sphere{
+    width:200px;
+    height:200px;
+    border-radius:50%;
+    background:radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
+    box-shadow:0 0 80px rgba(0,200,255,0.9);
+    cursor:pointer;
+}
+#status{
+    margin-top:20px;
+}
+</style>
+</head>
+<body>
+
+<div id="sphere"></div>
+<div id="status">Click sphere to speak</div>
+
+<script>
+let mediaRecorder;
+let audioChunks = [];
+let listening = false;
+
+const sphere = document.getElementById("sphere");
+const statusText = document.getElementById("status");
+
+sphere.onclick = async () => {
+
+    if(listening) return;
+
+    if(!navigator.mediaDevices){
+        statusText.innerText = "Microphone API not supported";
+        return;
+    }
+
+    try{
+        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+        statusText.innerText = "Listening...";
+        mediaRecorder = new MediaRecorder(stream);
+
+        audioChunks = [];
+        mediaRecorder.start();
+        listening = true;
+
+        mediaRecorder.ondataavailable = e => {
+            if(e.data.size > 0){
+                audioChunks.push(e.data);
             }
-            #sphere {
-                width:200px;
-                height:200px;
-                border-radius:50%;
-                background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
-                box-shadow: 0 0 80px rgba(0,200,255,0.9);
-                cursor:pointer;
+        };
+
+        mediaRecorder.onstop = async () => {
+
+            listening = false;
+
+            const blob = new Blob(audioChunks, { type: "audio/webm" });
+
+            if(blob.size < 3000){
+                statusText.innerText = "No speech detected";
+                return;
             }
-            #status { margin-top:20px; }
-        </style>
-    </head>
-    <body>
 
-        <div id="sphere"></div>
-        <div id="status">Click sphere to speak</div>
+            statusText.innerText = "AI thinking...";
 
-        <script>
-            let mediaRecorder;
-            let audioChunks = [];
-            let listening = false;
+            const formData = new FormData();
+            formData.append("audio", blob, "speech.webm");
 
-            const sphere = document.getElementById("sphere");
-            const statusText = document.getElementById("status");
+            const res = await fetch("/voice", {
+                method: "POST",
+                body: formData
+            });
 
-            sphere.onclick = async () => {
+            if(res.status === 204){
+                statusText.innerText = "No speech detected";
+                return;
+            }
 
-                if(listening) return;
+            if(!res.ok){
+                statusText.innerText = "Server error";
+                return;
+            }
 
-                const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-                mediaRecorder = new MediaRecorder(stream);
+            const audioBlob = await res.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            const audio = new Audio(audioUrl);
 
-                audioChunks = [];
-                mediaRecorder.start();
-                listening = true;
-                statusText.innerText = "Listening...";
+            statusText.innerText = "AI speaking...";
+            audio.play();
 
-                mediaRecorder.ondataavailable = e => {
-                    if(e.data.size > 0){
-                        audioChunks.push(e.data);
-                    }
-                };
-
-                mediaRecorder.onstop = async () => {
-
-                    listening = false;
-
-                    const blob = new Blob(audioChunks, { type: "audio/webm" });
-
-                    if(blob.size < 3000){
-                        statusText.innerText = "No speech detected";
-                        return;
-                    }
-
-                    statusText.innerText = "AI thinking...";
-
-                    const formData = new FormData();
-                    formData.append("audio", blob, "speech.webm");
-
-                    const res = await fetch("/voice", {
-                        method: "POST",
-                        body: formData
-                    });
-
-                    if(res.status === 204){
-                        statusText.innerText = "No speech detected";
-                        return;
-                    }
-
-                    if(!res.ok){
-                        statusText.innerText = "Server error";
-                        return;
-                    }
-
-                    const audioBlob = await res.blob();
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    const audio = new Audio(audioUrl);
-
-                    statusText.innerText = "AI speaking...";
-                    audio.play();
-
-                    audio.onended = () => {
-                        statusText.innerText = "Click sphere to speak";
-                    };
-                };
-
-                setTimeout(()=>{
-                    if(listening){
-                        mediaRecorder.stop();
-                    }
-                }, 5000);
+            audio.onended = () => {
+                statusText.innerText = "Click sphere to speak";
             };
-        </script>
+        };
 
-    </body>
-    </html>
-    """
+        setTimeout(()=>{
+            if(listening){
+                mediaRecorder.stop();
+            }
+        }, 5000);
+
+    } catch(err){
+        statusText.innerText = "Microphone BLOCKED: " + err.message;
+    }
+};
+</script>
+
+</body>
+</html>
+"""
 
 
-# =========================
+# ===============================
+# FAVICON FIX
+# ===============================
+@app.route('/favicon.ico')
+def favicon():
+    return '', 204
+
+
+# ===============================
 # VOICE ENDPOINT
-# =========================
+# ===============================
 @app.route("/voice", methods=["POST"])
 def voice():
     global client
@@ -151,7 +171,7 @@ def voice():
         print("Audio file size:", size)
 
         if size < 3000:
-            print("Silence detected (file too small)")
+            print("Silence detected")
             return Response(status=204)
 
         # ===== TRANSCRIBE =====
@@ -162,12 +182,10 @@ def voice():
             )
 
         transcript = transcript_obj.text
-
         print("RAW TRANSCRIPT:", transcript)
 
-        # HARD STOP if empty
         if transcript is None or transcript.strip() == "":
-            print("Whisper returned EMPTY transcript")
+            print("Empty transcript from Whisper")
             return Response(status=204)
 
         # ===== GPT =====
@@ -176,7 +194,7 @@ def voice():
             messages=[
                 {
                     "role":"system",
-                    "content":"User describes a hair issue. Recommend one specific product clearly and professionally."
+                    "content":"User describes a hair issue. Recommend one specific product clearly and professionally. If input is unclear, ask for clarification."
                 },
                 {
                     "role":"user",
@@ -188,7 +206,7 @@ def voice():
         response_text = completion.choices[0].message.content
         print("GPT RESPONSE:", response_text)
 
-        # ===== TTS =====
+        # ===== TEXT TO SPEECH =====
         speech_path = "/tmp/output.mp3"
 
         tts = client.audio.speech.create(
@@ -200,7 +218,7 @@ def voice():
         with open(speech_path, "wb") as f:
             f.write(tts.read())
 
-        print("Returning audio response\n")
+        print("Returning audio response")
 
         return send_file(speech_path, mimetype="audio/mpeg")
 
@@ -209,6 +227,9 @@ def voice():
         return Response(status=500)
 
 
+# ===============================
+# RUN
+# ===============================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
