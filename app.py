@@ -1,11 +1,19 @@
 import os
+import sys
 import json
+import traceback
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
 app = Flask(__name__)
 
-client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# ✅ FIX 1: Fail loudly at startup if API key is missing
+api_key = os.environ.get("OPENAI_API_KEY")
+if not api_key:
+    print("FATAL: OPENAI_API_KEY is not set", file=sys.stderr)
+    sys.exit(1)
+
+client = OpenAI(api_key=api_key)
 
 SYSTEM_PROMPT = """
 You are Bright Clinical AI, a professional hair product advisor.
@@ -106,7 +114,7 @@ async function startListening(){
 
     clearTimeout(maxDurationTimer)
 
-    await new Promise(r => setTimeout(r,3000))
+    // ✅ FIX: Removed unnecessary 3-second artificial delay
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
     const formData = new FormData()
@@ -179,16 +187,21 @@ def voice():
 
         audio_file = request.files["audio"]
 
+        # ✅ FIX 2: Pass a named tuple so Whisper knows the file type
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
-            file=audio_file.stream
+            file=(audio_file.filename or "speech.webm", audio_file.stream, "audio/webm")
         ).text
 
+        print("TRANSCRIPT:", transcript)
+
+        # ✅ FIX 3: Use response_format to guarantee valid JSON from GPT
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
+            response_format={"type": "json_object"},
             messages=[
-                {"role":"system","content":SYSTEM_PROMPT},
-                {"role":"user","content":transcript}
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": transcript}
             ],
             temperature=0.2
         )
@@ -197,7 +210,9 @@ def voice():
 
         try:
             parsed = json.loads(content)
-        except:
+        except json.JSONDecodeError:
+            # ✅ FIX 4: Log bad JSON so you can see when GPT goes off-script
+            print("BAD JSON FROM GPT:", content)
             parsed = {
                 "product": "Formula Exclusiva",
                 "response": "Formula Exclusiva is recommended for your concern. Does that match your goal?"
@@ -205,12 +220,11 @@ def voice():
 
         return jsonify(parsed)
 
-    except import traceback
-except Exception as e:
-    traceback.print_exc()
-    return jsonify({"response": str(e)}), 500
+    except Exception as e:
+        # ✅ FIX 5: Full traceback in logs so you can see the real error
+        traceback.print_exc()
+        return jsonify({"response": f"Processing error: {str(e)}"}), 500
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000)
-
