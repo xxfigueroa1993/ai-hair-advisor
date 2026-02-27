@@ -37,36 +37,37 @@ Return JSON:
 @app.route("/")
 def home():
     return """
+    <!DOCTYPE html>
     <html>
     <head>
-    <title>Bright Clinical AI</title>
-    <style>
-    body{
-        margin:0;
-        background:black;
-        display:flex;
-        justify-content:center;
-        align-items:center;
-        height:100vh;
-        flex-direction:column;
-        color:white;
-        font-family:sans-serif;
-    }
-    #sphere{
-        width:200px;
-        height:200px;
-        border-radius:50%;
-        background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
-        box-shadow: 0 0 80px rgba(0,200,255,0.9);
-        cursor:pointer;
-    }
-    #status{margin-top:20px;}
-    </style>
+        <title>Bright Clinical AI</title>
+        <style>
+        body{
+            margin:0;
+            background:black;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            height:100vh;
+            flex-direction:column;
+            color:white;
+            font-family:sans-serif;
+        }
+        #sphere{
+            width:200px;
+            height:200px;
+            border-radius:50%;
+            background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
+            box-shadow: 0 0 80px rgba(0,200,255,0.9);
+            cursor:pointer;
+        }
+        #status{margin-top:20px;}
+        </style>
     </head>
     <body>
 
     <div id="sphere"></div>
-    <div id="status">Click sphere to speak (5 sec)</div>
+    <div id="status">Click sphere to speak</div>
 
     <script>
     let mediaRecorder
@@ -80,44 +81,64 @@ def home():
         if(listening) return
 
         const stream = await navigator.mediaDevices.getUserMedia({audio:true})
-        mediaRecorder = new MediaRecorder(stream)
+
+        mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" })
 
         audioChunks = []
         mediaRecorder.start()
         listening = true
         statusText.innerText = "Listening..."
 
-        mediaRecorder.ondataavailable = e => audioChunks.push(e.data)
+        mediaRecorder.ondataavailable = e => {
+            if(e.data.size > 0){
+                audioChunks.push(e.data)
+            }
+        }
 
         mediaRecorder.onstop = async () => {
             listening = false
             statusText.innerText = "AI Thinking..."
 
             const blob = new Blob(audioChunks,{type:"audio/webm"})
+
+            if(blob.size < 1000){
+                console.log("Empty audio blob")
+                statusText.innerText = "No speech detected"
+                return
+            }
+
             const formData = new FormData()
-            formData.append("audio",blob,"speech.webm")
+            formData.append("audio", blob, "speech.webm")
 
-            const res = await fetch("/voice",{method:"POST",body:formData})
+            try{
+                const res = await fetch("/voice", {
+                    method:"POST",
+                    body:formData
+                })
 
-            if(res.status === 204){
-                statusText.innerText = "Click sphere to speak"
-                return
-            }
+                if(res.status === 204){
+                    statusText.innerText = "No speech detected"
+                    return
+                }
 
-            if(!res.ok){
-                statusText.innerText = "Error occurred"
-                return
-            }
+                if(!res.ok){
+                    statusText.innerText = "Error occurred"
+                    return
+                }
 
-            const audioBlob = await res.blob()
-            const audioUrl = URL.createObjectURL(audioBlob)
-            const audio = new Audio(audioUrl)
+                const audioBlob = await res.blob()
+                const audioUrl = URL.createObjectURL(audioBlob)
+                const audio = new Audio(audioUrl)
 
-            statusText.innerText = "AI Speaking..."
-            audio.play()
+                statusText.innerText = "AI Speaking..."
+                audio.play()
 
-            audio.onended = ()=>{
-                statusText.innerText = "Click sphere to speak"
+                audio.onended = ()=>{
+                    statusText.innerText = "Click sphere to speak"
+                }
+
+            }catch(err){
+                statusText.innerText = "Server error"
             }
         }
 
@@ -141,14 +162,24 @@ def voice():
         if client is None:
             client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
+        print("VOICE endpoint hit")
+
         if "audio" not in request.files:
+            print("No audio in request")
             return Response(status=400)
 
         audio_file = request.files["audio"]
         audio_path = "/tmp/input.webm"
         audio_file.save(audio_path)
 
-        # 🔹 TRANSCRIBE
+        size = os.path.getsize(audio_path)
+        print("Audio file size:", size)
+
+        if size < 1000:
+            print("Audio too small")
+            return Response(status=204)
+
+        # 🔹 Transcribe
         with open(audio_path, "rb") as f:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -157,29 +188,16 @@ def voice():
 
         print("TRANSCRIPT:", transcript)
 
-        clean = transcript.lower().strip()
-        words = clean.split()
-
-        filler_words = [
-            "uh","um","okay","ok",
-            "thanks","thank you","hmm"
-        ]
-
-        # 🔹 REALISTIC SILENCE FILTER
-        if (
-            clean == "" or
-            len(words) < 2 or
-            clean in filler_words
-        ):
-            print("Rejected as silence")
+        if transcript == "":
             return Response(status=204)
 
-        # 🔹 Must contain at least one hair keyword
+        clean = transcript.lower()
+
         if not any(k in clean for k in HAIR_KEYWORDS):
-            print("No hair concern detected")
+            print("No hair keywords detected")
             return Response(status=204)
 
-        # 🔹 GPT CALL
+        # 🔹 GPT
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             response_format={"type":"json_object"},
@@ -192,11 +210,12 @@ def voice():
         parsed = json.loads(completion.choices[0].message.content)
 
         if parsed.get("product") not in VALID_PRODUCTS:
+            print("Invalid product returned")
             return Response(status=204)
 
         response_text = parsed["response"]
 
-        # 🔹 TEXT TO SPEECH
+        # 🔹 TTS
         speech_path = "/tmp/output.mp3"
 
         tts = client.audio.speech.create(
