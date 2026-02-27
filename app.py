@@ -10,10 +10,8 @@ SYSTEM_PROMPT = """
 You are Bright Clinical AI, a decisive professional hair product advisor.
 
 RULES:
-- Ignore greetings.
-- Extract the core hair concern even if vague.
-- Infer the most likely issue if unclear.
-- NEVER ask for clarification before recommending.
+- Extract the core hair concern.
+- Infer the most likely issue if vague.
 - ALWAYS select EXACTLY ONE product from:
   Formula Exclusiva
   Laciador
@@ -23,7 +21,6 @@ RULES:
 - End with a short confirmation question.
 
 Return ONLY valid JSON:
-
 {
   "product": "Product Name",
   "response": "Confident professional recommendation ending with short confirmation."
@@ -55,7 +52,6 @@ body {
   border-radius:50%;
   background: radial-gradient(circle at 30% 30%, #00f0ff, #0044ff);
   box-shadow: 0 0 90px rgba(0,200,255,0.9);
-  transition: transform 0.07s linear;
   cursor:pointer;
 }
 #status { margin-top:20px; }
@@ -64,62 +60,31 @@ body {
 <body>
 
 <div id="sphere"></div>
-<div id="status">Click sphere to begin</div>
+<div id="status">Click sphere to speak (5 sec max)</div>
 
 <script>
 let mediaRecorder
 let audioChunks = []
-let silenceTimer = null
-let maxDurationTimer = null
-let audioContext
-let analyser
-let dataArray
 let listening = false
-let speechDetected = false
 
-const SILENCE_THRESHOLD = 5
-const SILENCE_DURATION = 2500
-const MIN_RECORDING_TIME = 1200
-const MAX_RECORDING_TIME = 15000
+const RECORD_TIME = 5000
 
 const sphere = document.getElementById("sphere")
 const statusText = document.getElementById("status")
-
-function pulse(scale){
-  sphere.style.transform = "scale(" + scale + ")"
-}
 
 async function startListening(){
   const stream = await navigator.mediaDevices.getUserMedia({audio:true})
   mediaRecorder = new MediaRecorder(stream)
 
-  audioContext = new AudioContext()
-  const source = audioContext.createMediaStreamSource(stream)
-  analyser = audioContext.createAnalyser()
-  source.connect(analyser)
-
-  analyser.fftSize = 2048
-  dataArray = new Uint8Array(analyser.fftSize)
-
   audioChunks = []
-  speechDetected = false
   mediaRecorder.start()
   listening = true
   statusText.innerText = "Listening..."
-
-  const startTime = Date.now()
 
   mediaRecorder.ondataavailable = e => audioChunks.push(e.data)
 
   mediaRecorder.onstop = async () => {
     listening = false
-    clearTimeout(maxDurationTimer)
-
-    if(Date.now() - startTime < MIN_RECORDING_TIME){
-        statusText.innerText = "Please speak clearly."
-        return
-    }
-
     statusText.innerText = "AI Thinking..."
 
     const blob = new Blob(audioChunks,{type:"audio/webm"})
@@ -137,7 +102,7 @@ async function startListening(){
         audio.play()
 
         audio.onended = ()=>{
-            statusText.innerText = "Click sphere to begin"
+            statusText.innerText = "Click sphere to speak"
         }
 
     } catch {
@@ -145,46 +110,12 @@ async function startListening(){
     }
   }
 
-  maxDurationTimer = setTimeout(()=>{
-      if(listening){
-          mediaRecorder.stop()
-      }
-  }, MAX_RECORDING_TIME)
-
-  monitorVolume()
-}
-
-function monitorVolume(){
-  if(!listening) return
-
-  analyser.getByteTimeDomainData(dataArray)
-
-  let sum = 0
-  for(let i=0;i<dataArray.length;i++){
-    let value = (dataArray[i] - 128) / 128
-    sum += Math.abs(value)
-  }
-
-  let avg = sum / dataArray.length * 100
-  pulse(1 + avg/10)
-
-  if(avg > SILENCE_THRESHOLD){
-      speechDetected = true
-      if(silenceTimer){
-          clearTimeout(silenceTimer)
-          silenceTimer = null
-      }
-  }
-
-  if(speechDetected && avg < SILENCE_THRESHOLD){
-      if(!silenceTimer){
-          silenceTimer = setTimeout(()=>{
-              mediaRecorder.stop()
-          }, SILENCE_DURATION)
-      }
-  }
-
-  requestAnimationFrame(monitorVolume)
+  // Auto stop after fixed time
+  setTimeout(()=>{
+    if(listening){
+      mediaRecorder.stop()
+    }
+  }, RECORD_TIME)
 }
 
 sphere.onclick = ()=>{
@@ -213,7 +144,7 @@ def voice():
             ).text.strip()
 
         if len(transcript) < 3:
-            tts_text = "I didn’t hear anything clearly. Please try speaking again."
+            tts_text = "I didn’t hear anything clearly. Please try again."
         else:
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
