@@ -7,26 +7,26 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# ----------------------------
-# PRODUCT DATABASE
-# ----------------------------
+# ------------------------
+# PRODUCTS
+# ------------------------
 
 PRODUCTS = {
     "Laciador": {
         "price": "$34.99",
-        "description": "Delivers a sleek, smooth finish with frizz control and elegant shine."
+        "description": "Provides a sleek, smooth finish with long-lasting frizz control."
     },
     "Gotero": {
         "price": "$29.99",
-        "description": "Balances excess oil while nourishing the scalp for a fresh, clean feel."
+        "description": "Balances oil production while refreshing and nourishing the scalp."
     },
     "Volumizer": {
         "price": "$39.99",
-        "description": "Boosts thickness and restores body to thinning or fine hair."
+        "description": "Restores fullness and thickness to thinning or fine hair."
     },
     "Formula Exclusiva": {
         "price": "$49.99",
-        "description": "Our premium all-in-one restorative formula for complete hair revival."
+        "description": "Our premium all-in-one restorative treatment for total hair revival."
     }
 }
 
@@ -34,21 +34,21 @@ PRODUCTS = {
 def route_product(text):
     t = text.lower()
 
-    if any(x in t for x in ["event","party","wedding","date","sleek","smooth","frizz","bounce","bouncy"]):
+    if any(x in t for x in ["event","party","wedding","date","sleek","smooth","frizz"]):
         return "Laciador"
 
     if any(x in t for x in ["oily","greasy"]):
         return "Gotero"
 
-    if any(x in t for x in ["thin","thinning","hair loss","bald","falling out"]):
+    if any(x in t for x in ["thin","thinning","hair loss","bald"]):
         return "Volumizer"
 
     return "Formula Exclusiva"
 
 
-# ----------------------------
+# ------------------------
 # FRONTEND
-# ----------------------------
+# ------------------------
 
 @app.route("/")
 def home():
@@ -62,7 +62,8 @@ body{
 margin:0;height:100vh;
 display:flex;justify-content:center;
 align-items:center;background:#000;
-flex-direction:column;font-family:Arial;
+flex-direction:column;
+font-family:Arial;
 color:white;
 overflow:hidden;
 }
@@ -71,7 +72,6 @@ overflow:hidden;
 width:260px;height:260px;
 border-radius:50%;
 cursor:pointer;
-position:relative;
 }
 
 #response{
@@ -90,165 +90,203 @@ line-height:1.6;
 
 <script>
 
-const halo=document.getElementById("halo");
+const halo = document.getElementById("halo");
+const responseText = document.getElementById("response");
 
-let state="idle";
-let audioElement=null;
-let silenceTimer=null;
-let streamRef=null;
-let recorderRef=null;
+let state = "idle";
+let audioEl = null;
+let mediaRecorder = null;
+let stream = null;
+let silenceTimeout = null;
 
-let current=[0,255,200];
-let target=[0,255,200];
-let intensity=0.7;
-let targetIntensity=0.7;
-let pulse=1;
-let pulseTarget=1.05;  // default idle pulse
+let baseColor = [0,255,200];
+let currentColor = [...baseColor];
+let targetColor = [...baseColor];
 
-function lerp(a,b,t){return a+(b-a)*t;}
+let pulse = 1;
+let targetPulse = 1.02;
+let glowIntensity = 0.6;
+let targetGlow = 0.6;
+
+const fadeSpeed = 0.02; // slower smoothing
+
+// ---------- SOUND FX ----------
+
+const clickSound = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-modern-click-box-check-1120.mp3");
+const fadeSound = new Audio("https://assets.mixkit.co/sfx/preview/mixkit-interface-click-1126.mp3");
+
+function playClick(){
+    clickSound.currentTime = 0;
+    clickSound.volume = 0.4;
+    clickSound.play();
+}
+
+function playFade(){
+    fadeSound.currentTime = 0;
+    fadeSound.volume = 0.3;
+    fadeSound.play();
+}
+
+// ---------- ANIMATION LOOP ----------
+
+function lerp(a,b,t){ return a+(b-a)*t; }
 
 function animate(){
 
     for(let i=0;i<3;i++)
-        current[i]=lerp(current[i],target[i],0.05);
+        currentColor[i] = lerp(currentColor[i], targetColor[i], fadeSpeed);
 
-    intensity=lerp(intensity,targetIntensity,0.05);
-    pulse=lerp(pulse,pulseTarget,0.1);
+    pulse = lerp(pulse, targetPulse, fadeSpeed);
+    glowIntensity = lerp(glowIntensity, targetGlow, fadeSpeed);
 
-    // Thick smooth glow (NO border)
-    halo.style.background =
-    `radial-gradient(circle,
-        rgba(${current[0]},${current[1]},${current[2]},${intensity}) 0%,
-        rgba(${current[0]},${current[1]},${current[2]},${intensity*0.6}) 50%,
-        rgba(${current[0]},${current[1]},${current[2]},${intensity*0.2}) 80%,
-        rgba(${current[0]},${current[1]},${current[2]},0) 100%)`;
+    // thick smooth halo (no visible ring)
+    halo.style.background = `
+    radial-gradient(circle,
+        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${glowIntensity}) 0%,
+        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${glowIntensity*0.7}) 40%,
+        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${glowIntensity*0.4}) 70%,
+        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},0) 100%)`;
 
-    halo.style.boxShadow =
-    `0 0 120px rgba(${current[0]},${current[1]},${current[2]},${intensity*0.6}),
-     0 0 240px rgba(${current[0]},${current[1]},${current[2]},${intensity*0.4})`;
+    halo.style.boxShadow = `
+    0 0 160px rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${glowIntensity*0.7}),
+    0 0 260px rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${glowIntensity*0.5})`;
 
-    halo.style.transform=`scale(${pulse})`;
+    halo.style.transform = `scale(${pulse})`;
 
     requestAnimationFrame(animate);
 }
 animate();
 
+// ---------- STATE MANAGEMENT ----------
 
-function resetState(){
+function resetToIdle(){
 
     state="idle";
-    target=[0,255,200];
-    targetIntensity=0.7;
-    pulseTarget=1.05;
 
-    if(audioElement){
-        audioElement.pause();
-        audioElement=null;
+    targetColor=[...baseColor];
+    targetPulse=1.02;
+    targetGlow=0.6;
+
+    if(audioEl){
+        audioEl.pause();
+        audioEl=null;
     }
 
-    if(streamRef){
-        streamRef.getTracks().forEach(t=>t.stop());
-        streamRef=null;
+    if(stream){
+        stream.getTracks().forEach(t=>t.stop());
+        stream=null;
     }
 
-    silenceTimer=null;
+    silenceTimeout=null;
 }
 
+// ---------- CLICK ----------
 
 halo.addEventListener("click",()=>{
 
-    resetState();
+    playClick();
 
     if(state==="idle"){
         startListening();
+    }else{
+        resetToIdle();
     }
 });
 
+// ---------- LISTEN ----------
 
 async function startListening(){
 
-    try{
+    resetToIdle();
 
-        state="listening";
-        target=[255,200,0];
-        targetIntensity=1.2;
-        pulseTarget=1.1;
+    state="listening";
 
-        streamRef=await navigator.mediaDevices.getUserMedia({audio:true});
+    targetColor=[255,200,0];
+    targetGlow=1.0;
+    targetPulse=1.05;
 
-        const audioCtx=new AudioContext();
-        const analyser=audioCtx.createAnalyser();
-        analyser.fftSize=256;
-        const src=audioCtx.createMediaStreamSource(streamRef);
-        src.connect(analyser);
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
+    mediaRecorder = new MediaRecorder(stream);
+    let chunks=[];
 
-        recorderRef=new MediaRecorder(streamRef);
-        let chunks=[];
+    mediaRecorder.ondataavailable=e=>chunks.push(e.data);
 
-        recorderRef.ondataavailable=e=>chunks.push(e.data);
+    mediaRecorder.onstop=async()=>{
 
-        recorderRef.onstop=async()=>{
+        playFade();
 
-            state="thinking";
-            target=[0,255,255];
+        state="thinking";
+        targetColor=[0,255,255];
+        targetGlow=1.1;
 
-            const blob=new Blob(chunks,{type:"audio/webm"});
-            const form=new FormData();
-            form.append("audio",blob);
+        const blob=new Blob(chunks,{type:"audio/webm"});
+        const form=new FormData();
+        form.append("audio",blob);
 
-            const res=await fetch("/voice",{method:"POST",body:form});
-            const data=await res.json();
+        const res=await fetch("/voice",{method:"POST",body:form});
+        const data=await res.json();
 
-            document.getElementById("response").innerText=data.text;
-            speakAI(data.audio);
-        };
+        responseText.innerText=data.text;
 
-        recorderRef.start();
+        speak(data.audio);
+    };
 
-        function detect(){
+    mediaRecorder.start();
 
-            if(state!=="listening") return;
-
-            const data=new Uint8Array(analyser.frequencyBinCount);
-            analyser.getByteFrequencyData(data);
-            let volume=data.reduce((a,b)=>a+b)/data.length;
-
-            pulseTarget=1+volume/120;
-
-            if(volume<5){
-                if(!silenceTimer){
-                    silenceTimer=setTimeout(()=>{
-                        recorderRef.stop();
-                    },2000);
-                }
-            }else{
-                clearTimeout(silenceTimer);
-                silenceTimer=null;
-            }
-
-            requestAnimationFrame(detect);
-        }
-
-        detect();
-
-    }catch(e){
-        console.log(e);
-        resetState();
-    }
+    detectSilence();
 }
 
+// ---------- SILENCE DETECT ----------
 
-function speakAI(b64){
+function detectSilence(){
+
+    const audioCtx=new AudioContext();
+    const analyser=audioCtx.createAnalyser();
+    const src=audioCtx.createMediaStreamSource(stream);
+    src.connect(analyser);
+
+    analyser.fftSize=256;
+
+    function check(){
+
+        if(state!=="listening") return;
+
+        const data=new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const volume=data.reduce((a,b)=>a+b)/data.length;
+
+        if(volume<5){
+            if(!silenceTimeout){
+                silenceTimeout=setTimeout(()=>{
+                    mediaRecorder.stop();
+                },1500);
+            }
+        }else{
+            clearTimeout(silenceTimeout);
+            silenceTimeout=null;
+        }
+
+        requestAnimationFrame(check);
+    }
+
+    check();
+}
+
+// ---------- SPEAK ----------
+
+function speak(b64){
 
     state="speaking";
-    target=[120,255,255];
-    pulseTarget=1.1;
 
-    audioElement=new Audio("data:audio/mp3;base64,"+b64);
-    audioElement.play();
+    targetColor=[120,255,255];
+    targetGlow=1.2;
+    targetPulse=1.06;
 
-    audioElement.onended=()=>{
-        resetState();
+    audioEl=new Audio("data:audio/mp3;base64,"+b64);
+    audioEl.play();
+
+    audioEl.onended=()=>{
+        resetToIdle();
     };
 }
 
@@ -257,16 +295,14 @@ function speakAI(b64){
 </html>
 """
 
-
-# ----------------------------
+# ------------------------
 # VOICE ROUTE
-# ----------------------------
+# ------------------------
 
 @app.route("/voice", methods=["POST"])
 def voice():
 
     try:
-
         file=request.files["audio"]
 
         with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
@@ -280,7 +316,7 @@ def voice():
                 response_format="text"
             )
 
-        os.remove(path)  # CLEANUP FIX
+        os.remove(path)
 
         product_name=route_product(transcript)
         product=PRODUCTS[product_name]
@@ -304,9 +340,9 @@ The price is {product['price']}.
             "audio":base64.b64encode(audio_bytes).decode("utf-8")
         })
 
-    except Exception as e:
+    except Exception:
         return jsonify({
-            "text":"Sorry, something went wrong. Please try again.",
+            "text":"Something went wrong. Please try again.",
             "audio":""
         })
 
