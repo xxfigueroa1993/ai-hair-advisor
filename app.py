@@ -1,7 +1,6 @@
 import os
 from flask import Flask
 
-os.environ["PYTHONUNBUFFERED"] = "1"
 app = Flask(__name__)
 
 @app.route("/")
@@ -10,8 +9,8 @@ def home():
 <!DOCTYPE html>
 <html>
 <head>
-<title>Luxury Hair AI</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luxury Hair AI</title>
 <style>
 body{
 margin:0;
@@ -25,24 +24,26 @@ font-family:Arial;
 color:white;
 overflow:hidden;
 }
+
 .wrapper{
-width:420px;
-height:420px;
+width:380px;
+height:380px;
 display:flex;
 justify-content:center;
 align-items:center;
 }
+
 #halo{
-width:300px;
-height:300px;
+width:280px;
+height:280px;
 border-radius:50%;
 cursor:pointer;
-backdrop-filter:blur(90px);
-transition:transform 0.04s linear;
+transition:transform 0.05s linear;
 }
+
 #response{
-margin-top:40px;
-width:70%;
+margin-top:30px;
+width:75%;
 text-align:center;
 font-size:18px;
 }
@@ -67,78 +68,29 @@ let transcript="";
 let silenceTimer=null;
 let noSpeechTimer=null;
 
-let audioContext=null;
+let audioCtx=null;
 let analyser=null;
-let micSource=null;
+let micStream=null;
 let dataArray=null;
-
-// ================= VOICE =================
-
-speechSynthesis.getVoices();
-speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
-
-function getVoice(){
-let voices=speechSynthesis.getVoices();
-return voices.find(v=>v.lang==="en-US") || voices[0];
-}
 
 // ================= COLOR =================
 
-let currentColor=[0,255,200];
-const FADE_DURATION=1200;
+let color=[0,255,200];
 
-function lerp(a,b,t){return a+(b-a)*t;}
-
-function animateColor(target){
-const start=[...currentColor];
-const startTime=performance.now();
-
-function frame(now){
-let p=(now-startTime)/FADE_DURATION;
-if(p>1)p=1;
-
-let r=Math.floor(lerp(start[0],target[0],p));
-let g=Math.floor(lerp(start[1],target[1],p));
-let b=Math.floor(lerp(start[2],target[2],p));
-
+function setColor(r,g,b){
 halo.style.boxShadow=`
-0 0 160px rgba(${r},${g},${b},0.9),
-0 0 320px rgba(${r},${g},${b},0.6),
-0 0 420px rgba(${r},${g},${b},0.4)
+0 0 120px rgba(${r},${g},${b},0.9),
+0 0 260px rgba(${r},${g},${b},0.6),
+0 0 380px rgba(${r},${g},${b},0.4)
 `;
-
-halo.style.background=`
-radial-gradient(circle,
-rgba(${r},${g},${b},0.55) 0%,
-rgba(${r},${g},${b},0.4) 40%,
-rgba(${r},${g},${b},0.25) 75%,
-rgba(${r},${g},${b},0.1) 100%)
-`;
-
-currentColor=[r,g,b];
-if(p<1) requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+halo.style.background=`radial-gradient(circle, rgba(${r},${g},${b},0.6) 0%, rgba(${r},${g},${b},0.2) 70%)`;
 }
 
-animateColor([0,255,200]);
-
-// ================= MIC SETUP =================
-
-async function setupMic(){
-audioContext=new (window.AudioContext||window.webkitAudioContext)();
-let stream=await navigator.mediaDevices.getUserMedia({audio:true});
-micSource=audioContext.createMediaStreamSource(stream);
-analyser=audioContext.createAnalyser();
-analyser.fftSize=1024;
-micSource.connect(analyser);
-dataArray=new Uint8Array(analyser.fftSize);
-}
+setColor(0,255,200);
 
 // ================= PULSE =================
 
-function pulseLoop(){
-
+function pulse(){
 let scale=1;
 
 if(state==="idle"){
@@ -148,15 +100,12 @@ scale=1+Math.sin(Date.now()*0.002)*0.04;
 if(state==="listening" && analyser){
 analyser.getByteTimeDomainData(dataArray);
 
-// RMS calculation (true amplitude)
 let sum=0;
 for(let i=0;i<dataArray.length;i++){
 let val=(dataArray[i]-128)/128;
 sum+=val*val;
 }
 let rms=Math.sqrt(sum/dataArray.length);
-
-// sensitivity boost
 scale=1+Math.min(rms*4,0.35);
 }
 
@@ -165,58 +114,38 @@ scale=1+Math.sin(Date.now()*0.004)*0.12;
 }
 
 halo.style.transform=`scale(${scale})`;
-requestAnimationFrame(pulseLoop);
+requestAnimationFrame(pulse);
 }
-pulseLoop();
+pulse();
 
-// ================= SOUNDS =================
+// ================= MIC =================
 
-function playIntro(){
-const ctx=new (window.AudioContext||window.webkitAudioContext)();
-const osc=ctx.createOscillator();
-const gain=ctx.createGain();
-osc.type="sine";
-osc.frequency.setValueAtTime(320,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(160,ctx.currentTime+1.2);
-gain.gain.setValueAtTime(0.35,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.3);
-osc.connect(gain);
-gain.connect(ctx.destination);
-osc.start();
-osc.stop(ctx.currentTime+1.3);
+async function initMic(){
+if(audioCtx) return;
+
+audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+let source=audioCtx.createMediaStreamSource(micStream);
+analyser=audioCtx.createAnalyser();
+analyser.fftSize=1024;
+source.connect(analyser);
+dataArray=new Uint8Array(analyser.fftSize);
 }
 
-function playOutro(){
-const ctx=new (window.AudioContext||window.webkitAudioContext)();
-const osc=ctx.createOscillator();
-const gain=ctx.createGain();
-osc.type="sine";
-osc.frequency.setValueAtTime(480,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(240,ctx.currentTime+1.0);
-gain.gain.setValueAtTime(0.3,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.1);
-osc.connect(gain);
-gain.connect(ctx.destination);
-osc.start();
-osc.stop(ctx.currentTime+1.1);
-}
-
-// ================= SPEAK =================
+// ================= VOICE =================
 
 function speak(text){
 state="speaking";
-animateColor([0,200,255]);
+setColor(0,200,255);
 
-const utter=new SpeechSynthesisUtterance(text);
-utter.voice=getVoice();
+let utter=new SpeechSynthesisUtterance(text);
 utter.rate=0.95;
 utter.pitch=1.02;
 
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
-playOutro();
-animateColor([0,255,200]);
+setColor(0,255,200);
 state="idle";
 };
 }
@@ -264,11 +193,10 @@ speak(result);
 
 async function startListening(){
 
-if(!audioContext) await setupMic();
+await initMic();
 
-playIntro();
-animateColor([255,210,80]);
 state="listening";
+setColor(255,210,80);
 transcript="";
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -277,11 +205,14 @@ recognition.continuous=true;
 recognition.interimResults=true;
 
 recognition.onresult=function(event){
+
 clearTimeout(noSpeechTimer);
+
 transcript="";
 for(let i=0;i<event.results.length;i++){
 transcript+=event.results[i][0].transcript;
 }
+
 clearTimeout(silenceTimer);
 silenceTimer=setTimeout(()=>{
 recognition.stop();
@@ -307,7 +238,7 @@ startListening();
 }else{
 if(recognition) recognition.stop();
 speechSynthesis.cancel();
-animateColor([0,255,200]);
+setColor(0,255,200);
 state="idle";
 }
 });
@@ -317,6 +248,6 @@ state="idle";
 </html>
 """
 
-if __name__=="__main__":
-    port=int(os.environ.get("PORT",10000))
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
