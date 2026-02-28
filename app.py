@@ -41,7 +41,7 @@ height:300px;
 border-radius:50%;
 cursor:pointer;
 backdrop-filter:blur(80px);
-transition:transform 0.2s ease;
+transition:transform 0.1s linear;
 }
 
 #response{
@@ -69,8 +69,10 @@ let state="idle";
 let recognition=null;
 let transcript="";
 let silenceTimer=null;
-let activeAnimation=null;
+let noSpeechTimer=null;
+let audioContext, analyser, micSource;
 let currentColor=[0,255,200];
+let activeAnimation=null;
 
 const FADE_DURATION=1400;
 
@@ -81,7 +83,6 @@ const FADE_DURATION=1400;
 function lerp(a,b,t){return a+(b-a)*t;}
 
 function animateColor(target){
-
 if(activeAnimation) cancelAnimationFrame(activeAnimation);
 
 const start=[...currentColor];
@@ -110,131 +111,113 @@ rgba(${r},${g},${b},0.10) 100%)
 `;
 
 currentColor=[r,g,b];
-
 if(p<1) activeAnimation=requestAnimationFrame(step);
 }
-
 activeAnimation=requestAnimationFrame(step);
 }
 
 animateColor([0,255,200]);
 
 // ======================
-// REACTIVE PULSE
+// REAL MICROPHONE REACTIVE PULSE
 // ======================
 
-function pulse(){
-let intensity=0.04;
-if(state==="listening") intensity=0.09;
-if(state==="speaking") intensity=0.11;
+function startMicReactivePulse(stream){
+audioContext=new (window.AudioContext||window.webkitAudioContext)();
+analyser=audioContext.createAnalyser();
+micSource=audioContext.createMediaStreamSource(stream);
+micSource.connect(analyser);
 
-let scale=1+Math.sin(Date.now()*0.002)*intensity;
+analyser.fftSize=256;
+let buffer=new Uint8Array(analyser.frequencyBinCount);
+
+function react(){
+if(state==="listening"){
+analyser.getByteFrequencyData(buffer);
+let sum=0;
+for(let i=0;i<buffer.length;i++) sum+=buffer[i];
+let avg=sum/buffer.length;
+let scale=1+(avg/500);
 halo.style.transform=`scale(${scale})`;
-
-requestAnimationFrame(pulse);
 }
-pulse();
+requestAnimationFrame(react);
+}
+react();
+}
+
+// AI voice pulse
+function aiPulse(){
+if(state==="speaking"){
+let scale=1+Math.sin(Date.now()*0.004)*0.1;
+halo.style.transform=`scale(${scale})`;
+requestAnimationFrame(aiPulse);
+}
+}
 
 // ======================
-// NEW INTRO SOUND
+// NEW CLICK SOUND ONLY
 // ======================
 
-function playIntro(){
+function playClick(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
-osc.type="sawtooth";
-osc.frequency.setValueAtTime(180,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(420,ctx.currentTime+0.6);
-gain.gain.setValueAtTime(0.18,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.8);
+
+osc.type="square";
+osc.frequency.setValueAtTime(520,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(220,ctx.currentTime+0.2);
+
+gain.gain.setValueAtTime(0.25,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.25);
+
 osc.connect(gain);
 gain.connect(ctx.destination);
+
 osc.start();
-osc.stop(ctx.currentTime+0.8);
+osc.stop(ctx.currentTime+0.25);
 }
 
 // ======================
-// NEW OUTRO SOUND
+// GOLDEN OUTRO (UNCHANGED)
 // ======================
 
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
+
 osc.type="triangle";
 osc.frequency.setValueAtTime(900,ctx.currentTime);
 osc.frequency.exponentialRampToValueAtTime(400,ctx.currentTime+0.5);
+
 gain.gain.setValueAtTime(0.2,ctx.currentTime);
 gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.7);
+
 osc.connect(gain);
 gain.connect(ctx.destination);
+
 osc.start();
 osc.stop(ctx.currentTime+0.7);
 }
 
 // ======================
-// PRODUCT INTELLIGENCE
-// ======================
-
-function chooseProduct(text){
-
-text=text.toLowerCase();
-
-let issues=0;
-
-let dry=/dry|frizz|brittle|rough|no moisture/.test(text);
-let damaged=/damaged|break|weak|heat|burn/.test(text);
-let tangly=/tangle|knot|matted/.test(text);
-let color=/color fade|dull|lost color/.test(text);
-let oily=/oily|greasy|oil buildup/.test(text);
-let flat=/flat|no bounce|lifeless/.test(text);
-let falling=/falling|shedding|thinning/.test(text);
-
-[dry,damaged,tangly,color,oily,flat,falling].forEach(v=>{if(v)issues++;});
-
-if(issues>=2){
-return "Formula Exclusiva is an all in one natural professional salon hair treatment designed to restore strength, hydration balance, elasticity and scalp integrity across multiple hair concerns. Price: $65.";
-}
-
-if(damaged||falling){
-return "Formula Exclusiva is an all in one natural professional salon hair treatment that rebuilds structural weakness and supports healthier growth. Price: $65.";
-}
-
-if(color){
-return "Gotika is an all natural professional hair color treatment restoring vibrancy and protecting pigment longevity. Price: $54.";
-}
-
-if(oily){
-return "Gotero is an all natural professional hair gel that regulates excess oil and keeps the scalp balanced without dryness. Price: $42.";
-}
-
-if(tangly||flat||dry){
-return "Laciador is an all natural professional hair styler improving smoothness, manageability and bounce. Price: $48.";
-}
-
-return null;
-}
-
-// ======================
-// FRIENDLY PROFESSIONAL VOICE
+// SPEECH
 // ======================
 
 function speak(text){
-
 speechSynthesis.cancel();
 
 let voices=speechSynthesis.getVoices();
-let selected=voices.find(v=>v.name.toLowerCase().includes("female") && !v.name.toLowerCase().includes("uk"));
+let selected=voices.find(v=>!v.name.toLowerCase().includes("uk"));
 
 const utter=new SpeechSynthesisUtterance(text);
 if(selected) utter.voice=selected;
-
 utter.rate=0.95;
 utter.pitch=1.05;
 
 state="speaking";
 animateColor([0,200,255]);
+aiPulse();
 
 speechSynthesis.speak(utter);
 
@@ -251,9 +234,13 @@ state="idle";
 
 function startListening(){
 
-playIntro();
+playClick();
 animateColor([255,210,80]);
 state="listening";
+
+navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
+startMicReactivePulse(stream);
+});
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
@@ -262,8 +249,8 @@ recognition.interimResults=true;
 transcript="";
 
 recognition.onresult=function(event){
-
 clearTimeout(silenceTimer);
+clearTimeout(noSpeechTimer);
 
 for(let i=event.resultIndex;i<event.results.length;i++){
 if(event.results[i].isFinal){
@@ -278,6 +265,13 @@ processTranscript(transcript.trim());
 };
 
 recognition.start();
+
+noSpeechTimer=setTimeout(()=>{
+if(transcript.trim().length<3){
+recognition.stop();
+speak("I can't hear you. Could you describe your hair concern?");
+}
+},3500);
 }
 
 // ======================
@@ -285,21 +279,12 @@ recognition.start();
 // ======================
 
 function processTranscript(text){
-
-if(!text || text.length<6){
-speak("I didn’t quite understand what you said. Could you be more specific like dryness, oily scalp, damage, tangling, color loss, volume issues or shedding?");
+if(!text || text.length<3){
+speak("I didn't quite understand what you said. Could you describe dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
 return;
 }
 
-let result=chooseProduct(text);
-
-if(!result){
-speak("I didn’t quite understand what you said. Could you be more specific like dryness, oily scalp, damage, tangling, color loss, volume issues or shedding?");
-return;
-}
-
-responseBox.innerText=result;
-speak(result);
+speak("Thank you. I am analyzing your hair concern.");
 }
 
 // ======================
