@@ -38,7 +38,7 @@ height:300px;
 border-radius:50%;
 cursor:pointer;
 backdrop-filter:blur(90px);
-transition:transform 0.05s linear;
+transition:transform 0.04s linear;
 }
 #response{
 margin-top:40px;
@@ -69,7 +69,7 @@ let noSpeechTimer=null;
 
 let audioContext=null;
 let analyser=null;
-let micStream=null;
+let micSource=null;
 let dataArray=null;
 
 // ================= VOICE =================
@@ -123,17 +123,19 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-// ================= MIC PULSE =================
+// ================= MIC SETUP =================
 
 async function setupMic(){
 audioContext=new (window.AudioContext||window.webkitAudioContext)();
-micStream=await navigator.mediaDevices.getUserMedia({audio:true});
-let source=audioContext.createMediaStreamSource(micStream);
+let stream=await navigator.mediaDevices.getUserMedia({audio:true});
+micSource=audioContext.createMediaStreamSource(stream);
 analyser=audioContext.createAnalyser();
-analyser.fftSize=256;
-source.connect(analyser);
-dataArray=new Uint8Array(analyser.frequencyBinCount);
+analyser.fftSize=1024;
+micSource.connect(analyser);
+dataArray=new Uint8Array(analyser.fftSize);
 }
+
+// ================= PULSE =================
 
 function pulseLoop(){
 
@@ -144,9 +146,18 @@ scale=1+Math.sin(Date.now()*0.002)*0.04;
 }
 
 if(state==="listening" && analyser){
-analyser.getByteFrequencyData(dataArray);
-let avg=dataArray.reduce((a,b)=>a+b)/dataArray.length;
-scale=1+avg/500;
+analyser.getByteTimeDomainData(dataArray);
+
+// RMS calculation (true amplitude)
+let sum=0;
+for(let i=0;i<dataArray.length;i++){
+let val=(dataArray[i]-128)/128;
+sum+=val*val;
+}
+let rms=Math.sqrt(sum/dataArray.length);
+
+// sensitivity boost
+scale=1+Math.min(rms*4,0.35);
 }
 
 if(state==="speaking"){
