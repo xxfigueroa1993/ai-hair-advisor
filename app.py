@@ -39,8 +39,8 @@ width:300px;
 height:300px;
 border-radius:50%;
 cursor:pointer;
-backdrop-filter:blur(80px);
-transition:transform 0.08s linear;
+backdrop-filter:blur(90px);
+transition:transform 0.05s linear;
 }
 
 #response{
@@ -73,25 +73,24 @@ let noSpeechTimer=null;
 let audioCtx=null;
 let analyser=null;
 let dataArray=null;
-let micStream=null;
-let animationFrame=null;
+let micSource=null;
 
 let currentColor=[0,255,200];
-let activeColorAnim=null;
+let colorAnim=null;
 
-const FADE_DURATION=1400;
+const FADE_DURATION=1200;
 
-// ================= COLOR FADE =================
+// ===================== COLOR FADE =====================
 
 function lerp(a,b,t){return a+(b-a)*t;}
 
 function animateColor(target){
-if(activeColorAnim) cancelAnimationFrame(activeColorAnim);
+if(colorAnim) cancelAnimationFrame(colorAnim);
 
 const start=[...currentColor];
 const startTime=performance.now();
 
-function step(now){
+function frame(now){
 let p=(now-startTime)/FADE_DURATION;
 if(p>1)p=1;
 
@@ -100,38 +99,31 @@ let g=Math.floor(lerp(start[1],target[1],p));
 let b=Math.floor(lerp(start[2],target[2],p));
 
 halo.style.boxShadow=`
-0 0 150px rgba(${r},${g},${b},0.85),
-0 0 280px rgba(${r},${g},${b},0.55),
-0 0 380px rgba(${r},${g},${b},0.35)
+0 0 160px rgba(${r},${g},${b},0.9),
+0 0 320px rgba(${r},${g},${b},0.6),
+0 0 420px rgba(${r},${g},${b},0.4)
 `;
 
 halo.style.background=`
-radial-gradient(circle at center,
-rgba(${r},${g},${b},0.5) 0%,
-rgba(${r},${g},${b},0.35) 40%,
-rgba(${r},${g},${b},0.2) 75%,
+radial-gradient(circle,
+rgba(${r},${g},${b},0.55) 0%,
+rgba(${r},${g},${b},0.4) 40%,
+rgba(${r},${g},${b},0.25) 75%,
 rgba(${r},${g},${b},0.1) 100%)
 `;
 
 currentColor=[r,g,b];
 
-if(p<1){
-activeColorAnim=requestAnimationFrame(step);
+if(p<1) colorAnim=requestAnimationFrame(frame);
 }
-}
-activeColorAnim=requestAnimationFrame(step);
+colorAnim=requestAnimationFrame(frame);
 }
 
 animateColor([0,255,200]);
 
-// ================= AUDIO REACTIVE =================
+// ===================== REACTIVE PULSE =====================
 
-function startAudioReactive(){
-
-if(animationFrame) cancelAnimationFrame(animationFrame);
-
-function loop(){
-
+function pulseLoop(){
 let scale=1;
 
 if(state==="idle"){
@@ -146,21 +138,20 @@ let v=(dataArray[i]-128)/128;
 sum+=v*v;
 }
 let volume=Math.sqrt(sum/dataArray.length);
-scale=1+volume*2.5;
+scale=1+volume*3; // strong mic reaction
 }
 
 if(state==="speaking"){
-scale=1+Math.sin(Date.now()*0.004)*0.1;
+scale=1+Math.sin(Date.now()*0.004)*0.12;
 }
 
 halo.style.transform=`scale(${scale})`;
-animationFrame=requestAnimationFrame(loop);
+requestAnimationFrame(pulseLoop);
 }
 
-loop();
-}
+pulseLoop();
 
-// ================= SLOW PREMIUM INTRO =================
+// ===================== INTRO SOUND (SLOW LUXURY) =====================
 
 function playClick(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -168,20 +159,20 @@ const osc=ctx.createOscillator();
 const gain=ctx.createGain();
 
 osc.type="sine";
-osc.frequency.setValueAtTime(420,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(260,ctx.currentTime+0.6);
+osc.frequency.setValueAtTime(480,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(220,ctx.currentTime+0.9);
 
-gain.gain.setValueAtTime(0.25,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.8);
+gain.gain.setValueAtTime(0.3,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1);
 
 osc.connect(gain);
 gain.connect(ctx.destination);
 
 osc.start();
-osc.stop(ctx.currentTime+0.8);
+osc.stop(ctx.currentTime+1);
 }
 
-// ================= SLOW GOLDEN OUTRO =================
+// ===================== OUTRO SOUND (SLOW GOLDEN) =====================
 
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -189,65 +180,61 @@ const osc=ctx.createOscillator();
 const gain=ctx.createGain();
 
 osc.type="triangle";
-osc.frequency.setValueAtTime(1000,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(500,ctx.currentTime+0.9);
+osc.frequency.setValueAtTime(1100,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(500,ctx.currentTime+1.1);
 
-gain.gain.setValueAtTime(0.25,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.1);
+gain.gain.setValueAtTime(0.3,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.3);
 
 osc.connect(gain);
 gain.connect(ctx.destination);
 
 osc.start();
-osc.stop(ctx.currentTime+1.1);
+osc.stop(ctx.currentTime+1.3);
 }
 
-// ================= PRODUCT LOGIC =================
+// ===================== PRODUCT LOGIC =====================
 
 function chooseProduct(text){
 
 text=text.toLowerCase();
 
-let dry=/dry|frizz|brittle|rough|no moisture/.test(text);
-let damaged=/damaged|break|weak|heat|burn/.test(text);
-let tangly=/tangle|knot|matted/.test(text);
+let dry=/dry|frizz|brittle|rough|split/.test(text);
+let damaged=/damaged|break|weak|burn/.test(text);
+let tangly=/tangle|knot/.test(text);
 let color=/color fade|dull|lost color/.test(text);
 let oily=/oily|greasy|oil buildup/.test(text);
-let flat=/flat|no bounce|lifeless/.test(text);
+let flat=/flat|lifeless|no bounce/.test(text);
 let falling=/falling|shedding|thinning/.test(text);
 
-let issues=[dry,damaged,tangly,color,oily,flat,falling].filter(v=>v).length;
+let count=[dry,damaged,tangly,color,oily,flat,falling].filter(Boolean).length;
 
-if(issues>=2 || damaged || falling){
-return "Formula Exclusiva is an all in one natural professional salon hair treatment designed to restore strength, hydration balance, elasticity and scalp integrity across multiple hair concerns. Price: $65.";
+if(count>=2 || damaged || falling){
+return "Formula Exclusiva is an all in one natural professional salon hair treatment restoring strength, hydration balance, elasticity and scalp integrity. Price: $65.";
 }
-
 if(color){
 return "Gotika is an all natural professional hair color treatment restoring vibrancy and protecting pigment longevity. Price: $54.";
 }
-
 if(oily){
-return "Gotero is an all natural professional hair gel that regulates excess oil and keeps the scalp balanced without dryness. Price: $42.";
+return "Gotero is an all natural professional hair gel regulating excess oil while preserving moisture. Price: $42.";
 }
-
 if(dry||flat||tangly){
 return "Laciador is an all natural professional hair styler improving smoothness, manageability and bounce. Price: $48.";
 }
-
 return null;
 }
 
-// ================= SPEAK =================
+// ===================== SPEAK =====================
 
 function speak(text){
+
 speechSynthesis.cancel();
 
 let voices=speechSynthesis.getVoices();
-let selected=voices.find(v=>!v.name.toLowerCase().includes("uk"));
+let voice=voices.find(v=>!v.name.toLowerCase().includes("uk"));
 
 const utter=new SpeechSynthesisUtterance(text);
-if(selected) utter.voice=selected;
-
+if(voice) utter.voice=voice;
 utter.rate=0.95;
 utter.pitch=1.05;
 
@@ -263,7 +250,7 @@ state="idle";
 };
 }
 
-// ================= LISTEN =================
+// ===================== LISTEN =====================
 
 async function startListening(){
 
@@ -274,14 +261,12 @@ state="listening";
 audioCtx=new (window.AudioContext||window.webkitAudioContext)();
 await audioCtx.resume();
 
-micStream=await navigator.mediaDevices.getUserMedia({audio:true});
-const source=audioCtx.createMediaStreamSource(micStream);
+let stream=await navigator.mediaDevices.getUserMedia({audio:true});
+micSource=audioCtx.createMediaStreamSource(stream);
 analyser=audioCtx.createAnalyser();
 analyser.fftSize=512;
 dataArray=new Uint8Array(analyser.fftSize);
-source.connect(analyser);
-
-startAudioReactive();
+micSource.connect(analyser);
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
@@ -316,7 +301,7 @@ speak("I can't hear you. Could you describe your hair concern?");
 },3500);
 }
 
-// ================= PROCESS =================
+// ===================== PROCESS =====================
 
 function processTranscript(text){
 
@@ -336,7 +321,7 @@ responseBox.innerText=result;
 speak(result);
 }
 
-// ================= CLICK =================
+// ===================== CLICK =====================
 
 halo.addEventListener("click",()=>{
 if(state==="idle"){
@@ -348,8 +333,6 @@ animateColor([0,255,200]);
 state="idle";
 }
 });
-
-startAudioReactive();
 
 </script>
 </body>
