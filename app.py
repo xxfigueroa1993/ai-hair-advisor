@@ -6,10 +6,7 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Minimum audio size (prevents silence triggering Whisper)
-MIN_AUDIO_SIZE = 15000  # bytes (Bluetooth safe)
-
-# Minimum transcript length (prevents GPT reacting to fragments)
+MIN_AUDIO_SIZE = 15000
 MIN_TRANSCRIPT_LENGTH = 5
 
 
@@ -78,7 +75,7 @@ async function startRecording(){
 
     setTimeout(() => {
         mediaRecorder.stop();
-    }, 5000); // record for 5 seconds
+    }, 5000);
 }
 
 </script>
@@ -96,7 +93,7 @@ def voice():
 
     file = request.files["audio"]
 
-    # Get file size to detect silence
+    # Check file size
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)
@@ -107,31 +104,32 @@ def voice():
         print("Detected silence (file too small)")
         return jsonify({"text": "No speech detected"})
 
-    # Save temp file
+    # Save temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         temp_audio_path = temp_audio.name
 
     try:
-        # Transcribe with Whisper
+        # Whisper transcription (FORCED TEXT RESPONSE)
         with open(temp_audio_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
-                file=audio_file
+                file=audio_file,
+                response_format="text"
             )
 
-        user_text = transcript.text.strip()
+        user_text = transcript.strip()
 
         print("User said:", repr(user_text))
 
-        # Protect against empty or fragment transcripts
+        # Protect against empty or broken transcript
         if not user_text or len(user_text) < MIN_TRANSCRIPT_LENGTH:
             print("Transcript too short — asking user to repeat")
             return jsonify({
                 "text": "I didn’t catch that clearly. Please try again and speak a little louder."
             })
 
-        # GPT product recommendation
+        # GPT Hair Advisor
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
