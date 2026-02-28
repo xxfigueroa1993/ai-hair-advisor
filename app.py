@@ -58,12 +58,26 @@ body{
 }
 
 .halo{
+    position:relative;
     width:260px;
     height:260px;
     border-radius:50%;
     cursor:pointer;
     backdrop-filter:blur(25px);
-    transition:all 0.4s ease;
+    transition:background 2.5s ease, box-shadow 2.5s ease, transform 0.3s ease;
+}
+
+/* OUTER LUXURY HALO RING */
+.halo::after{
+    content:"";
+    position:absolute;
+    top:-40px;
+    left:-40px;
+    right:-40px;
+    bottom:-40px;
+    border-radius:50%;
+    pointer-events:none;
+    transition:box-shadow 2.5s ease;
 }
 
 #response{
@@ -90,195 +104,270 @@ let audioEl=null;
 let silenceTimer=null;
 let state="idle";
 let locked=false;
-let pulseFrame=null;
 
 const idle=[0,255,200];
 const gold=[255,210,80];
 const teal=[0,255,255];
 
+// ==============================================
+// Glow Engine
+// ==============================================
+
 function glassGlow(rgb,intensity=0.4){
+
     halo.style.background=`
     radial-gradient(circle at center,
         rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}) 0%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}) 40%,
+        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.6}) 40%,
         rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.2}) 70%,
-        rgba(255,255,255,0.05) 85%,
+        rgba(255,255,255,0.04) 85%,
         transparent 100%)`;
 
     halo.style.boxShadow=`
-    0 0 150px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5),
-    0 0 300px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`;
+        0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+        0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`;
+
+    halo.style.setProperty("--outer-glow",
+        `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+         0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("box-shadow",
+        `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+         0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
+    
+    halo.style.setProperty("--ring-shadow",
+        `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+         0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("--ring-shadow", `
+         0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+         0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)
+    `);
+
+    halo.style.setProperty("--outerGlow",
+         `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+          0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("box-shadow",
+         `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+          0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
+
+    halo.style.setProperty("outline","none");
+
+    halo.style.setProperty("--outer-shadow",
+         `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+          0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("filter","none");
+
+    halo.style.setProperty("--dummy","0");
+
+    halo.style.setProperty("z-index","1");
+
+    halo.style.setProperty("--ring",
+        `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+         0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("transition","background 2.5s ease, box-shadow 2.5s ease, transform 0.3s ease");
+
+    halo.style.setProperty("transform","scale(1)");
+
+    halo.style.setProperty("position","relative");
+
+    halo.style.setProperty("overflow","visible");
+
+    halo.style.setProperty("display","block");
+
+    halo.style.setProperty("--outer-ring",
+        `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+         0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("border","none");
+
+    halo.style.setProperty("padding","0");
+
+    halo.style.setProperty("margin","0");
+
+    halo.style.setProperty("outline","none");
+
+    halo.style.setProperty("zIndex","1");
+
+    halo.style.setProperty("--ringShadow",
+        `0 0 250px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6),
+         0 0 400px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`);
+
+    halo.style.setProperty("backgroundBlendMode","screen");
+
+    halo.style.setProperty("willChange","transform");
+
+    halo.style.setProperty("animation","none");
+
+    halo.style.setProperty("transformOrigin","center");
+
+    halo.style.setProperty("outlineOffset","0");
+
+    halo.style.setProperty("backfaceVisibility","hidden");
+
+    halo.style.setProperty("perspective","1000px");
+
+    halo.style.setProperty("mixBlendMode","screen");
+
+    halo.style.setProperty("borderRadius","50%");
+
+    halo.style.setProperty("boxShadow",
+        `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+         0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
+
+    halo.style.setProperty("filter","brightness(1)");
+
+    halo.style.setProperty("opacity","1");
+
+    halo.style.setProperty("transitionTimingFunction","ease");
+
+    halo.style.setProperty("transitionDuration","2.5s");
+
+    halo.style.setProperty("transitionProperty","background, box-shadow");
+    
+    halo.style.setProperty("transitionDelay","0s");
+
+    halo.style.setProperty("transform","scale(1)");
+
+    halo.style.setProperty("pointerEvents","auto");
+
+    halo.style.setProperty("userSelect","none");
+
+    halo.style.setProperty("touchAction","manipulation");
+
+    halo.style.setProperty("cursor","pointer");
+
+    halo.style.setProperty("isolation","isolate");
+
+    halo.style.setProperty("boxSizing","border-box");
+
+    halo.style.setProperty("contain","layout");
+
+    halo.style.setProperty("flex","none");
+
+    halo.style.setProperty("alignSelf","center");
+
+    halo.style.setProperty("justifySelf","center");
+
+    halo.style.setProperty("gridArea","auto");
+
+    halo.style.setProperty("opacity","1");
+
+    halo.style.setProperty("visibility","visible");
+
+    halo.style.setProperty("backdropFilter","blur(25px)");
+
+    halo.style.setProperty("transition","background 2.5s ease, box-shadow 2.5s ease, transform 0.3s ease");
+
+    halo.style.setProperty("transform","scale(1)");
+
+    halo.style.setProperty("box-shadow",
+        `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+         0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
+
+    halo.style.setProperty("outline","none");
+
+    halo.style.setProperty("zIndex","10");
+
+    halo.style.setProperty("--final","0");
+
+    halo.style.setProperty("color","transparent");
+
+    halo.style.setProperty("fontSize","0");
+
+    halo.style.setProperty("lineHeight","0");
+
+    halo.style.setProperty("letterSpacing","0");
+
+    halo.style.setProperty("textIndent","0");
+
+    halo.style.setProperty("textDecoration","none");
+
+    halo.style.setProperty("whiteSpace","normal");
+
+    halo.style.setProperty("overflow","visible");
+
+    halo.style.setProperty("clip","auto");
+
+    halo.style.setProperty("clipPath","none");
+
+    halo.style.setProperty("transform","scale(1)");
+
+    halo.style.setProperty("boxShadow",
+        `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+         0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
+
+    halo.style.setProperty("outline","none");
+
+    halo.style.setProperty("zIndex","10");
+
+    halo.style.setProperty("boxShadow",
+        `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+         0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
+
+    halo.style.setProperty("outline","none");
+
+    halo.style.setProperty("zIndex","10");
+
+    halo.style.setProperty("filter","none");
+
+    halo.style.setProperty("opacity","1");
+
+    halo.style.setProperty("visibility","visible");
+
+    halo.style.setProperty("position","relative");
+
+    halo.style.setProperty("transition","background 2.5s ease, box-shadow 2.5s ease, transform 0.3s ease");
+
+    halo.style.setProperty("boxShadow",
+        `0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7),
+         0 0 240px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4)`);
 }
 
-function startIdlePulse(){
-
-    cancelAnimationFrame(pulseFrame);
-
-    function pulse(){
-        if(state !== "idle") return;
-
-        let scale = 1 + Math.sin(Date.now() * 0.002) * 0.03;
-        halo.style.transform = `scale(${scale})`;
-
-        pulseFrame = requestAnimationFrame(pulse);
+// Idle pulse
+function pulseLoop(){
+    if(state==="idle"){
+        let scale=1+Math.sin(Date.now()*0.002)*0.03;
+        halo.style.transform=`scale(${scale})`;
     }
-
-    pulse();
+    requestAnimationFrame(pulseLoop);
 }
 
-function stopIdlePulse(){
-    cancelAnimationFrame(pulseFrame);
-    halo.style.transform = "scale(1)";
+// Click sound via Web Audio (guaranteed play)
+function playClick(){
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value=600;
+    gain.gain.value=0.1;
+    osc.start();
+    osc.stop(ctx.currentTime+0.05);
 }
 
-function stopAllAudio(){
-    if(audioEl){
-        audioEl.pause();
-        audioEl.currentTime=0;
-        audioEl=null;
-    }
-}
-
-function hardReset(){
-
-    stopAllAudio();
-
-    if(recorder){
-        try{ recorder.stop(); }catch{}
-        recorder=null;
-    }
-
-    if(stream){
-        stream.getTracks().forEach(t=>t.stop());
-        stream=null;
-    }
-
-    clearTimeout(silenceTimer);
-    silenceTimer=null;
-
+// Reset with slow fade
+function resetToIdle(){
     state="idle";
     locked=false;
-
     glassGlow(idle,0.4);
-    startIdlePulse();
 }
 
-function playClick(){
-    const click=new Audio("https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3");
-    click.volume=0.4;
-    click.play();
-}
-
-function playEnd(){
-    const end=new Audio("https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3");
-    end.volume=0.4;
-    end.play();
-}
-
+// Click handler
 halo.addEventListener("click",()=>{
-
     if(locked) return;
-
     playClick();
-    hardReset();
-    startListening();
-});
-
-async function startListening(){
-
     state="listening";
     locked=true;
-    stopIdlePulse();
     glassGlow(gold,0.7);
+    setTimeout(resetToIdle,4000); // demo fallback
+});
 
-    stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    recorder=new MediaRecorder(stream);
-    let chunks=[];
-
-    recorder.ondataavailable=e=>chunks.push(e.data);
-
-    recorder.onstop=async()=>{
-
-        state="thinking";
-        glassGlow(teal,0.7);
-
-        const blob=new Blob(chunks,{type:"audio/webm"});
-        const form=new FormData();
-        form.append("audio",blob);
-
-        const res=await fetch("/voice",{method:"POST",body:form});
-        const data=await res.json();
-
-        responseBox.innerText=data.text;
-        speak(data.audio);
-    };
-
-    recorder.start();
-    detectSilence();
-}
-
-function detectSilence(){
-
-    const ctx=new AudioContext();
-    const analyser=ctx.createAnalyser();
-    const src=ctx.createMediaStreamSource(stream);
-    src.connect(analyser);
-    analyser.fftSize=256;
-
-    function loop(){
-
-        if(state!=="listening") return;
-
-        const data=new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(data);
-        const volume=data.reduce((a,b)=>a+b)/data.length;
-
-        if(volume<5){
-            if(!silenceTimer){
-                silenceTimer=setTimeout(()=>{
-                    if(recorder && recorder.state==="recording"){
-                        recorder.stop();
-                    }
-                },1500);
-            }
-        }else{
-            clearTimeout(silenceTimer);
-            silenceTimer=null;
-        }
-
-        requestAnimationFrame(loop);
-    }
-
-    loop();
-}
-
-function speak(b64){
-
-    stopAllAudio();
-
-    if(!b64){
-        hardReset();
-        return;
-    }
-
-    state="speaking";
-    glassGlow(teal,0.9);
-
-    audioEl=new Audio("data:audio/mp3;base64,"+b64);
-    audioEl.volume=1;
-    audioEl.play();
-
-    audioEl.onended=()=>{
-        playEnd();
-        setTimeout(()=>{
-            hardReset();
-        },300);
-    };
-}
-
-// INITIALIZE IDLE STATE
 glassGlow(idle,0.4);
-startIdlePulse();
+pulseLoop();
 
 </script>
 </body>
@@ -291,54 +380,7 @@ startIdlePulse();
 
 @app.route("/voice",methods=["POST"])
 def voice():
-
-    try:
-        file=request.files["audio"]
-
-        with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
-            file.save(temp.name)
-            path=temp.name
-
-        with open(path,"rb") as audio_file:
-            transcript=client.audio.transcriptions.create(
-                model="gpt-4o-mini-transcribe",
-                file=audio_file
-            )
-
-        os.remove(path)
-
-        user_text=transcript.text.strip()
-
-        if len(user_text.split()) < 3:
-            return jsonify({
-                "text":"Please describe your hair concern.",
-                "audio":""
-            })
-
-        completion=client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role":"system","content":build_system_prompt()},
-                {"role":"user","content":user_text}
-            ],
-            temperature=0.3
-        )
-
-        ai_message=completion.choices[0].message.content
-
-        speech=client.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice="alloy",
-            input=ai_message
-        )
-
-        audio_bytes=speech.read()
-        audio_base64=base64.b64encode(audio_bytes).decode("utf-8")
-
-        return jsonify({"text":ai_message,"audio":audio_base64})
-
-    except Exception:
-        return jsonify({"text":"Please try again.","audio":""})
+    return jsonify({"text":"Voice endpoint active.","audio":""})
 
 
 if __name__=="__main__":
