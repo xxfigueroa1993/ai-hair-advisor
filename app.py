@@ -24,7 +24,6 @@ font-family:Arial;
 color:white;
 overflow:hidden;
 }
-
 .wrapper{
 width:380px;
 height:380px;
@@ -32,7 +31,6 @@ display:flex;
 justify-content:center;
 align-items:center;
 }
-
 #halo{
 width:280px;
 height:280px;
@@ -40,7 +38,6 @@ border-radius:50%;
 cursor:pointer;
 transition:transform 0.05s linear;
 }
-
 #response{
 margin-top:30px;
 width:75%;
@@ -73,31 +70,44 @@ let analyser=null;
 let micStream=null;
 let dataArray=null;
 
-// ================= PREMIUM VOICE SELECTION =================
+let premiumVoice=null;
 
-function getPremiumVoice(){
+// ================= FORCE VOICE LOAD =================
+
+function loadVoices(){
+return new Promise(resolve=>{
 let voices=speechSynthesis.getVoices();
+if(voices.length!==0){
+resolve(voices);
+}else{
+speechSynthesis.onvoiceschanged=()=>{
+resolve(speechSynthesis.getVoices());
+};
+}
+});
+}
 
-let priorityOrder=[
+async function initVoice(){
+let voices=await loadVoices();
+
+let preferredOrder=[
 "Google US English",
 "Microsoft Jenny",
 "Microsoft Aria",
 "Samantha"
 ];
 
-for(let name of priorityOrder){
+for(let name of preferredOrder){
 let found=voices.find(v=>v.name.includes(name));
-if(found) return found;
+if(found){
+premiumVoice=found;
+return;
+}
 }
 
-// fallback any en-US neural
-let us=voices.find(v=>v.lang==="en-US");
-if(us) return us;
-
-return voices[0];
+// fallback to any natural US voice
+premiumVoice=voices.find(v=>v.lang==="en-US") || voices[0];
 }
-
-speechSynthesis.onvoiceschanged=()=>{};
 
 // ================= COLOR =================
 
@@ -110,7 +120,6 @@ halo.style.boxShadow=`
 halo.style.background=
 `radial-gradient(circle, rgba(${r},${g},${b},0.65) 0%, rgba(${r},${g},${b},0.2) 70%)`;
 }
-
 setColor(0,255,200);
 
 // ================= PULSE =================
@@ -156,18 +165,18 @@ source.connect(analyser);
 dataArray=new Uint8Array(analyser.fftSize);
 }
 
-// ================= PREMIUM SPEAK =================
+// ================= SPEAK =================
 
 function speak(text){
 state="speaking";
 setColor(0,200,255);
 
 let utter=new SpeechSynthesisUtterance(text);
-utter.voice=getPremiumVoice();
+if(premiumVoice) utter.voice=premiumVoice;
 
-// Premium human pacing
-utter.rate=0.92;   // slightly slower
-utter.pitch=1.05;  // slightly warmer
+// premium pacing
+utter.rate=0.90;
+utter.pitch=1.05;
 utter.volume=1;
 
 speechSynthesis.speak(utter);
@@ -222,6 +231,7 @@ speak(result);
 async function startListening(){
 
 await initMic();
+await initVoice();
 
 state="listening";
 setColor(255,210,80);
