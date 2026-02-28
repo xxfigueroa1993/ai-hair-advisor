@@ -49,30 +49,27 @@ text-align:center;
 font-size:18px;
 }
 
-/* 🌍 Language Selector */
-#languageContainer{
+#langBox{
 position:absolute;
-top:15px;
-right:20px;
-font-size:12px;
-text-align:right;
+top:18px;
+right:22px;
 }
 
-#languageSelect{
-background:rgba(0,0,0,0.6);
-border:1px solid rgba(255,255,255,0.3);
+#langSelect{
+background:rgba(0,0,0,0.7);
 color:white;
-padding:6px 8px;
-border-radius:6px;
-outline:none;
+border:1px solid rgba(255,255,255,0.3);
+padding:7px 10px;
+border-radius:8px;
+font-size:13px;
 cursor:pointer;
 }
 </style>
 </head>
 <body>
 
-<div id="languageContainer">
-<select id="languageSelect">
+<div id="langBox">
+<select id="langSelect">
 <option value="en-US">English (US)</option>
 <option value="es-ES">Spanish</option>
 <option value="pt-BR">Portuguese</option>
@@ -94,7 +91,7 @@ cursor:pointer;
 
 const halo=document.getElementById("halo");
 const responseBox=document.getElementById("response");
-const languageSelect=document.getElementById("languageSelect");
+const langSelect=document.getElementById("langSelect");
 
 let state="idle";
 let recognition=null;
@@ -110,31 +107,33 @@ let dataArray=null;
 let selectedLang="en-US";
 let premiumVoice=null;
 
-// ================= LANGUAGE CHANGE =================
+/* ================= LANGUAGE CHANGE ================= */
 
-languageSelect.addEventListener("change",()=>{
-selectedLang=languageSelect.value;
-initVoice();
+langSelect.addEventListener("change", async ()=>{
+selectedLang=langSelect.value;
+premiumVoice=null;
+await loadVoice();
 });
 
-// ================= VOICE LOADING =================
+/* ================= LOAD VOICE ================= */
 
-function loadVoices(){
+async function loadVoice(){
 return new Promise(resolve=>{
 let voices=speechSynthesis.getVoices();
-if(voices.length){
-resolve(voices);
-}else{
+if(!voices.length){
 speechSynthesis.onvoiceschanged=()=>{
-resolve(speechSynthesis.getVoices());
+setVoice();
+resolve();
 };
+}else{
+setVoice();
+resolve();
 }
 });
 }
 
-async function initVoice(){
-let voices=await loadVoices();
-
+function setVoice(){
+let voices=speechSynthesis.getVoices();
 premiumVoice=voices.find(v=>v.lang===selectedLang);
 
 if(!premiumVoice){
@@ -146,7 +145,7 @@ premiumVoice=voices[0];
 }
 }
 
-// ================= SMOOTH COLOR =================
+/* ================= COLOR FADE ================= */
 
 let currentColor=[0,255,200];
 
@@ -179,7 +178,7 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-// ================= PULSE =================
+/* ================= PULSE ================= */
 
 function pulse(){
 let scale=1;
@@ -208,7 +207,7 @@ requestAnimationFrame(pulse);
 }
 pulse();
 
-// ================= MIC =================
+/* ================= MIC ================= */
 
 async function initMic(){
 if(audioCtx) return;
@@ -222,7 +221,7 @@ source.connect(analyser);
 dataArray=new Uint8Array(analyser.fftSize);
 }
 
-// ================= AUDIO FX =================
+/* ================= AUDIO FX ================= */
 
 function playTone(startFreq,endFreq,duration){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -247,18 +246,19 @@ osc.stop(ctx.currentTime+duration);
 function playIntro(){ playTone(300,180,1.4); }
 function playOutro(){ playTone(180,300,1.4); }
 
-// ================= SPEAK =================
+/* ================= SPEAK ================= */
 
 function speak(text){
 state="speaking";
 animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
-if(premiumVoice) utter.voice=premiumVoice;
 utter.lang=selectedLang;
+if(premiumVoice) utter.voice=premiumVoice;
 utter.rate=0.92;
 utter.pitch=1.02;
 
+speechSynthesis.cancel();
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
@@ -268,12 +268,12 @@ state="idle";
 };
 }
 
-// ================= PRODUCT LOGIC =================
+/* ================= PRODUCT LOGIC ================= */
 
 function chooseProduct(text){
 text=text.toLowerCase();
 
-if(/all.?in.?one|everything|complete|total repair/.test(text))
+if(/all.?in.?one|everything|complete/.test(text))
 return "Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.";
 
 if(/damage|break|weak/.test(text))
@@ -291,17 +291,17 @@ return "Laciador restores smoothness and softness. Price: $48.";
 return null;
 }
 
-// ================= PROCESS =================
+/* ================= PROCESS ================= */
 
 function processTranscript(text){
 if(!text || text.length<3){
-speak("I didn't quite understand. Please describe dryness, oiliness, damage, or color concerns.");
+speak("Please describe dryness, oiliness, damage, or color concerns.");
 return;
 }
 
 let result=chooseProduct(text);
 if(!result){
-speak("I didn't quite understand. Please describe dryness, oiliness, damage, or color concerns.");
+speak("Please describe dryness, oiliness, damage, or color concerns.");
 return;
 }
 
@@ -309,11 +309,11 @@ responseBox.innerText=result;
 speak(result);
 }
 
-// ================= LISTEN =================
+/* ================= LISTEN ================= */
 
 async function startListening(){
 await initMic();
-await initVoice();
+await loadVoice();
 
 playIntro();
 animateColor([255,210,80]);
@@ -352,7 +352,7 @@ processTranscript("");
 },3500);
 }
 
-// ================= CLICK =================
+/* ================= CLICK ================= */
 
 halo.addEventListener("click",()=>{
 if(state==="idle"){
