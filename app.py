@@ -67,31 +67,21 @@ const responseBox=document.getElementById("response");
 let state="idle";
 let recognition=null;
 let transcript="";
-let silenceTimer=null;
+let silenceWatchdog=null;
 
-let audioCtx=null;
-let analyser=null;
-let dataArray=null;
-let micSource=null;
+// ================= VOICE PRELOAD =================
 
-let currentColor=[0,255,200];
-let colorAnim=null;
-const FADE_DURATION=1200;
-
-// PRELOAD VOICES (fix robotic first response)
-let voicesLoaded=false;
-speechSynthesis.onvoiceschanged=()=>{
 speechSynthesis.getVoices();
-voicesLoaded=true;
-};
-speechSynthesis.getVoices();
+speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 
 // ================= COLOR =================
+
+let currentColor=[0,255,200];
+const FADE_DURATION=1200;
 
 function lerp(a,b,t){return a+(b-a)*t;}
 
 function animateColor(target){
-if(colorAnim) cancelAnimationFrame(colorAnim);
 const start=[...currentColor];
 const startTime=performance.now();
 
@@ -118,10 +108,9 @@ rgba(${r},${g},${b},0.1) 100%)
 `;
 
 currentColor=[r,g,b];
-
-if(p<1) colorAnim=requestAnimationFrame(frame);
+if(p<1) requestAnimationFrame(frame);
 }
-colorAnim=requestAnimationFrame(frame);
+requestAnimationFrame(frame);
 }
 
 animateColor([0,255,200]);
@@ -135,17 +124,6 @@ if(state==="idle"){
 scale=1+Math.sin(Date.now()*0.002)*0.04;
 }
 
-if(state==="listening" && analyser){
-analyser.getByteTimeDomainData(dataArray);
-let sum=0;
-for(let i=0;i<dataArray.length;i++){
-let v=(dataArray[i]-128)/128;
-sum+=v*v;
-}
-let volume=Math.sqrt(sum/dataArray.length);
-scale=1+volume*3;
-}
-
 if(state==="speaking"){
 scale=1+Math.sin(Date.now()*0.004)*0.12;
 }
@@ -157,7 +135,6 @@ pulseLoop();
 
 // ================= SOUNDS =================
 
-// Intro deeper (320 → 160)
 function playIntro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
@@ -177,7 +154,6 @@ osc.start();
 osc.stop(ctx.currentTime+1.3);
 }
 
-// Outro original (480 → 240)
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
@@ -197,33 +173,9 @@ osc.start();
 osc.stop(ctx.currentTime+1.1);
 }
 
-// ================= PRODUCT LOGIC =================
-
-function chooseProduct(text){
-text=text.toLowerCase();
-
-let dry=/dry|frizz|brittle|rough|split|dehydrated/.test(text);
-let damaged=/damage|break|weak|burn|chemical|overprocessed/.test(text);
-let tangly=/tangle|knot|matted/.test(text);
-let color=/color fade|dull|brassy|fading/.test(text);
-let oily=/oily|greasy/.test(text);
-let flat=/flat|lifeless|volume/.test(text);
-let falling=/falling|shedding|thinning/.test(text);
-
-let issues=[dry,damaged,tangly,color,oily,flat,falling].filter(Boolean).length;
-
-if(issues>=2 || damaged || falling){
-return "Formula Exclusiva is your ideal solution. It restores structure, hydration balance and long term strength. Price: $65.";
-}
-if(color) return "Gotika restores color vibrancy and long term pigment depth. Price: $54.";
-if(oily) return "Gotero balances oil while maintaining scalp health. Price: $42.";
-if(dry || flat || tangly) return "Laciador restores smoothness and healthy bounce. Price: $48.";
-return null;
-}
-
 // ================= VOICE =================
 
-function getAmericanVoice(){
+function getVoice(){
 let voices=speechSynthesis.getVoices();
 let preferred=["Google US English","Samantha","Microsoft Zira","Microsoft Jenny"];
 for(let name of preferred){
@@ -239,8 +191,9 @@ state="speaking";
 animateColor([0,200,255]);
 
 const utter=new SpeechSynthesisUtterance(text);
-let voice=getAmericanVoice();
+let voice=getVoice();
 if(voice) utter.voice=voice;
+
 utter.rate=0.95;
 utter.pitch=1.03;
 
@@ -253,53 +206,55 @@ state="idle";
 };
 }
 
+// ================= PRODUCT LOGIC =================
+
+function chooseProduct(text){
+text=text.toLowerCase();
+
+let dry=/dry|frizz|brittle|rough|split/.test(text);
+let damaged=/damage|break|weak/.test(text);
+let color=/color|brassy|fading/.test(text);
+let oily=/oily|greasy/.test(text);
+
+if(damaged) return "Formula Exclusiva restores structural strength and balance. Price: $65.";
+if(color) return "Gotika restores color vibrancy. Price: $54.";
+if(oily) return "Gotero balances oil levels. Price: $42.";
+if(dry) return "Laciador restores smoothness and bounce. Price: $48.";
+
+return null;
+}
+
 // ================= LISTEN =================
 
-async function startListening(){
+function startListening(){
 
 playIntro();
 animateColor([255,210,80]);
 state="listening";
 transcript="";
 
-audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-await audioCtx.resume();
-
-let stream=await navigator.mediaDevices.getUserMedia({audio:true});
-micSource=audioCtx.createMediaStreamSource(stream);
-analyser=audioCtx.createAnalyser();
-analyser.fftSize=512;
-dataArray=new Uint8Array(analyser.fftSize);
-micSource.connect(analyser);
-
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
-recognition.continuous=true;
-recognition.interimResults=true;
+recognition.continuous=false;
+recognition.interimResults=false;
 
 recognition.onresult=function(event){
+clearTimeout(silenceWatchdog);
 
-clearTimeout(silenceTimer);
-
-for(let i=event.resultIndex;i<event.results.length;i++){
-if(event.results[i].isFinal){
-transcript+=event.results[i][0].transcript+" ";
-}
-}
-
-silenceTimer=setTimeout(()=>{
+transcript=event.results[0][0].transcript;
 recognition.stop();
-processTranscript(transcript.trim());
-},2500);
-};
-
-recognition.onend=function(){
-if(state==="listening"){
-processTranscript(transcript.trim());
-}
+processTranscript(transcript);
 };
 
 recognition.start();
+
+// HARD SILENCE TIMER
+silenceWatchdog=setTimeout(()=>{
+if(state==="listening"){
+recognition.stop();
+processTranscript("");
+}
+},3500);
 }
 
 // ================= PROCESS =================
@@ -307,14 +262,14 @@ recognition.start();
 function processTranscript(text){
 
 if(!text || text.length<3){
-speak("I didn't quite understand. Could you describe dryness, oiliness, damage, tangling or color concerns?");
+speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
 return;
 }
 
 let result=chooseProduct(text);
 
 if(!result){
-speak("I didn't quite understand. Could you describe dryness, oiliness, damage, tangling or color concerns?");
+speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
 return;
 }
 
