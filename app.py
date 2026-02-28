@@ -12,7 +12,6 @@ def home():
 <head>
 <title>Luxury Hair AI</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <style>
 body{
 margin:0;
@@ -41,7 +40,7 @@ height:300px;
 border-radius:50%;
 cursor:pointer;
 backdrop-filter:blur(80px);
-transition:transform 0.1s linear;
+transition:transform 0.08s linear;
 }
 
 #response{
@@ -70,20 +69,24 @@ let recognition=null;
 let transcript="";
 let silenceTimer=null;
 let noSpeechTimer=null;
-let audioContext, analyser, micSource;
+
+let audioCtx=null;
+let analyser=null;
+let dataArray=null;
+let micStream=null;
+let animationFrame=null;
+
 let currentColor=[0,255,200];
-let activeAnimation=null;
+let activeColorAnim=null;
 
 const FADE_DURATION=1400;
 
-// ======================
-// SMOOTH COLOR FADE
-// ======================
+// ================= COLOR FADE =================
 
 function lerp(a,b,t){return a+(b-a)*t;}
 
 function animateColor(target){
-if(activeAnimation) cancelAnimationFrame(activeAnimation);
+if(activeColorAnim) cancelAnimationFrame(activeColorAnim);
 
 const start=[...currentColor];
 const startTime=performance.now();
@@ -104,82 +107,82 @@ halo.style.boxShadow=`
 
 halo.style.background=`
 radial-gradient(circle at center,
-rgba(${r},${g},${b},0.48) 0%,
+rgba(${r},${g},${b},0.5) 0%,
 rgba(${r},${g},${b},0.35) 40%,
-rgba(${r},${g},${b},0.20) 75%,
-rgba(${r},${g},${b},0.10) 100%)
+rgba(${r},${g},${b},0.2) 75%,
+rgba(${r},${g},${b},0.1) 100%)
 `;
 
 currentColor=[r,g,b];
-if(p<1) activeAnimation=requestAnimationFrame(step);
+
+if(p<1){
+activeColorAnim=requestAnimationFrame(step);
 }
-activeAnimation=requestAnimationFrame(step);
+}
+activeColorAnim=requestAnimationFrame(step);
 }
 
 animateColor([0,255,200]);
 
-// ======================
-// REAL MICROPHONE REACTIVE PULSE
-// ======================
+// ================= AUDIO REACTIVE LOOP =================
 
-function startMicReactivePulse(stream){
-audioContext=new (window.AudioContext||window.webkitAudioContext)();
-analyser=audioContext.createAnalyser();
-micSource=audioContext.createMediaStreamSource(stream);
-micSource.connect(analyser);
+function startAudioReactive(){
 
-analyser.fftSize=256;
-let buffer=new Uint8Array(analyser.frequencyBinCount);
+if(animationFrame) cancelAnimationFrame(animationFrame);
 
-function react(){
-if(state==="listening"){
-analyser.getByteFrequencyData(buffer);
+function loop(){
+
+let scale=1;
+
+if(state==="idle"){
+scale=1+Math.sin(Date.now()*0.002)*0.04;
+}
+
+if(state==="listening" && analyser){
+analyser.getByteTimeDomainData(dataArray);
 let sum=0;
-for(let i=0;i<buffer.length;i++) sum+=buffer[i];
-let avg=sum/buffer.length;
-let scale=1+(avg/500);
-halo.style.transform=`scale(${scale})`;
+for(let i=0;i<dataArray.length;i++){
+let v=(dataArray[i]-128)/128;
+sum+=v*v;
 }
-requestAnimationFrame(react);
-}
-react();
+let volume=Math.sqrt(sum/dataArray.length);
+scale=1+volume*2.5; // strong mic reaction
 }
 
-// AI voice pulse
-function aiPulse(){
 if(state==="speaking"){
-let scale=1+Math.sin(Date.now()*0.004)*0.1;
-halo.style.transform=`scale(${scale})`;
-requestAnimationFrame(aiPulse);
-}
+scale=1+Math.sin(Date.now()*0.004)*0.1;
 }
 
-// ======================
-// NEW CLICK SOUND ONLY
-// ======================
+halo.style.transform=`scale(${scale})`;
+
+animationFrame=requestAnimationFrame(loop);
+}
+
+loop();
+}
+
+// ================= NEW CLICK SOUND =================
 
 function playClick(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
 
-osc.type="square";
-osc.frequency.setValueAtTime(520,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(220,ctx.currentTime+0.2);
+osc.type="triangle";
+osc.frequency.setValueAtTime(700,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(350,ctx.currentTime+0.18);
 
-gain.gain.setValueAtTime(0.25,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.25);
+gain.gain.setValueAtTime(0.3,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.2);
 
 osc.connect(gain);
 gain.connect(ctx.destination);
 
 osc.start();
-osc.stop(ctx.currentTime+0.25);
+osc.stop(ctx.currentTime+0.2);
 }
 
-// ======================
-// GOLDEN OUTRO (UNCHANGED)
-// ======================
+// ================= GOLDEN OUTRO (UNCHANGED) =================
 
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -200,9 +203,7 @@ osc.start();
 osc.stop(ctx.currentTime+0.7);
 }
 
-// ======================
-// SPEECH
-// ======================
+// ================= SPEAK =================
 
 function speak(text){
 speechSynthesis.cancel();
@@ -212,12 +213,12 @@ let selected=voices.find(v=>!v.name.toLowerCase().includes("uk"));
 
 const utter=new SpeechSynthesisUtterance(text);
 if(selected) utter.voice=selected;
+
 utter.rate=0.95;
 utter.pitch=1.05;
 
 state="speaking";
 animateColor([0,200,255]);
-aiPulse();
 
 speechSynthesis.speak(utter);
 
@@ -228,19 +229,25 @@ state="idle";
 };
 }
 
-// ======================
-// LISTEN
-// ======================
+// ================= LISTEN =================
 
-function startListening(){
+async function startListening(){
 
 playClick();
 animateColor([255,210,80]);
 state="listening";
 
-navigator.mediaDevices.getUserMedia({audio:true}).then(stream=>{
-startMicReactivePulse(stream);
-});
+audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+await audioCtx.resume();
+
+micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+const source=audioCtx.createMediaStreamSource(micStream);
+analyser=audioCtx.createAnalyser();
+analyser.fftSize=512;
+dataArray=new Uint8Array(analyser.fftSize);
+source.connect(analyser);
+
+startAudioReactive();
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
@@ -249,6 +256,7 @@ recognition.interimResults=true;
 transcript="";
 
 recognition.onresult=function(event){
+
 clearTimeout(silenceTimer);
 clearTimeout(noSpeechTimer);
 
@@ -274,22 +282,18 @@ speak("I can't hear you. Could you describe your hair concern?");
 },3500);
 }
 
-// ======================
-// PROCESS
-// ======================
+// ================= PROCESS =================
 
 function processTranscript(text){
-if(!text || text.length<3){
-speak("I didn't quite understand what you said. Could you describe dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
+if(!text || text.length<4){
+speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
 return;
 }
 
-speak("Thank you. I am analyzing your hair concern.");
+speak("Thank you. I'm analyzing your hair concern.");
 }
 
-// ======================
-// CLICK
-// ======================
+// ================= CLICK =================
 
 halo.addEventListener("click",()=>{
 if(state==="idle"){
@@ -302,6 +306,8 @@ state="idle";
 }
 });
 
+startAudioReactive();
+
 </script>
 </body>
 </html>
@@ -309,4 +315,4 @@ state="idle";
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT",10000))
-    app.run(host="0.0.0.0",port=port)
+    app.run(host="0.0.0.0", port=port)
