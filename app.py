@@ -41,7 +41,7 @@ body{
     border-radius:50%;
     cursor:pointer;
     backdrop-filter:blur(60px);
-    background:rgba(255,255,255,0.02);
+    background:rgba(255,255,255,0.05);
     transition:transform 1.5s ease;
 }
 
@@ -57,7 +57,7 @@ body{
 <body>
 
 <div class="wrapper">
-    <div id="halo" class="halo"></div>
+    <div id="halo"></div>
 </div>
 
 <div id="response">Tap and describe your hair concern.</div>
@@ -71,16 +71,17 @@ let state="idle";
 let locked=false;
 let currentColor=[0,255,200];
 let activeAnimation=null;
-let soundPlayed=false;
-let silenceTimer=null;
+let currentOsc=null;
 
-// =============================
-// SMOOTH COLOR FADE (3.5s)
-// =============================
+const FADE_DURATION=2300; // 1.5x faster than 3.5s
+
+// ======================
+// COLOR INTERPOLATION
+// ======================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
-function animateColor(targetColor,duration=3500,onComplete=null){
+function animateColor(targetColor,onComplete=null){
 
     if(activeAnimation) cancelAnimationFrame(activeAnimation);
 
@@ -88,7 +89,7 @@ function animateColor(targetColor,duration=3500,onComplete=null){
     const startTime=performance.now();
 
     function step(now){
-        let progress=(now-startTime)/duration;
+        let progress=(now-startTime)/FADE_DURATION;
         if(progress>1) progress=1;
 
         let r=Math.floor(lerp(startColor[0],targetColor[0],progress));
@@ -101,12 +102,13 @@ function animateColor(targetColor,duration=3500,onComplete=null){
             0 0 260px rgba(${r},${g},${b},0.25)
         `;
 
+        /* Center now 3x less transparent */
         halo.style.background = `
             radial-gradient(circle at center,
-                rgba(${r},${g},${b},0.10) 0%,
-                rgba(${r},${g},${b},0.08) 40%,
-                rgba(${r},${g},${b},0.05) 70%,
-                rgba(255,255,255,0.02) 100%)
+                rgba(${r},${g},${b},0.30) 0%,
+                rgba(${r},${g},${b},0.22) 40%,
+                rgba(${r},${g},${b},0.12) 75%,
+                rgba(255,255,255,0.05) 100%)
         `;
 
         currentColor=[r,g,b];
@@ -122,9 +124,9 @@ function animateColor(targetColor,duration=3500,onComplete=null){
     activeAnimation=requestAnimationFrame(step);
 }
 
-// =============================
+// ======================
 // PULSE
-// =============================
+// ======================
 
 function pulse(){
     if(state==="idle"){
@@ -134,11 +136,16 @@ function pulse(){
     requestAnimationFrame(pulse);
 }
 
-// =============================
-// SOUND (FIRST CLICK ONLY)
-// =============================
+// ======================
+// PLAY UNIQUE TONE
+// ======================
 
-function playTone(startFreq,endFreq,duration=3.5){
+function playTone(type){
+
+    if(currentOsc){
+        currentOsc.stop();
+        currentOsc=null;
+    }
 
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
@@ -146,45 +153,56 @@ function playTone(startFreq,endFreq,duration=3.5){
 
     osc.type="sine";
 
-    osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(endFreq,ctx.currentTime+duration);
+    if(type==="click"){
+        osc.frequency.setValueAtTime(220,ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+FADE_DURATION/1000);
+    }
+
+    if(type==="analyzing"){
+        osc.frequency.setValueAtTime(300,ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(380,ctx.currentTime+FADE_DURATION/1000);
+    }
+
+    if(type==="finish"){
+        osc.frequency.setValueAtTime(380,ctx.currentTime);
+        osc.frequency.linearRampToValueAtTime(240,ctx.currentTime+FADE_DURATION/1000);
+    }
 
     gain.gain.setValueAtTime(0.12,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+duration);
+    gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+FADE_DURATION/1000);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime+duration);
+    osc.stop(ctx.currentTime+FADE_DURATION/1000);
+
+    currentOsc=osc;
 }
 
-// =============================
+// ======================
 // RESET
-// =============================
+// ======================
 
 function resetToIdle(){
 
     state="resetting";
     locked=true;
 
-    clearTimeout(silenceTimer);
-
-    animateColor([0,255,200],3500,()=>{
+    animateColor([0,255,200],()=>{
         state="idle";
         locked=false;
-        soundPlayed=false;
         responseBox.innerText="Tap and describe your hair concern.";
     });
 }
 
-// =============================
+// ======================
 // CLICK HANDLER
-// =============================
+// ======================
 
 halo.addEventListener("click",()=>{
 
-    // SECOND CLICK → only reset color (no sound)
+    // SECOND CLICK → RESET (NO SOUND)
     if(state==="transition" || state==="thinking"){
         resetToIdle();
         return;
@@ -196,24 +214,24 @@ halo.addEventListener("click",()=>{
     state="transition";
     responseBox.innerText="Listening...";
 
-    if(!soundPlayed){
-        playTone(200,260,3.5);
-        soundPlayed=true;
-    }
+    playTone("click");
 
-    animateColor([255,210,80],3500,()=>{
+    animateColor([255,210,80],()=>{
 
         state="thinking";
         responseBox.innerText="Analyzing...";
 
-        animateColor([0,255,255],3500,()=>{
+        playTone("analyzing");
 
-            // Silence check
-            silenceTimer=setTimeout(()=>{
+        animateColor([0,255,255],()=>{
+
+            playTone("finish");
+
+            setTimeout(()=>{
                 responseBox.innerText=
                 "I didn’t hear you. Can you please share your hair concerns for a recommendation?";
                 resetToIdle();
-            },3000);
+            },1200);
 
         });
 
@@ -222,7 +240,7 @@ halo.addEventListener("click",()=>{
 });
 
 // INIT
-animateColor([0,255,200],1);
+animateColor([0,255,200]);
 pulse();
 
 </script>
