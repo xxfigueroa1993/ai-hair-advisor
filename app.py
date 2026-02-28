@@ -4,18 +4,18 @@ import base64
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
-# =============================
+# ===============================
 # CONFIG
-# =============================
+# ===============================
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# =============================
-# HOME ROUTE (Prevents 404)
-# =============================
+# ===============================
+# HOME ROUTE (Health Check)
+# ===============================
 
 @app.route("/", methods=["GET"])
 def home():
@@ -24,9 +24,9 @@ def home():
     <p>Use POST /voice to send audio.</p>
     """
 
-# =============================
-# CATEGORY NORMALIZATION
-# =============================
+# ===============================
+# INPUT NORMALIZATION
+# ===============================
 
 def normalize_input(text):
     print("Raw transcript:", text)
@@ -38,11 +38,8 @@ def normalize_input(text):
     race = None
     age_group = "15-35"
     allergic = False
-    season = None
-    temperature = None
-    continent = None
 
-    # Hair Problems
+    # ---------------- Hair Problems ----------------
     if "dry" in text:
         hair_problem = "Dry"
     elif "damaged" in text:
@@ -58,7 +55,7 @@ def normalize_input(text):
     elif "falling out" in text:
         hair_problem = "Falling Out"
 
-    # Race
+    # ---------------- Race ----------------
     if "hispanic" in text:
         race = "Hispanic"
     elif "caucasian" in text or "white" in text:
@@ -72,7 +69,7 @@ def normalize_input(text):
     elif "american indian" in text:
         race = "American Indian"
 
-    # Age
+    # ---------------- Age ----------------
     if any(word in text for word in ["5", "6", "7", "8", "9", "10", "child"]):
         age_group = "5-15"
     elif any(word in text for word in ["50", "60", "70"]):
@@ -80,11 +77,11 @@ def normalize_input(text):
     elif any(word in text for word in ["35", "40"]):
         age_group = "35-50"
 
-    # Allergy
+    # ---------------- Allergy ----------------
     if "allergic" in text:
         allergic = True
 
-    print("Mapped Categories:")
+    print("Mapped:")
     print("Hair Problem:", hair_problem)
     print("Race:", race)
     print("Age Group:", age_group)
@@ -93,22 +90,23 @@ def normalize_input(text):
     return hair_problem, race, age_group, allergic
 
 
-# =============================
+# ===============================
 # RULE ENGINE
-# =============================
+# ===============================
 
 def choose_product(hair_problem, race, age_group, allergic):
 
+    # Allergy override
     if allergic:
         return "Error / Go see medical"
 
     under_16 = age_group == "5-15"
 
-    # Medical blocking
+    # Medical block
     if under_16 and hair_problem == "Lost of Color":
         return "Error / Go see medical"
 
-    # Preset matrix
+    # Preset deterministic matrix
     preset_rules = {
 
         ("Lost of Color","Hispanic"): "Gotika",
@@ -152,15 +150,16 @@ def choose_product(hair_problem, race, age_group, allergic):
         ("Falling Out","American Indian"): "Formula Exclusiva",
     }
 
+    # Deterministic match
     if (hair_problem, race) in preset_rules:
         return preset_rules[(hair_problem, race)]
 
-    # AI fallback logic
-    if hair_problem in ["Damaged","Falling Out"]:
+    # Controlled fallback logic
+    if hair_problem in ["Damaged", "Falling Out"]:
         return "Formula Exclusiva"
     if hair_problem == "Oily":
         return "Gotero"
-    if hair_problem in ["Dry","Tangly","Not Bouncy"]:
+    if hair_problem in ["Dry", "Tangly", "Not Bouncy"]:
         return "Laciador"
     if hair_problem == "Lost of Color":
         return "Gotika"
@@ -168,9 +167,9 @@ def choose_product(hair_problem, race, age_group, allergic):
     return "Formula Exclusiva"
 
 
-# =============================
+# ===============================
 # VOICE ROUTE
-# =============================
+# ===============================
 
 @app.route("/voice", methods=["POST"])
 def voice():
@@ -184,12 +183,12 @@ def voice():
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
-        path = temp_audio.name
+        audio_path = temp_audio.name
 
-    print("Saved audio at:", path)
+    print("Audio saved at:", audio_path)
 
-    # Transcribe
-    with open(path, "rb") as audio_file:
+    # Transcription
+    with open(audio_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
@@ -202,9 +201,9 @@ def voice():
 
     product = choose_product(hair_problem, race, age_group, allergic)
 
-    print("Chosen Product:", product)
+    print("Final Product:", product)
 
-    # Generate voice response
+    # Voice Output
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
@@ -220,9 +219,9 @@ def voice():
     })
 
 
-# =============================
-# START SERVER
-# =============================
+# ===============================
+# RUN SERVER
+# ===============================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
