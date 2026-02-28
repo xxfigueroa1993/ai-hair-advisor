@@ -49,33 +49,39 @@ text-align:center;
 font-size:18px;
 }
 
-/* 🌍 Languages Top Right */
-#languages{
+/* 🌍 Language Selector */
+#languageContainer{
 position:absolute;
 top:15px;
 right:20px;
 font-size:12px;
-line-height:18px;
 text-align:right;
-color:rgba(255,255,255,0.75);
-letter-spacing:0.5px;
 }
 
-#languages span{
-display:block;
-opacity:0.8;
+#languageSelect{
+background:rgba(0,0,0,0.6);
+border:1px solid rgba(255,255,255,0.3);
+color:white;
+padding:6px 8px;
+border-radius:6px;
+outline:none;
+cursor:pointer;
 }
 </style>
 </head>
 <body>
 
-<div id="languages">
-<span>North America: English, Spanish</span>
-<span>South America: Spanish, Portuguese</span>
-<span>Europe: English, Spanish, French, German</span>
-<span>Africa: Arabic, French, English</span>
-<span>Asia: Mandarin, Hindi, Arabic</span>
-<span>Oceania: English</span>
+<div id="languageContainer">
+<select id="languageSelect">
+<option value="en-US">English (US)</option>
+<option value="es-ES">Spanish</option>
+<option value="pt-BR">Portuguese</option>
+<option value="fr-FR">French</option>
+<option value="de-DE">German</option>
+<option value="ar-SA">Arabic</option>
+<option value="zh-CN">Mandarin</option>
+<option value="hi-IN">Hindi</option>
+</select>
 </div>
 
 <div class="wrapper">
@@ -88,6 +94,7 @@ opacity:0.8;
 
 const halo=document.getElementById("halo");
 const responseBox=document.getElementById("response");
+const languageSelect=document.getElementById("languageSelect");
 
 let state="idle";
 let recognition=null;
@@ -100,7 +107,15 @@ let analyser=null;
 let micStream=null;
 let dataArray=null;
 
+let selectedLang="en-US";
 let premiumVoice=null;
+
+// ================= LANGUAGE CHANGE =================
+
+languageSelect.addEventListener("change",()=>{
+selectedLang=languageSelect.value;
+initVoice();
+});
 
 // ================= VOICE LOADING =================
 
@@ -119,18 +134,19 @@ resolve(speechSynthesis.getVoices());
 
 async function initVoice(){
 let voices=await loadVoices();
-let priority=["Google US English","Microsoft Jenny","Microsoft Aria","Samantha"];
-for(let name of priority){
-let found=voices.find(v=>v.name.includes(name));
-if(found){
-premiumVoice=found;
-return;
-}
-}
-premiumVoice=voices.find(v=>v.lang==="en-US") || voices[0];
+
+premiumVoice=voices.find(v=>v.lang===selectedLang);
+
+if(!premiumVoice){
+premiumVoice=voices.find(v=>v.lang.startsWith(selectedLang.split("-")[0]));
 }
 
-// ================= SMOOTH COLOR FADE =================
+if(!premiumVoice){
+premiumVoice=voices[0];
+}
+}
+
+// ================= SMOOTH COLOR =================
 
 let currentColor=[0,255,200];
 
@@ -239,8 +255,9 @@ animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 if(premiumVoice) utter.voice=premiumVoice;
-utter.rate=0.90;
-utter.pitch=1.05;
+utter.lang=selectedLang;
+utter.rate=0.92;
+utter.pitch=1.02;
 
 speechSynthesis.speak(utter);
 
@@ -278,13 +295,13 @@ return null;
 
 function processTranscript(text){
 if(!text || text.length<3){
-speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
+speak("I didn't quite understand. Please describe dryness, oiliness, damage, or color concerns.");
 return;
 }
 
 let result=chooseProduct(text);
 if(!result){
-speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
+speak("I didn't quite understand. Please describe dryness, oiliness, damage, or color concerns.");
 return;
 }
 
@@ -305,6 +322,7 @@ transcript="";
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
+recognition.lang=selectedLang;
 recognition.continuous=true;
 recognition.interimResults=true;
 
