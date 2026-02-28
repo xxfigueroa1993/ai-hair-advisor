@@ -10,135 +10,217 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# FRONTEND (UNCHANGED – YOUR PERFECT VERSION)
+# FRONTEND (FULL INLINE – NOTHING MISSING)
 # =====================================================
 
 @app.route("/", methods=["GET"])
 def home():
-    return open("frontend.html").read() if os.path.exists("frontend.html") else "Frontend Loaded Separately"
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+<title>AI Hair Advisor</title>
+<style>
+body{
+    margin:0;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+    background:radial-gradient(circle at center,#0b1114 0%,#000 100%);
+    font-family:Arial;
+    color:white;
+}
+.halo{
+    width:220px;
+    height:220px;
+    border-radius:50%;
+    cursor:pointer;
+    background:radial-gradient(circle at center,
+        rgba(0,255,200,0.35) 0%,
+        rgba(0,255,200,0.18) 50%,
+        rgba(0,255,200,0.08) 75%,
+        transparent 95%);
+    box-shadow:0 0 80px rgba(0,255,200,0.35);
+    transform:scale(1);
+    transition:box-shadow 0.1s linear;
+}
+#response{
+    margin-top:40px;
+    width:70%;
+    text-align:center;
+    font-size:18px;
+}
+</style>
+</head>
+<body>
+
+<div id="halo" class="halo"></div>
+<div id="response">Tap the ring and describe your hair concern.</div>
+
+<script>
+const halo=document.getElementById("halo");
+let state="idle";
+let mediaRecorder=null;
+let stream=null;
+let analyser=null;
+let silenceTimer=null;
+const SILENCE_DELAY=2000;
+const SILENCE_THRESHOLD=6;
+
+function idlePulse(){
+    if(state!=="idle")return;
+    let scale=1+Math.sin(Date.now()*0.002)*0.03;
+    halo.style.transform=`scale(${scale})`;
+    requestAnimationFrame(idlePulse);
+}
+idlePulse();
+
+halo.addEventListener("click",()=>{
+    if(state!=="idle") return;
+    startRecording();
+});
+
+async function startRecording(){
+    state="listening";
+    stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    analyser=audioCtx.createAnalyser();
+    analyser.fftSize=256;
+    const source=audioCtx.createMediaStreamSource(stream);
+    source.connect(analyser);
+
+    mediaRecorder=new MediaRecorder(stream);
+    let chunks=[];
+    mediaRecorder.ondataavailable=e=>chunks.push(e.data);
+
+    mediaRecorder.onstop=async()=>{
+        state="thinking";
+        const blob=new Blob(chunks,{type:"audio/webm"});
+        const form=new FormData();
+        form.append("audio",blob);
+
+        const res=await fetch("/voice",{method:"POST",body:form});
+        const data=await res.json();
+        document.getElementById("response").innerText=data.text;
+
+        const audio=new Audio("data:audio/mp3;base64,"+data.audio);
+        audio.play();
+        audio.onended=()=>{state="idle"; idlePulse();}
+    };
+
+    mediaRecorder.start();
+    detectSilence();
+}
+
+function detectSilence(){
+    if(!analyser)return;
+    const data=new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    let sum=0;
+    for(let i=0;i<data.length;i++)sum+=data[i];
+    let volume=sum/data.length;
+
+    if(volume<SILENCE_THRESHOLD){
+        if(!silenceTimer){
+            silenceTimer=setTimeout(()=>{
+                if(mediaRecorder && mediaRecorder.state==="recording"){
+                    mediaRecorder.stop();
+                }
+            },SILENCE_DELAY);
+        }
+    }else{
+        if(silenceTimer){clearTimeout(silenceTimer);silenceTimer=null;}
+    }
+    if(state==="listening")requestAnimationFrame(detectSilence);
+}
+</script>
+</body>
+</html>
+"""
 
 
 # =====================================================
-# PRODUCT DATABASE (ONLY YOUR PRODUCTS)
+# 4 PRODUCT DATABASE ONLY
 # =====================================================
 
 PRODUCTS = {
     "Laciador": {
         "price": 34.99,
-        "tags": ["frizz","frizzy","dry","damaged","tangly","tangle","split ends","puffy"]
+        "keywords": ["frizz","frizzy","dry","damaged","tangle","tangly","split","puffy"]
     },
     "Gotero": {
         "price": 29.99,
-        "tags": ["oily","greasy","itchy scalp","oil buildup"]
+        "keywords": ["oily","greasy","itchy","oil","buildup"]
     },
     "Volumizer": {
         "price": 39.99,
-        "tags": ["flat","not bouncy","thin","falling","falling out","hair loss","no volume"]
-    },
-    "Color Protect": {
-        "price": 36.99,
-        "tags": ["color","lost color","fading","dull color","dyed hair"]
+        "keywords": ["flat","thin","no volume","falling","falling out","hair loss","not bouncy"]
     },
     "Formula Exclusiva": {
         "price": 49.99,
-        "tags": [
-            "all in one",
-            "all-in-one",
-            "everything",
-            "complete care",
-            "full treatment",
-            "total repair",
-            "all problems",
-            "combo solution"
-        ]
+        "keywords": ["all in one","all-in-one","everything","complete care","full repair","all problems"]
     }
 }
 
-# =====================================================
-# SMART MATCHER
-# =====================================================
-
 def match_product(text):
-    text = text.lower()
+    text=text.lower()
 
-    # First priority: Formula Exclusiva direct match
-    for tag in PRODUCTS["Formula Exclusiva"]["tags"]:
-        if tag in text:
-            return "Formula Exclusiva", PRODUCTS["Formula Exclusiva"]["price"]
+    # All-in-one first
+    for kw in PRODUCTS["Formula Exclusiva"]["keywords"]:
+        if kw in text:
+            return "Formula Exclusiva"
 
-    # Check other products
-    for product, data in PRODUCTS.items():
-        if product == "Formula Exclusiva":
+    matches=[]
+    for product,data in PRODUCTS.items():
+        if product=="Formula Exclusiva":
             continue
-        for tag in data["tags"]:
-            if tag in text:
-                return product, data["price"]
+        for kw in data["keywords"]:
+            if kw in text:
+                matches.append(product)
 
-    return None, None
+    if len(set(matches))>1:
+        return "Formula Exclusiva"
 
+    if matches:
+        return matches[0]
 
-# =====================================================
-# GLOBAL LANGUAGE SUPPORT PROMPT
-# =====================================================
-
-SYSTEM_PROMPT = """
-You are a luxury hair care AI advisor.
-
-IMPORTANT RULES:
-- Only recommend one of these exact products:
-  Laciador, Gotero, Volumizer, Color Protect, Formula Exclusiva.
-- NEVER invent product names.
-- ALWAYS include the price in the recommendation.
-- If user asks for an all-in-one solution → recommend Formula Exclusiva.
-- If user mentions frizz → recommend Laciador.
-- If oily → Gotero.
-- If flat or falling out → Volumizer.
-- If color fading → Color Protect.
-
-If you do NOT understand the user:
-Politely guide them by saying something like:
-"I didn’t quite understand. You can say things like Frizz, Dry, Oily, Falling Out, or Lost Color."
-
-Respond in the SAME language the user speaks.
-Support all global languages automatically.
-Keep responses premium and confident.
-"""
+    return None
 
 
 # =====================================================
 # VOICE ENDPOINT
 # =====================================================
 
-@app.route("/voice", methods=["POST"])
+@app.route("/voice",methods=["POST"])
 def voice():
-    file = request.files["audio"]
-
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp:
+    file=request.files["audio"]
+    with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
         file.save(temp.name)
-        temp_path = temp.name
+        path=temp.name
 
-    # Transcribe (auto language detection global)
-    with open(temp_path, "rb") as audio_file:
-        transcript = client.audio.transcriptions.create(
+    with open(path,"rb") as audio_file:
+        transcript=client.audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
             response_format="text"
         )
 
-    user_text = transcript.strip()
-
-    product, price = match_product(user_text)
+    user_text=transcript.strip()
+    product=match_product(user_text)
 
     if product:
-        ai_message = f"I recommend {product}. It is perfect for your concern. The price is ${price}."
+        price=PRODUCTS[product]["price"]
+        message=f"I recommend {product}. It is perfect for your concern. The price is ${price}."
     else:
-        ai_message = (
-            "I didn’t quite understand your concern. "
-            "You can say things like Frizz, Dry, Oily, Falling Out, Lost Color, "
+        message=(
+            "I didn’t quite understand. "
+            "You can say things like Frizz, Dry, Oily, Falling Out, "
             "or ask for an All-In-One solution."
         )
 
-    return speak(ai_message)
+    return speak(message)
 
 
 # =====================================================
@@ -146,25 +228,20 @@ def voice():
 # =====================================================
 
 def speak(message):
-    speech = client.audio.speech.create(
+    speech=client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
         input=message
     )
-
-    audio_bytes = speech.read()
-    audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-    return jsonify({
-        "text": message,
-        "audio": audio_base64
-    })
+    audio_bytes=speech.read()
+    audio_base64=base64.b64encode(audio_bytes).decode("utf-8")
+    return jsonify({"text":message,"audio":audio_base64})
 
 
 # =====================================================
 # RUN SERVER
 # =====================================================
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+if __name__=="__main__":
+    port=int(os.environ.get("PORT",10000))
+    app.run(host="0.0.0.0",port=port)
