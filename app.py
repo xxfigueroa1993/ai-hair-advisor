@@ -27,7 +27,6 @@ body{
 }
 
 .wrapper{
-    position:relative;
     width:420px;
     height:420px;
     display:flex;
@@ -40,12 +39,8 @@ body{
     height:300px;
     border-radius:50%;
     cursor:pointer;
-
     backdrop-filter:blur(60px);
-
-    /* BASE VISIBILITY LAYER — never disappears */
     background:rgba(0,255,200,0.22);
-
     transition:transform 1.2s ease;
 }
 
@@ -57,7 +52,6 @@ body{
 }
 </style>
 </head>
-
 <body>
 
 <div class="wrapper">
@@ -80,7 +74,7 @@ let currentOsc=null;
 const FADE_DURATION=1750;
 
 // ==========================
-// COLOR FADE (NEVER VANISH)
+// COLOR FADE
 // ==========================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
@@ -93,7 +87,6 @@ function animateColor(targetColor,onComplete=null){
     const startTime=performance.now();
 
     function step(now){
-
         let progress=(now-startTime)/FADE_DURATION;
         if(progress>1) progress=1;
 
@@ -101,14 +94,12 @@ function animateColor(targetColor,onComplete=null){
         let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
         let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
 
-        // Thick transparent halo glow (outer)
         halo.style.boxShadow = `
             0 0 100px rgba(${r},${g},${b},0.55),
             0 0 220px rgba(${r},${g},${b},0.35),
             0 0 320px rgba(${r},${g},${b},0.25)
         `;
 
-        // Inner orb — NEVER fully transparent
         halo.style.background = `
             radial-gradient(circle at center,
                 rgba(${r},${g},${b},0.32) 0%,
@@ -143,10 +134,11 @@ function pulse(){
 }
 
 // ==========================
-// SOUND
+// SOUNDS
 // ==========================
 
-function playTone(startFreq,endFreq){
+// Click sound (unchanged)
+function playClickSound(){
 
     if(currentOsc){
         currentOsc.stop();
@@ -158,20 +150,62 @@ function playTone(startFreq,endFreq){
     const gain=ctx.createGain();
 
     osc.type="sine";
-
-    osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(endFreq,ctx.currentTime+FADE_DURATION/1000);
+    osc.frequency.setValueAtTime(220,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+1.75);
 
     gain.gain.setValueAtTime(0.12,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+FADE_DURATION/1000);
+    gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+1.75);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime+FADE_DURATION/1000);
+    osc.stop(ctx.currentTime+1.75);
 
     currentOsc=osc;
+}
+
+// Totally different AI completion sound
+function playCompletionSound(){
+
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+
+    osc.type="triangle";   // different waveform
+
+    osc.frequency.setValueAtTime(600,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1200,ctx.currentTime+0.4);
+
+    gain.gain.setValueAtTime(0.15,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime+0.6);
+}
+
+// ==========================
+// VOICE RESPONSE
+// ==========================
+
+function speak(text){
+
+    const utterance=new SpeechSynthesisUtterance(text);
+    utterance.rate=0.95;
+    utterance.pitch=1.0;
+    utterance.volume=1.0;
+
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+
+    utterance.onend=()=>{
+        playCompletionSound();
+        setTimeout(resetToIdle,400);
+    };
 }
 
 // ==========================
@@ -191,7 +225,7 @@ function resetToIdle(){
 }
 
 // ==========================
-// CLICK HANDLER
+// CLICK
 // ==========================
 
 halo.addEventListener("click",()=>{
@@ -207,31 +241,26 @@ halo.addEventListener("click",()=>{
     state="transition";
     responseBox.innerText="Listening...";
 
-    // Sound #1
-    playTone(220,300);
+    playClickSound();
 
     animateColor([255,210,80],()=>{
 
-        state="thinking";
-        responseBox.innerText="Analyzing...";
+        // 3 second silence before analyzing
+        setTimeout(()=>{
 
-        animateColor([0,255,255],()=>{
+            state="thinking";
+            responseBox.innerText="Analyzing...";
 
-            setTimeout(()=>{
+            animateColor([0,255,255],()=>{
 
-                responseBox.innerText=
-                "I didn’t hear you. Can you please share your hair concerns for a recommendation?";
+                const aiText="I didn’t hear you. Can you please share your hair concerns for a recommendation?";
+                responseBox.innerText=aiText;
 
-                // Sound #2 (only if AI finishes)
-                playTone(380,240);
+                speak(aiText);
 
-                setTimeout(()=>{
-                    resetToIdle();
-                },400);
+            });
 
-            },700);
-
-        });
+        },3000); // 3 second delay
 
     });
 
@@ -242,7 +271,6 @@ animateColor([0,255,200]);
 pulse();
 
 </script>
-
 </body>
 </html>
 """
