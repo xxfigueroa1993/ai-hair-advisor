@@ -10,7 +10,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# PRODUCT LOCK
+# PRODUCT LOCK (Bounce Removed From Volumizer)
 # =====================================================
 
 PRODUCTS = {
@@ -23,12 +23,19 @@ PRODUCTS = {
 def route_product(text):
     t = text.lower()
 
-    if any(x in t for x in ["event","party","wedding","date","styler","sleek","smooth","frizz"]):
+    # Bounce now treated as styling → Laciador
+    if any(x in t for x in [
+        "event","party","wedding","date","styler",
+        "sleek","smooth","frizz","bounce","bouncy"
+    ]):
         return "Laciador"
+
     if any(x in t for x in ["oily","greasy"]):
         return "Gotero"
+
     if any(x in t for x in ["thin","falling","hair loss"]):
         return "Volumizer"
+
     if any(x in t for x in ["all in one","everything","multiple"]):
         return "Formula Exclusiva"
 
@@ -38,7 +45,7 @@ def build_prompt(language):
     return f"""
 You are a luxury AI hair advisor.
 
-You MUST recommend only one of:
+Only recommend:
 - Laciador ($34.99)
 - Gotero ($29.99)
 - Volumizer ($39.99)
@@ -46,7 +53,7 @@ You MUST recommend only one of:
 
 Always include price.
 Always respond in {language}.
-Sound premium and emotionally supportive.
+Premium supportive tone.
 """
 
 # =====================================================
@@ -64,12 +71,28 @@ def home():
 body{
 margin:0;height:100vh;display:flex;justify-content:center;align-items:center;
 flex-direction:column;background:#000;font-family:Arial;color:white;
+overflow:hidden;
 }
 select{
 position:absolute;top:20px;right:20px;padding:8px;background:#111;color:white;border:1px solid #444;
 }
-.halo{
-width:240px;height:240px;border-radius:50%;
+.wrapper{
+position:relative;
+width:260px;
+height:260px;
+}
+.outerRing{
+position:absolute;
+width:100%;
+height:100%;
+border-radius:50%;
+border:3px solid rgba(0,255,200,0.5);
+}
+.innerGlow{
+position:absolute;
+width:100%;
+height:100%;
+border-radius:50%;
 }
 #response{margin-top:40px;width:70%;text-align:center;font-size:18px;}
 </style>
@@ -85,20 +108,24 @@ width:240px;height:240px;border-radius:50%;
 <option value="German">German</option>
 </select>
 
-<div id="halo" class="halo"></div>
+<div class="wrapper">
+<div id="outer" class="outerRing"></div>
+<div id="inner" class="innerGlow"></div>
+</div>
+
 <div id="response">Tap the ring and describe your hair concern.</div>
 
 <script>
 
-const halo=document.getElementById("halo");
+const outer=document.getElementById("outer");
+const inner=document.getElementById("inner");
 const languageSelect=document.getElementById("language");
 
 let state="idle";
 let analyser, mediaRecorder, stream, audioCtx;
 let silenceTimer;
-let audioElement;
 
-const SILENCE_DELAY=2500;
+const SILENCE_DELAY=2200;
 const SILENCE_THRESHOLD=6;
 
 const idleColor=[0,255,200];
@@ -107,23 +134,34 @@ const teal=[0,255,255];
 
 let color=[...idleColor];
 let targetColor=[...idleColor];
-let intensity=0.3;
-let targetIntensity=0.3;
+
+let intensity=0.4;
+let targetIntensity=0.4;
+
+let pulseScale=1;
+let pulseTarget=1;
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
 function animate(){
-    intensity=lerp(intensity,targetIntensity,0.008);
+    intensity=lerp(intensity,targetIntensity,0.03);
+
     for(let i=0;i<3;i++){
-        color[i]=lerp(color[i],targetColor[i],0.008);
+        color[i]=lerp(color[i],targetColor[i],0.03);
     }
 
-    halo.style.background=`radial-gradient(circle at center,
+    pulseScale=lerp(pulseScale,pulseTarget,0.15);
+
+    inner.style.background=
+        `radial-gradient(circle at center,
         rgba(${color[0]},${color[1]},${color[2]},${intensity}) 0%,
         rgba(${color[0]},${color[1]},${color[2]},${intensity*0.5}) 60%,
         transparent 100%)`;
 
-    halo.style.boxShadow=`0 0 ${80+intensity*220}px rgba(${color[0]},${color[1]},${color[2]},0.7)`;
+    inner.style.boxShadow=
+        `0 0 ${80+intensity*200}px rgba(${color[0]},${color[1]},${color[2]},0.7)`;
+
+    outer.style.transform=`scale(${pulseScale})`;
 
     requestAnimationFrame(animate);
 }
@@ -134,87 +172,55 @@ function transitionTo(c,i){
     targetIntensity=i;
 }
 
+// Default breathing pulse (outer ring)
 function idlePulse(){
     if(state==="idle"){
-        targetIntensity=0.3 + Math.sin(Date.now()*0.002)*0.05;
+        pulseTarget=1 + Math.sin(Date.now()*0.002)*0.03;
     }
     requestAnimationFrame(idlePulse);
 }
 idlePulse();
 
-function playIntro(){
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const o=ctx.createOscillator();
-    const g=ctx.createGain();
-    o.type="sine";
-    o.frequency.setValueAtTime(400,ctx.currentTime);
-    o.frequency.linearRampToValueAtTime(750,ctx.currentTime+3);
-    g.gain.setValueAtTime(0.0001,ctx.currentTime);
-    g.gain.linearRampToValueAtTime(0.3,ctx.currentTime+2.5);
-    g.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+4);
-    o.connect(g);g.connect(ctx.destination);
-    o.start();o.stop(ctx.currentTime+4);
-}
-
-function playOutro(){
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const o=ctx.createOscillator();
-    const g=ctx.createGain();
-    o.type="triangle";
-    o.frequency.setValueAtTime(600,ctx.currentTime);
-    o.frequency.linearRampToValueAtTime(180,ctx.currentTime+4);
-    g.gain.setValueAtTime(0.3,ctx.currentTime);
-    g.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+4.5);
-    o.connect(g);g.connect(ctx.destination);
-    o.start();o.stop(ctx.currentTime+4.5);
-}
-
-halo.addEventListener("click",()=>{
-    if(state!=="idle") return;
-    playIntro();
-    startRecording();
-});
-
-async function startRecording(){
+function startRecording(){
     state="listening";
     transitionTo(gold,1.0);
 
     audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    analyser=audioCtx.createAnalyser();
-    analyser.fftSize=256;
+    navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
+        stream=s;
+        analyser=audioCtx.createAnalyser();
+        analyser.fftSize=256;
+        audioCtx.createMediaStreamSource(stream).connect(analyser);
 
-    const source=audioCtx.createMediaStreamSource(stream);
-    source.connect(analyser);
+        mediaRecorder=new MediaRecorder(stream);
+        let chunks=[];
+        mediaRecorder.ondataavailable=e=>chunks.push(e.data);
 
-    mediaRecorder=new MediaRecorder(stream);
-    let chunks=[];
-    mediaRecorder.ondataavailable=e=>chunks.push(e.data);
+        mediaRecorder.onstop=async()=>{
+            stream.getTracks().forEach(t=>t.stop());
+            audioCtx.close();
 
-    mediaRecorder.onstop=async()=>{
-        stream.getTracks().forEach(t=>t.stop());
-        audioCtx.close();
+            state="thinking";
+            transitionTo(teal,1.1);
 
-        state="thinking";
-        transitionTo(teal,1.2);
+            const blob=new Blob(chunks,{type:"audio/webm"});
+            const form=new FormData();
+            form.append("audio",blob);
+            form.append("language",languageSelect.value);
 
-        const blob=new Blob(chunks,{type:"audio/webm"});
-        const form=new FormData();
-        form.append("audio",blob);
-        form.append("language",languageSelect.value);
+            const res=await fetch("/voice",{method:"POST",body:form});
+            const data=await res.json();
+            document.getElementById("response").innerText=data.text;
+            speakAI(data.audio);
+        };
 
-        const res=await fetch("/voice",{method:"POST",body:form});
-        const data=await res.json();
-        document.getElementById("response").innerText=data.text;
-        speakAI(data.audio);
-    };
-
-    mediaRecorder.start();
-    detectVoice();
+        mediaRecorder.start();
+        detectVoice();
+    });
 }
 
 function detectVoice(){
-    if(!analyser || state!=="listening") return;
+    if(state!=="listening") return;
 
     const data=new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
@@ -222,36 +228,33 @@ function detectVoice(){
     for(let i=0;i<data.length;i++) sum+=data[i];
     let volume=sum/data.length;
 
-    targetIntensity=0.9 + volume/140;  // reactive pulse
+    pulseTarget=1 + volume/120; // DEEP pulse
 
     if(volume<SILENCE_THRESHOLD){
         if(!silenceTimer){
             silenceTimer=setTimeout(()=>{
-                if(mediaRecorder.state==="recording"){
-                    transitionTo(teal,1.2); // GOLD -> TEAL begins immediately
-                    mediaRecorder.stop();
-                }
+                transitionTo(teal,1.1); // EXACT 2.2s gold->teal
+                mediaRecorder.stop();
             },SILENCE_DELAY);
         }
-    } else {
+    }else{
         if(silenceTimer){clearTimeout(silenceTimer);silenceTimer=null;}
     }
 
     requestAnimationFrame(detectVoice);
 }
 
-function speakAI(base64Audio){
+function speakAI(b64){
     state="speaking";
-    audioElement=new Audio("data:audio/mp3;base64,"+base64Audio);
-
+    const audio=new Audio("data:audio/mp3;base64,"+b64);
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const source=ctx.createMediaElementSource(audioElement);
+    const src=ctx.createMediaElementSource(audio);
     const analyser2=ctx.createAnalyser();
     analyser2.fftSize=256;
-    source.connect(analyser2);
+    src.connect(analyser2);
     analyser2.connect(ctx.destination);
 
-    audioElement.play();
+    audio.play();
 
     function react(){
         if(state!=="speaking") return;
@@ -260,17 +263,20 @@ function speakAI(base64Audio){
         let sum=0;
         for(let i=0;i<data.length;i++) sum+=data[i];
         let volume=sum/data.length;
-        targetIntensity=1.0 + volume/160;
+        pulseTarget=1 + volume/130; // deep AI pulse
         requestAnimationFrame(react);
     }
     react();
 
-    audioElement.onended=()=>{
-        playOutro();
-        transitionTo(idleColor,0.35);
+    audio.onended=()=>{
+        transitionTo(idleColor,0.45); // NO DARK FADE
         state="idle";
     };
 }
+
+document.querySelector(".wrapper").addEventListener("click",()=>{
+    if(state==="idle") startRecording();
+});
 
 </script>
 </body>
@@ -297,8 +303,8 @@ def voice():
             response_format="text"
         )
 
-    user_text=transcript.strip()
-    product=route_product(user_text)
+    text=transcript.strip()
+    product=route_product(text)
     price=PRODUCTS[product]
 
     completion=client.chat.completions.create(
@@ -307,21 +313,21 @@ def voice():
         messages=[
             {"role":"system","content":build_prompt(language)},
             {"role":"assistant","content":f"Recommend {product} ({price}) in a premium emotionally supportive tone."},
-            {"role":"user","content":user_text}
+            {"role":"user","content":text}
         ]
     )
 
     return speak(completion.choices[0].message.content)
 
-def speak(message):
+def speak(msg):
     speech=client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
-        input=message
+        input=msg
     )
     audio_bytes=speech.read()
     return jsonify({
-        "text":message,
+        "text":msg,
         "audio":base64.b64encode(audio_bytes).decode("utf-8")
     })
 
