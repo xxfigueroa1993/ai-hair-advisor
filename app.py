@@ -50,7 +50,7 @@ body{
     cursor:pointer;
     backdrop-filter:blur(60px);
     background:rgba(0,255,200,0.22);
-    transition:transform 1.2s ease;
+    transition:transform 0.2s ease;
 }
 
 #response{
@@ -85,38 +85,16 @@ const halo=document.getElementById("halo");
 const responseBox=document.getElementById("response");
 
 let state="idle";
-let locked=false;
-let currentColor=[0,255,200];
-let activeAnimation=null;
-let currentOsc=null;
 let recognition=null;
+let transcript="";
 let silenceTimer=null;
 let noSpeechTimer=null;
-let transcript="";
-
-const FADE_DURATION=1750;
 
 // ==========================
-// ORIGINAL COLOR FADE ENGINE (UNCHANGED)
+// COLOR ENGINE (unchanged style)
 // ==========================
 
-function lerp(a,b,t){ return a+(b-a)*t; }
-
-function animateColor(targetColor,onComplete=null){
-
-if(activeAnimation) cancelAnimationFrame(activeAnimation);
-
-const startColor=[...currentColor];
-const startTime=performance.now();
-
-function step(now){
-let progress=(now-startTime)/FADE_DURATION;
-if(progress>1) progress=1;
-
-let r=Math.floor(lerp(startColor[0],targetColor[0],progress));
-let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
-let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
-
+function setGlow(r,g,b){
 halo.style.boxShadow=`
 0 0 100px rgba(${r},${g},${b},0.55),
 0 0 220px rgba(${r},${g},${b},0.35),
@@ -130,118 +108,91 @@ rgba(${r},${g},${b},0.22) 50%,
 rgba(${r},${g},${b},0.15) 75%,
 rgba(${r},${g},${b},0.10) 100%)
 `;
-
-currentColor=[r,g,b];
-
-if(progress<1){
-activeAnimation=requestAnimationFrame(step);
-}else{
-activeAnimation=null;
-if(onComplete) onComplete();
-}
 }
 
-activeAnimation=requestAnimationFrame(step);
-}
+setGlow(0,255,200);
 
 // ==========================
-// ORIGINAL PULSE ENGINE (UNCHANGED)
+// PULSE ENGINE (reactive)
 // ==========================
 
 function pulse(){
-if(state==="idle"){
-let scale=1+Math.sin(Date.now()*0.0012)*0.04;
+let intensity=0;
+
+if(state==="idle") intensity=0.04;
+if(state==="listening") intensity=0.08;
+if(state==="speaking") intensity=0.10;
+
+let scale=1+Math.sin(Date.now()*0.002)*intensity;
 halo.style.transform=`scale(${scale})`;
-}
+
 requestAnimationFrame(pulse);
 }
 
-// ==========================
-// ORIGINAL CLICK SOUND (UNCHANGED)
-// ==========================
-
-function playClickSound(){
-
-if(currentOsc){
-currentOsc.stop();
-currentOsc=null;
-}
-
-const ctx=new (window.AudioContext||window.webkitAudioContext)();
-const osc=ctx.createOscillator();
-const gain=ctx.createGain();
-
-osc.type="sine";
-osc.frequency.setValueAtTime(220,ctx.currentTime);
-osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+1.75);
-
-gain.gain.setValueAtTime(0.12,ctx.currentTime);
-gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+1.75);
-
-osc.connect(gain);
-gain.connect(ctx.destination);
-
-osc.start();
-osc.stop(ctx.currentTime+1.75);
-
-currentOsc=osc;
-}
+pulse();
 
 // ==========================
-// ORIGINAL COMPLETION SOUND (UNCHANGED)
-// ==========================
-
-function playCompletionSound(){
-
-const ctx=new (window.AudioContext||window.webkitAudioContext)();
-const osc=ctx.createOscillator();
-const gain=ctx.createGain();
-
-osc.type="triangle";
-osc.frequency.setValueAtTime(600,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(1200,ctx.currentTime+0.4);
-
-gain.gain.setValueAtTime(0.15,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
-
-osc.connect(gain);
-gain.connect(ctx.destination);
-
-osc.start();
-osc.stop(ctx.currentTime+0.6);
-}
-
-// ==========================
-// PRODUCT ENGINE
+// PRODUCT LOGIC (expanded intelligence)
 // ==========================
 
 function chooseProduct(text){
 
 text=text.toLowerCase();
 
-if(text.length<12) return null;
+let problems=0;
+let dry = /(dry|frizz|rough|brittle|coarse|no moisture|split ends)/.test(text);
+let damaged = /(damaged|break|weak|burned|overprocessed|heat damage)/.test(text);
+let tangly = /(tangle|knot|hard to brush|snag|matted)/.test(text);
+let color = /(color fade|fading|lost color|dull color|brassy|discolor)/.test(text);
+let oily = /(oily|greasy|oil buildup|shiny scalp|too much oil)/.test(text);
+let flat = /(flat|no bounce|lifeless|no volume)/.test(text);
+let falling = /(falling|shedding|hair loss|thinning)/.test(text);
 
-if(text.includes("under 16") && text.includes("color")){
-return "For clients under sixteen experiencing pigment changes, we recommend consulting a licensed medical professional.";
+[dry,damaged,tangly,color,oily,flat,falling].forEach(v=>{if(v) problems++;});
+
+if(problems===0) return null;
+
+if(damaged || falling || problems>=3){
+return "Formula Exclusiva is an all-in-one natural professional salon hair treatment that restores strength, elasticity, moisture balance, and scalp health. It is ideal for multi-problem or structurally weakened hair. Price: $65.";
 }
 
-if(text.includes("dry"))
-return "Laciador restores moisture balance and smoothness. Price: $48.";
+if(color){
+return "Gotika is an all-natural professional hair color treatment designed to restore vibrancy, tone correction, and long-lasting pigment protection. Price: $54.";
+}
 
-if(text.includes("oily"))
-return "Gotero balances sebum production without stripping hydration. Price: $42.";
+if(oily && problems>=2){
+return "Formula Exclusiva balances scalp oil while repairing underlying structural stress. Price: $65.";
+}
 
-if(text.includes("damaged") || text.includes("fall"))
-return "Formula Exclusiva rebuilds structural strength and elasticity. Price: $65.";
+if(oily){
+return "Gotero is an all-natural professional hair gel that regulates excess oil production and supports scalp clarity without stripping hydration. Price: $42.";
+}
 
-if(text.includes("color"))
-return "Gotika restores vibrancy and pigment longevity. Price: $54.";
+if(tangly && problems>=2){
+return "Gotero smooths texture while reinforcing resilience in combination problem hair. Price: $42.";
+}
+
+if(tangly){
+return "Laciador is an all-natural professional hair styler that improves smoothness, manageability, and detangling while restoring bounce. Price: $48.";
+}
+
+if(dry && problems>=2){
+return "Formula Exclusiva deeply rehydrates and rebuilds dry multi-concern hair. Price: $65.";
+}
+
+if(dry){
+return "Laciador is an all-natural professional hair styler that restores moisture, softness, and healthy bounce to dry hair. Price: $48.";
+}
+
+if(flat){
+return "Laciador enhances body, softness, and natural movement for hair lacking bounce. Price: $48.";
+}
 
 return null;
 }
 
 // ==========================
-// VOICE (NO FORCED BRITISH)
+// SPEECH
 // ==========================
 
 function speak(text){
@@ -251,31 +202,20 @@ speechSynthesis.cancel();
 const utter=new SpeechSynthesisUtterance(text);
 utter.rate=0.95;
 utter.pitch=1.02;
-utter.volume=1;
 
 state="speaking";
+setGlow(0,200,255);
 
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
-playCompletionSound();
-setTimeout(resetToIdle,400);
+setGlow(0,255,200);
+state="idle";
 };
 }
 
 // ==========================
-// RESET
-// ==========================
-
-function resetToIdle(){
-state="idle";
-animateColor([0,255,200],()=>{
-responseBox.innerText="Tap and describe your hair concern.";
-});
-}
-
-// ==========================
-// SPEECH RECOGNITION
+// LISTENING
 // ==========================
 
 function startListening(){
@@ -289,6 +229,7 @@ recognition.interimResults=true;
 
 transcript="";
 state="listening";
+setGlow(255,210,80);
 
 recognition.onresult=function(event){
 
@@ -320,33 +261,31 @@ speak("I didn’t hear anything. Could you describe your hair concern?");
 }
 
 // ==========================
-// PROCESS SPEECH
+// PROCESS
 // ==========================
 
 function processTranscript(text){
 
-if(!text || text.length<10){
-speak("I didn’t catch that clearly. Could you describe a specific hair concern?");
+if(!text || text.length<8){
+speak("I didn’t catch that clearly. Could you be more specific with your hair concern?");
 return;
 }
 
 responseBox.innerText="Analyzing...";
 
 setTimeout(()=>{
-animateColor([0,255,255],()=>{
 
 let result=chooseProduct(text);
 
 if(!result){
-speak("I didn’t catch a specific hair issue. Could you clarify dryness, oiliness, damage, color fading, or shedding?");
+speak("I didn’t detect a clear hair concern. Could you describe dryness, oiliness, damage, tangling, color loss, volume issues, or shedding?");
 return;
 }
 
 responseBox.innerText=result;
 speak(result);
 
-});
-},3000);
+},1200);
 }
 
 // ==========================
@@ -357,25 +296,21 @@ halo.addEventListener("click",()=>{
 
 if(state==="listening"){
 recognition.stop();
-resetToIdle();
+state="idle";
+setGlow(0,255,200);
 return;
 }
 
 if(state==="speaking"){
 speechSynthesis.cancel();
-resetToIdle();
+state="idle";
+setGlow(0,255,200);
 return;
 }
 
-playClickSound();
-animateColor([255,210,80],()=>{
 startListening();
-});
-});
 
-// INIT
-animateColor([0,255,200]);
-pulse();
+});
 
 </script>
 </body>
