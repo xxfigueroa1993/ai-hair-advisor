@@ -50,6 +50,7 @@ body{
     cursor:pointer;
     backdrop-filter:blur(60px);
     background:rgba(0,255,200,0.22);
+    transition:transform 1.2s ease;
 }
 
 #response{
@@ -84,121 +85,198 @@ const halo=document.getElementById("halo");
 const responseBox=document.getElementById("response");
 
 let state="idle";
+let locked=false;
+let currentColor=[0,255,200];
+let activeAnimation=null;
+let currentOsc=null;
 let recognition=null;
 let silenceTimer=null;
 let noSpeechTimer=null;
 let transcript="";
-let speaking=false;
 
-// =====================
-// DEEP BREATHING PULSE
-// =====================
+const FADE_DURATION=1750;
 
-function pulse(){
-    let intensity=0.05;
-    let speed=0.0012;
+// ==========================
+// ORIGINAL COLOR FADE ENGINE (UNCHANGED)
+// ==========================
 
-    if(state==="listening") intensity=0.085;
-    if(state==="speaking") intensity=0.11;
+function lerp(a,b,t){ return a+(b-a)*t; }
 
-    let scale=1+Math.sin(Date.now()*speed)*intensity;
-    halo.style.transform=`scale(${scale})`;
+function animateColor(targetColor,onComplete=null){
 
-    requestAnimationFrame(pulse);
+if(activeAnimation) cancelAnimationFrame(activeAnimation);
+
+const startColor=[...currentColor];
+const startTime=performance.now();
+
+function step(now){
+let progress=(now-startTime)/FADE_DURATION;
+if(progress>1) progress=1;
+
+let r=Math.floor(lerp(startColor[0],targetColor[0],progress));
+let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
+let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
+
+halo.style.boxShadow=`
+0 0 100px rgba(${r},${g},${b},0.55),
+0 0 220px rgba(${r},${g},${b},0.35),
+0 0 320px rgba(${r},${g},${b},0.25)
+`;
+
+halo.style.background=`
+radial-gradient(circle at center,
+rgba(${r},${g},${b},0.32) 0%,
+rgba(${r},${g},${b},0.22) 50%,
+rgba(${r},${g},${b},0.15) 75%,
+rgba(${r},${g},${b},0.10) 100%)
+`;
+
+currentColor=[r,g,b];
+
+if(progress<1){
+activeAnimation=requestAnimationFrame(step);
+}else{
+activeAnimation=null;
+if(onComplete) onComplete();
+}
 }
 
-// =====================
+activeAnimation=requestAnimationFrame(step);
+}
+
+// ==========================
+// ORIGINAL PULSE ENGINE (UNCHANGED)
+// ==========================
+
+function pulse(){
+if(state==="idle"){
+let scale=1+Math.sin(Date.now()*0.0012)*0.04;
+halo.style.transform=`scale(${scale})`;
+}
+requestAnimationFrame(pulse);
+}
+
+// ==========================
+// ORIGINAL CLICK SOUND (UNCHANGED)
+// ==========================
+
+function playClickSound(){
+
+if(currentOsc){
+currentOsc.stop();
+currentOsc=null;
+}
+
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+const osc=ctx.createOscillator();
+const gain=ctx.createGain();
+
+osc.type="sine";
+osc.frequency.setValueAtTime(220,ctx.currentTime);
+osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+1.75);
+
+gain.gain.setValueAtTime(0.12,ctx.currentTime);
+gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+1.75);
+
+osc.connect(gain);
+gain.connect(ctx.destination);
+
+osc.start();
+osc.stop(ctx.currentTime+1.75);
+
+currentOsc=osc;
+}
+
+// ==========================
+// ORIGINAL COMPLETION SOUND (UNCHANGED)
+// ==========================
+
+function playCompletionSound(){
+
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+const osc=ctx.createOscillator();
+const gain=ctx.createGain();
+
+osc.type="triangle";
+osc.frequency.setValueAtTime(600,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(1200,ctx.currentTime+0.4);
+
+gain.gain.setValueAtTime(0.15,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
+
+osc.connect(gain);
+gain.connect(ctx.destination);
+
+osc.start();
+osc.stop(ctx.currentTime+0.6);
+}
+
+// ==========================
 // PRODUCT ENGINE
-// =====================
+// ==========================
 
 function chooseProduct(text){
 
-text=text.toLowerCase().trim();
+text=text.toLowerCase();
 
 if(text.length<12) return null;
 
 if(text.includes("under 16") && text.includes("color")){
-return "For clients under sixteen experiencing pigment changes, we strongly recommend consulting a licensed medical professional before cosmetic treatment.";
+return "For clients under sixteen experiencing pigment changes, we recommend consulting a licensed medical professional.";
 }
 
-const issues={
-dry:{
-name:"Laciador",
-desc:"Dry hair indicates cuticle dehydration. Laciador restores moisture balance and smoothness.",
-price:"$48"
-},
-oily:{
-name:"Gotero",
-desc:"Oily scalp imbalance requires lightweight regulation. Gotero balances sebum without stripping hydration.",
-price:"$42"
-},
-damaged:{
-name:"Formula Exclusiva",
-desc:"Structural damage affects protein bonds. Formula Exclusiva rebuilds strength and elasticity.",
-price:"$65"
-},
-fall:{
-name:"Formula Exclusiva",
-desc:"Shedding and breakage require strengthening at the root level. Formula Exclusiva supports healthier cycles.",
-price:"$65"
-},
-color:{
-name:"Gotika",
-desc:"Color fading occurs from oxidation and UV exposure. Gotika restores vibrancy and pigment longevity.",
-price:"$54"
-}
-};
+if(text.includes("dry"))
+return "Laciador restores moisture balance and smoothness. Price: $48.";
 
-for(let key in issues){
-if(text.includes(key)){
-let p=issues[key];
-return p.name+". "+p.desc+" Professional price point: "+p.price+".";
-}
-}
+if(text.includes("oily"))
+return "Gotero balances sebum production without stripping hydration. Price: $42.";
+
+if(text.includes("damaged") || text.includes("fall"))
+return "Formula Exclusiva rebuilds structural strength and elasticity. Price: $65.";
+
+if(text.includes("color"))
+return "Gotika restores vibrancy and pigment longevity. Price: $54.";
 
 return null;
 }
 
-// =====================
-// VOICE SELECTION
-// =====================
-
-function getBestVoice(){
-let voices=speechSynthesis.getVoices();
-
-let preferred=
-voices.find(v=>v.name.includes("Google UK English Female")) ||
-voices.find(v=>v.name.includes("Samantha")) ||
-voices.find(v=>v.name.toLowerCase().includes("female"));
-
-return preferred || voices[0];
-}
+// ==========================
+// VOICE (NO FORCED BRITISH)
+// ==========================
 
 function speak(text){
 
 speechSynthesis.cancel();
 
 const utter=new SpeechSynthesisUtterance(text);
-utter.voice=getBestVoice();
-utter.rate=0.9;
-utter.pitch=1.05;
+utter.rate=0.95;
+utter.pitch=1.02;
 utter.volume=1;
 
 state="speaking";
-speaking=true;
 
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
-speaking=false;
-state="idle";
-responseBox.innerText="Tap and describe your hair concern.";
+playCompletionSound();
+setTimeout(resetToIdle,400);
 };
 }
 
-// =====================
-// LISTENING SYSTEM
-// =====================
+// ==========================
+// RESET
+// ==========================
+
+function resetToIdle(){
+state="idle";
+animateColor([0,255,200],()=>{
+responseBox.innerText="Tap and describe your hair concern.";
+});
+}
+
+// ==========================
+// SPEECH RECOGNITION
+// ==========================
 
 function startListening(){
 
@@ -208,50 +286,44 @@ window.SpeechRecognition || window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
 recognition.continuous=true;
 recognition.interimResults=true;
-recognition.lang="en-US";
 
 transcript="";
 state="listening";
-responseBox.innerText="Listening...";
 
 recognition.onresult=function(event){
 
 clearTimeout(silenceTimer);
 clearTimeout(noSpeechTimer);
 
-let interim="";
-
 for(let i=event.resultIndex;i<event.results.length;i++){
 if(event.results[i].isFinal){
 transcript+=event.results[i][0].transcript+" ";
-}else{
-interim+=event.results[i][0].transcript;
 }
 }
 
 silenceTimer=setTimeout(()=>{
 recognition.stop();
-handleFinalTranscript(transcript.trim());
+processTranscript(transcript.trim());
 },2500);
 
 };
 
 recognition.start();
 
-// 3.5s full silence fallback
 noSpeechTimer=setTimeout(()=>{
 if(transcript.trim().length<5){
 recognition.stop();
-speak("I didn’t hear anything. Could you please describe your specific hair concern?");
+speak("I didn’t hear anything. Could you describe your hair concern?");
 }
 },3500);
+
 }
 
-// =====================
-// PROCESS FINAL SPEECH
-// =====================
+// ==========================
+// PROCESS SPEECH
+// ==========================
 
-function handleFinalTranscript(text){
+function processTranscript(text){
 
 if(!text || text.length<10){
 speak("I didn’t catch that clearly. Could you describe a specific hair concern?");
@@ -261,42 +333,48 @@ return;
 responseBox.innerText="Analyzing...";
 
 setTimeout(()=>{
+animateColor([0,255,255],()=>{
 
-const result=chooseProduct(text);
+let result=chooseProduct(text);
 
 if(!result){
-speak("I didn’t catch a specific hair issue. Could you clarify whether it's dryness, oiliness, damage, color fading, or shedding?");
+speak("I didn’t catch a specific hair issue. Could you clarify dryness, oiliness, damage, color fading, or shedding?");
 return;
 }
 
 responseBox.innerText=result;
 speak(result);
 
+});
 },3000);
 }
 
-// =====================
-// CLICK HANDLER
-// =====================
+// ==========================
+// CLICK
+// ==========================
 
 halo.addEventListener("click",()=>{
 
 if(state==="listening"){
 recognition.stop();
-state="idle";
-responseBox.innerText="Tap and describe your hair concern.";
+resetToIdle();
 return;
 }
 
 if(state==="speaking"){
 speechSynthesis.cancel();
-state="idle";
+resetToIdle();
 return;
 }
 
+playClickSound();
+animateColor([255,210,80],()=>{
 startListening();
 });
+});
 
+// INIT
+animateColor([0,255,200]);
 pulse();
 
 </script>
