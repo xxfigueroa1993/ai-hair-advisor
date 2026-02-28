@@ -10,7 +10,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # ======================================
-# FRONTEND
+# FRONTEND WITH GLOWING HALO
 # ======================================
 
 @app.route("/", methods=["GET"])
@@ -18,17 +18,81 @@ def home():
     return """
     <!DOCTYPE html>
     <html>
-    <head><title>AI Hair Advisor</title></head>
+    <head>
+        <title>AI Hair Advisor</title>
+        <style>
+            body {
+                background: black;
+                color: white;
+                text-align: center;
+                font-family: Arial;
+                margin-top: 100px;
+            }
+
+            .halo {
+                width: 150px;
+                height: 150px;
+                border-radius: 50%;
+                border: 4px solid rgba(0,255,255,0.6);
+                margin: 40px auto;
+                box-shadow: 0 0 20px cyan;
+                transition: all 0.3s ease;
+            }
+
+            .recording {
+                animation: pulse 1.2s infinite;
+                box-shadow: 0 0 40px cyan, 0 0 80px blue;
+            }
+
+            .speaking {
+                animation: pulseSpeak 1s infinite;
+                box-shadow: 0 0 40px lime, 0 0 80px green;
+            }
+
+            @keyframes pulse {
+                0% { transform: scale(1); opacity: 0.8; }
+                50% { transform: scale(1.15); opacity: 1; }
+                100% { transform: scale(1); opacity: 0.8; }
+            }
+
+            @keyframes pulseSpeak {
+                0% { transform: scale(1); opacity: 0.8; }
+                50% { transform: scale(1.1); opacity: 1; }
+                100% { transform: scale(1); opacity: 0.8; }
+            }
+
+            button {
+                padding: 12px 25px;
+                font-size: 18px;
+                cursor: pointer;
+                background: cyan;
+                border: none;
+                border-radius: 20px;
+            }
+
+        </style>
+    </head>
     <body>
+
         <h1>AI Hair Advisor</h1>
-        <button onclick="record()">🎤 Ask</button>
+
+        <div id="halo" class="halo"></div>
+
+        <button onclick="record()">Ask About Your Hair</button>
+
         <p id="response"></p>
 
         <script>
+
         let recorder;
         let chunks = [];
 
         async function record() {
+
+            const halo = document.getElementById("halo");
+            halo.classList.remove("speaking");
+            halo.classList.add("recording");
+
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             recorder = new MediaRecorder(stream);
             chunks = [];
@@ -36,6 +100,7 @@ def home():
             recorder.ondataavailable = e => chunks.push(e.data);
 
             recorder.onstop = async () => {
+
                 const blob = new Blob(chunks, { type: "audio/webm" });
                 const form = new FormData();
                 form.append("audio", blob);
@@ -46,17 +111,30 @@ def home():
                 });
 
                 const data = await res.json();
+
                 document.getElementById("response").innerText = data.text;
+
+                halo.classList.remove("recording");
+                halo.classList.add("speaking");
 
                 if (data.audio) {
                     const audio = new Audio("data:audio/mp3;base64," + data.audio);
                     audio.play();
+
+                    audio.onended = () => {
+                        halo.classList.remove("speaking");
+                    };
                 }
             };
 
             recorder.start();
-            setTimeout(() => recorder.stop(), 4000);
+
+            // 6 seconds recording (extra delay)
+            setTimeout(() => {
+                recorder.stop();
+            }, 6000);
         }
+
         </script>
     </body>
     </html>
@@ -103,7 +181,6 @@ def choose_product(text):
 
     return None
 
-
 # ======================================
 # VOICE ROUTE
 # ======================================
@@ -120,7 +197,6 @@ def voice():
         file.save(temp_audio.name)
         audio_path = temp_audio.name
 
-    # Transcribe
     with open(audio_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
@@ -132,13 +208,10 @@ def voice():
 
     print("Transcript:", user_text)
 
-    # Silence guard
     if not user_text or len(user_text) < 3:
         return speak("I didn't hear anything. Please try again.")
 
-    hair_keywords = ["dry", "damaged", "oily", "color"]
-
-    if not any(word in user_text.lower() for word in hair_keywords):
+    if not any(word in user_text.lower() for word in ["dry", "damaged", "oily", "color"]):
         return speak("Please tell me your hair concern like dry, damaged, oily, or color-treated.")
 
     product_name = choose_product(user_text)
@@ -146,21 +219,18 @@ def voice():
     if product_name is None:
         return speak("I couldn't determine your hair concern. Please try again.")
 
-    product_info = PRODUCTS[product_name]
-    description = product_info["description"]
-    price = product_info["price"]
+    info = PRODUCTS[product_name]
 
-    final_message = (
+    message = (
         f"I recommend {product_name}. "
-        f"{description} "
-        f"With tax and shipping, you're looking at ${price}."
+        f"{info['description']} "
+        f"With tax and shipping, you're looking at ${info['price']}."
     )
 
-    return speak(final_message)
-
+    return speak(message)
 
 # ======================================
-# SPEECH RESPONSE
+# SPEECH FUNCTION
 # ======================================
 
 def speak(message):
@@ -178,7 +248,6 @@ def speak(message):
         "text": message,
         "audio": audio_base64
     })
-
 
 # ======================================
 # RUN
