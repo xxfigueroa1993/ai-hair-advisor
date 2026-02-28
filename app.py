@@ -63,6 +63,29 @@ def home():
     """
 
 # ======================================
+# PRODUCT DATABASE
+# ======================================
+
+PRODUCTS = {
+    "Laciador": {
+        "description": "It deeply hydrates dry and brittle hair, restoring softness and shine.",
+        "price": 34.99
+    },
+    "Gotero": {
+        "description": "It balances excess oil while keeping your scalp fresh and clean.",
+        "price": 29.99
+    },
+    "Formula Exclusiva": {
+        "description": "It repairs damaged strands and strengthens hair from root to tip.",
+        "price": 39.99
+    },
+    "Gotika": {
+        "description": "It protects color-treated hair and enhances vibrancy and glow.",
+        "price": 36.99
+    }
+}
+
+# ======================================
 # RULE ENGINE
 # ======================================
 
@@ -78,7 +101,7 @@ def choose_product(text):
     if "color" in text:
         return "Gotika"
 
-    return None  # important change
+    return None
 
 
 # ======================================
@@ -87,8 +110,6 @@ def choose_product(text):
 
 @app.route("/voice", methods=["POST"])
 def voice():
-
-    print("VOICE ROUTE HIT")
 
     if "audio" not in request.files:
         return jsonify({"error": "No audio"}), 400
@@ -111,33 +132,35 @@ def voice():
 
     print("Transcript:", user_text)
 
-    # ==============================
-    # SILENCE GUARD
-    # ==============================
-
+    # Silence guard
     if not user_text or len(user_text) < 3:
         return speak("I didn't hear anything. Please try again.")
 
-    # Check for real hair keywords
-    hair_keywords = ["dry", "damaged", "oily", "color", "falling", "tangly"]
+    hair_keywords = ["dry", "damaged", "oily", "color"]
 
     if not any(word in user_text.lower() for word in hair_keywords):
-        return speak("Please tell me your hair concern like dry, damaged, or oily.")
+        return speak("Please tell me your hair concern like dry, damaged, oily, or color-treated.")
 
-    # ==============================
-    # PRODUCT SELECTION
-    # ==============================
+    product_name = choose_product(user_text)
 
-    product = choose_product(user_text)
-
-    if product is None:
+    if product_name is None:
         return speak("I couldn't determine your hair concern. Please try again.")
 
-    return speak(f"I recommend {product}.")
+    product_info = PRODUCTS[product_name]
+    description = product_info["description"]
+    price = product_info["price"]
+
+    final_message = (
+        f"I recommend {product_name}. "
+        f"{description} "
+        f"With tax and shipping, you're looking at ${price}."
+    )
+
+    return speak(final_message)
 
 
 # ======================================
-# SPEECH RESPONSE FUNCTION
+# SPEECH RESPONSE
 # ======================================
 
 def speak(message):
