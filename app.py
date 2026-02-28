@@ -65,9 +65,28 @@ async function startRecording(){
            data.text !== "No speech detected" &&
            data.text !== "I didn’t catch that clearly. Please try again and speak a little louder."){
 
-            const speech = new SpeechSynthesisUtterance(data.text);
-            speech.lang = "en-US";
-            speechSynthesis.speak(speech);
+            // 🔥 Fix speech reliability
+            window.speechSynthesis.cancel();
+
+            const speakText = () => {
+                const utterance = new SpeechSynthesisUtterance(data.text);
+
+                const voices = speechSynthesis.getVoices();
+                if (voices.length > 0) {
+                    utterance.voice = voices.find(v => v.lang === "en-US") || voices[0];
+                }
+
+                utterance.rate = 1;
+                utterance.pitch = 1;
+
+                speechSynthesis.speak(utterance);
+            };
+
+            if (speechSynthesis.getVoices().length === 0) {
+                speechSynthesis.onvoiceschanged = speakText;
+            } else {
+                speakText();
+            }
         }
     };
 
@@ -93,7 +112,6 @@ def voice():
 
     file = request.files["audio"]
 
-    # Check file size
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)
@@ -101,16 +119,14 @@ def voice():
     print("Backend received file size:", file_size)
 
     if file_size < MIN_AUDIO_SIZE:
-        print("Detected silence (file too small)")
+        print("Detected silence")
         return jsonify({"text": "No speech detected"})
 
-    # Save temporary file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         temp_audio_path = temp_audio.name
 
     try:
-        # Whisper transcription (FORCED TEXT RESPONSE)
         with open(temp_audio_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -122,14 +138,12 @@ def voice():
 
         print("User said:", repr(user_text))
 
-        # Protect against empty or broken transcript
         if not user_text or len(user_text) < MIN_TRANSCRIPT_LENGTH:
-            print("Transcript too short — asking user to repeat")
+            print("Transcript too short")
             return jsonify({
                 "text": "I didn’t catch that clearly. Please try again and speak a little louder."
             })
 
-        # GPT Hair Advisor
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
