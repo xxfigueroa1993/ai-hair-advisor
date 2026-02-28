@@ -25,7 +25,6 @@ font-family:Arial;
 color:white;
 overflow:hidden;
 }
-
 .wrapper{
 width:420px;
 height:420px;
@@ -33,7 +32,6 @@ display:flex;
 justify-content:center;
 align-items:center;
 }
-
 #halo{
 width:300px;
 height:300px;
@@ -42,7 +40,6 @@ cursor:pointer;
 backdrop-filter:blur(90px);
 transition:transform 0.05s linear;
 }
-
 #response{
 margin-top:40px;
 width:70%;
@@ -67,12 +64,23 @@ const responseBox=document.getElementById("response");
 let state="idle";
 let recognition=null;
 let transcript="";
-let silenceWatchdog=null;
+let silenceTimer=null;
+let noSpeechTimer=null;
 
-// ================= VOICE PRELOAD =================
+// ================= VOICES =================
 
 speechSynthesis.getVoices();
 speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+
+function getVoice(){
+let voices=speechSynthesis.getVoices();
+let preferred=["Google US English","Samantha","Microsoft Jenny","Microsoft Zira"];
+for(let name of preferred){
+let found=voices.find(v=>v.name.includes(name));
+if(found) return found;
+}
+return voices.find(v=>v.lang==="en-US");
+}
 
 // ================= COLOR =================
 
@@ -123,7 +131,9 @@ let scale=1;
 if(state==="idle"){
 scale=1+Math.sin(Date.now()*0.002)*0.04;
 }
-
+if(state==="listening"){
+scale=1+Math.sin(Date.now()*0.003)*0.07;
+}
 if(state==="speaking"){
 scale=1+Math.sin(Date.now()*0.004)*0.12;
 }
@@ -139,17 +149,13 @@ function playIntro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
-
 osc.type="sine";
 osc.frequency.setValueAtTime(320,ctx.currentTime);
 osc.frequency.exponentialRampToValueAtTime(160,ctx.currentTime+1.2);
-
 gain.gain.setValueAtTime(0.35,ctx.currentTime);
 gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.3);
-
 osc.connect(gain);
 gain.connect(ctx.destination);
-
 osc.start();
 osc.stop(ctx.currentTime+1.3);
 }
@@ -158,42 +164,26 @@ function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
-
 osc.type="sine";
 osc.frequency.setValueAtTime(480,ctx.currentTime);
 osc.frequency.exponentialRampToValueAtTime(240,ctx.currentTime+1.0);
-
 gain.gain.setValueAtTime(0.3,ctx.currentTime);
 gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.1);
-
 osc.connect(gain);
 gain.connect(ctx.destination);
-
 osc.start();
 osc.stop(ctx.currentTime+1.1);
 }
 
-// ================= VOICE =================
-
-function getVoice(){
-let voices=speechSynthesis.getVoices();
-let preferred=["Google US English","Samantha","Microsoft Zira","Microsoft Jenny"];
-for(let name of preferred){
-let found=voices.find(v=>v.name.includes(name));
-if(found) return found;
-}
-return voices.find(v=>v.lang==="en-US");
-}
+// ================= SPEAK =================
 
 function speak(text){
-
 state="speaking";
 animateColor([0,200,255]);
 
 const utter=new SpeechSynthesisUtterance(text);
 let voice=getVoice();
 if(voice) utter.voice=voice;
-
 utter.rate=0.95;
 utter.pitch=1.03;
 
@@ -210,7 +200,6 @@ state="idle";
 
 function chooseProduct(text){
 text=text.toLowerCase();
-
 let dry=/dry|frizz|brittle|rough|split/.test(text);
 let damaged=/damage|break|weak/.test(text);
 let color=/color|brassy|fading/.test(text);
@@ -220,8 +209,23 @@ if(damaged) return "Formula Exclusiva restores structural strength and balance. 
 if(color) return "Gotika restores color vibrancy. Price: $54.";
 if(oily) return "Gotero balances oil levels. Price: $42.";
 if(dry) return "Laciador restores smoothness and bounce. Price: $48.";
-
 return null;
+}
+
+// ================= PROCESS =================
+
+function processTranscript(text){
+if(!text || text.length<3){
+speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
+return;
+}
+let result=chooseProduct(text);
+if(!result){
+speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
+return;
+}
+responseBox.innerText=result;
+speak(result);
 }
 
 // ================= LISTEN =================
@@ -235,46 +239,36 @@ transcript="";
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
-recognition.continuous=false;
-recognition.interimResults=false;
+
+recognition.continuous=true;
+recognition.interimResults=true;
 
 recognition.onresult=function(event){
-clearTimeout(silenceWatchdog);
 
-transcript=event.results[0][0].transcript;
+clearTimeout(noSpeechTimer);
+
+transcript="";
+for(let i=0;i<event.results.length;i++){
+transcript+=event.results[i][0].transcript;
+}
+
+// Reset 2-second silence timer every time speech is detected
+clearTimeout(silenceTimer);
+silenceTimer=setTimeout(()=>{
 recognition.stop();
 processTranscript(transcript);
+},2000);
 };
 
 recognition.start();
 
-// HARD SILENCE TIMER
-silenceWatchdog=setTimeout(()=>{
-if(state==="listening"){
+// 3.5 second no speech at all fallback
+noSpeechTimer=setTimeout(()=>{
+if(!transcript){
 recognition.stop();
 processTranscript("");
 }
 },3500);
-}
-
-// ================= PROCESS =================
-
-function processTranscript(text){
-
-if(!text || text.length<3){
-speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
-return;
-}
-
-let result=chooseProduct(text);
-
-if(!result){
-speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
-return;
-}
-
-responseBox.innerText=result;
-speak(result);
 }
 
 // ================= CLICK =================
