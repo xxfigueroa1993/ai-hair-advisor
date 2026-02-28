@@ -40,8 +40,8 @@ body{
     height:300px;
     border-radius:50%;
     cursor:pointer;
-    backdrop-filter:blur(60px);
-    background:rgba(255,255,255,0.04);
+    backdrop-filter:blur(55px);
+    background:rgba(255,255,255,0.06); /* darker base glass */
     transition:transform 1.2s ease;
 }
 
@@ -96,19 +96,22 @@ function animateColor(targetColor,onComplete=null){
         let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
         let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
 
+        // Outer atmospheric glow
         halo.style.boxShadow = `
-            0 0 80px rgba(${r},${g},${b},0.45),
-            0 0 160px rgba(${r},${g},${b},0.35),
-            0 0 260px rgba(${r},${g},${b},0.25)
+            0 0 90px rgba(${r},${g},${b},0.5),
+            0 0 180px rgba(${r},${g},${b},0.35),
+            0 0 280px rgba(${r},${g},${b},0.25)
         `;
 
-        /* Inner glow now 3x MORE transparent */
+        /* INNER GLOW
+           3x darker than ultra transparent
+           but never near-black */
         halo.style.background = `
             radial-gradient(circle at center,
-                rgba(${r},${g},${b},0.10) 0%,
-                rgba(${r},${g},${b},0.07) 45%,
-                rgba(${r},${g},${b},0.04) 75%,
-                rgba(255,255,255,0.03) 100%)
+                rgba(${r},${g},${b},0.18) 0%,
+                rgba(${r},${g},${b},0.13) 45%,
+                rgba(${r},${g},${b},0.08) 75%,
+                rgba(255,255,255,0.05) 100%)
         `;
 
         currentColor=[r,g,b];
@@ -137,7 +140,7 @@ function pulse(){
 }
 
 // ==========================
-// SOUND (Controlled)
+// SOUND CONTROL
 // ==========================
 
 function playTone(startFreq,endFreq){
@@ -190,7 +193,7 @@ function resetToIdle(){
 
 halo.addEventListener("click",()=>{
 
-    // SECOND CLICK → RESET ONLY (NO SOUND)
+    // Second click → reset only
     if(state==="transition" || state==="thinking"){
         resetToIdle();
         return;
@@ -202,7 +205,7 @@ halo.addEventListener("click",()=>{
     state="transition";
     responseBox.innerText="Listening...";
 
-    // Sound #1 (only on first click)
+    // Sound #1
     playTone(220,300);
 
     animateColor([255,210,80],()=>{
@@ -212,20 +215,19 @@ halo.addEventListener("click",()=>{
 
         animateColor([0,255,255],()=>{
 
-            // Simulate AI finished speaking
             setTimeout(()=>{
 
                 responseBox.innerText=
                 "I didn’t hear you. Can you please share your hair concerns for a recommendation?";
 
-                // Sound #2 only when AI finishes
+                // Sound #2 (AI finish only)
                 playTone(380,240);
 
                 setTimeout(()=>{
                     resetToIdle();
-                },500);
+                },400);
 
-            },800);
+            },700);
 
         });
 
