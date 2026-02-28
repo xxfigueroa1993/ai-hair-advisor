@@ -68,7 +68,6 @@ let state="idle";
 let recognition=null;
 let transcript="";
 let silenceTimer=null;
-let noSpeechTimer=null;
 
 let audioCtx=null;
 let analyser=null;
@@ -79,13 +78,20 @@ let currentColor=[0,255,200];
 let colorAnim=null;
 const FADE_DURATION=1200;
 
+// PRELOAD VOICES (fix robotic first response)
+let voicesLoaded=false;
+speechSynthesis.onvoiceschanged=()=>{
+speechSynthesis.getVoices();
+voicesLoaded=true;
+};
+speechSynthesis.getVoices();
+
 // ================= COLOR =================
 
 function lerp(a,b,t){return a+(b-a)*t;}
 
 function animateColor(target){
 if(colorAnim) cancelAnimationFrame(colorAnim);
-
 const start=[...currentColor];
 const startTime=performance.now();
 
@@ -151,7 +157,7 @@ pulseLoop();
 
 // ================= SOUNDS =================
 
-// INTRO (1.5x deeper, slightly longer so it's clearly lower)
+// Intro deeper (320 → 160)
 function playIntro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
@@ -171,7 +177,7 @@ osc.start();
 osc.stop(ctx.currentTime+1.3);
 }
 
-// OUTRO (true original intro sound)
+// Outro original (480 → 240)
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
@@ -209,19 +215,9 @@ let issues=[dry,damaged,tangly,color,oily,flat,falling].filter(Boolean).length;
 if(issues>=2 || damaged || falling){
 return "Formula Exclusiva is your ideal solution. It restores structure, hydration balance and long term strength. Price: $65.";
 }
-
-if(color){
-return "Gotika restores color vibrancy and long term pigment depth. Price: $54.";
-}
-
-if(oily){
-return "Gotero balances oil while maintaining scalp health. Price: $42.";
-}
-
-if(dry || flat || tangly){
-return "Laciador restores smoothness and healthy bounce. Price: $48.";
-}
-
+if(color) return "Gotika restores color vibrancy and long term pigment depth. Price: $54.";
+if(oily) return "Gotero balances oil while maintaining scalp health. Price: $42.";
+if(dry || flat || tangly) return "Laciador restores smoothness and healthy bounce. Price: $48.";
 return null;
 }
 
@@ -238,17 +234,15 @@ return voices.find(v=>v.lang==="en-US");
 }
 
 function speak(text){
-speechSynthesis.cancel();
+
+state="speaking";
+animateColor([0,200,255]);
 
 const utter=new SpeechSynthesisUtterance(text);
 let voice=getAmericanVoice();
 if(voice) utter.voice=voice;
-
 utter.rate=0.95;
 utter.pitch=1.03;
-
-state="speaking";
-animateColor([0,200,255]);
 
 speechSynthesis.speak(utter);
 
@@ -266,6 +260,7 @@ async function startListening(){
 playIntro();
 animateColor([255,210,80]);
 state="listening";
+transcript="";
 
 audioCtx=new (window.AudioContext||window.webkitAudioContext)();
 await audioCtx.resume();
@@ -281,11 +276,10 @@ const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition
 recognition=new SpeechRecognition();
 recognition.continuous=true;
 recognition.interimResults=true;
-transcript="";
 
 recognition.onresult=function(event){
+
 clearTimeout(silenceTimer);
-clearTimeout(noSpeechTimer);
 
 for(let i=event.resultIndex;i<event.results.length;i++){
 if(event.results[i].isFinal){
@@ -299,21 +293,28 @@ processTranscript(transcript.trim());
 },2500);
 };
 
+recognition.onend=function(){
+if(state==="listening"){
+processTranscript(transcript.trim());
+}
+};
+
 recognition.start();
 }
 
 // ================= PROCESS =================
 
 function processTranscript(text){
-if(!text || text.length<4){
-speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage or color loss?");
+
+if(!text || text.length<3){
+speak("I didn't quite understand. Could you describe dryness, oiliness, damage, tangling or color concerns?");
 return;
 }
 
 let result=chooseProduct(text);
 
 if(!result){
-speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage or color loss?");
+speak("I didn't quite understand. Could you describe dryness, oiliness, damage, tangling or color concerns?");
 return;
 }
 
@@ -321,12 +322,14 @@ responseBox.innerText=result;
 speak(result);
 }
 
+// ================= CLICK =================
+
 halo.addEventListener("click",()=>{
 if(state==="idle"){
 startListening();
 }else{
-speechSynthesis.cancel();
 if(recognition) recognition.stop();
+speechSynthesis.cancel();
 animateColor([0,255,200]);
 state="idle";
 }
