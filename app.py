@@ -67,19 +67,19 @@ let transcript="";
 let silenceTimer=null;
 let noSpeechTimer=null;
 
-// ================= VOICES =================
+let audioContext=null;
+let analyser=null;
+let micStream=null;
+let dataArray=null;
+
+// ================= VOICE =================
 
 speechSynthesis.getVoices();
 speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 
 function getVoice(){
 let voices=speechSynthesis.getVoices();
-let preferred=["Google US English","Samantha","Microsoft Jenny","Microsoft Zira"];
-for(let name of preferred){
-let found=voices.find(v=>v.name.includes(name));
-if(found) return found;
-}
-return voices.find(v=>v.lang==="en-US");
+return voices.find(v=>v.lang==="en-US") || voices[0];
 }
 
 // ================= COLOR =================
@@ -123,17 +123,32 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-// ================= PULSE =================
+// ================= MIC PULSE =================
+
+async function setupMic(){
+audioContext=new (window.AudioContext||window.webkitAudioContext)();
+micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+let source=audioContext.createMediaStreamSource(micStream);
+analyser=audioContext.createAnalyser();
+analyser.fftSize=256;
+source.connect(analyser);
+dataArray=new Uint8Array(analyser.frequencyBinCount);
+}
 
 function pulseLoop(){
+
 let scale=1;
 
 if(state==="idle"){
 scale=1+Math.sin(Date.now()*0.002)*0.04;
 }
-if(state==="listening"){
-scale=1+Math.sin(Date.now()*0.003)*0.07;
+
+if(state==="listening" && analyser){
+analyser.getByteFrequencyData(dataArray);
+let avg=dataArray.reduce((a,b)=>a+b)/dataArray.length;
+scale=1+avg/500;
 }
+
 if(state==="speaking"){
 scale=1+Math.sin(Date.now()*0.004)*0.12;
 }
@@ -182,10 +197,9 @@ state="speaking";
 animateColor([0,200,255]);
 
 const utter=new SpeechSynthesisUtterance(text);
-let voice=getVoice();
-if(voice) utter.voice=voice;
+utter.voice=getVoice();
 utter.rate=0.95;
-utter.pitch=1.03;
+utter.pitch=1.02;
 
 speechSynthesis.speak(utter);
 
@@ -200,15 +214,22 @@ state="idle";
 
 function chooseProduct(text){
 text=text.toLowerCase();
-let dry=/dry|frizz|brittle|rough|split/.test(text);
-let damaged=/damage|break|weak/.test(text);
-let color=/color|brassy|fading/.test(text);
-let oily=/oily|greasy/.test(text);
 
-if(damaged) return "Formula Exclusiva restores structural strength and balance. Price: $65.";
-if(color) return "Gotika restores color vibrancy. Price: $54.";
-if(oily) return "Gotero balances oil levels. Price: $42.";
-if(dry) return "Laciador restores smoothness and bounce. Price: $48.";
+if(/all.?in.?one|everything|complete|total repair/.test(text))
+return "Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.";
+
+if(/damage|break|weak/.test(text))
+return "Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.";
+
+if(/color|brassy|fade/.test(text))
+return "Gotika restores color vibrancy and tone. Price: $54.";
+
+if(/oily|greasy/.test(text))
+return "Gotero balances excess oil while keeping hydration. Price: $42.";
+
+if(/dry|frizz|brittle/.test(text))
+return "Laciador restores smoothness and softness. Price: $48.";
+
 return null;
 }
 
@@ -230,7 +251,9 @@ speak(result);
 
 // ================= LISTEN =================
 
-function startListening(){
+async function startListening(){
+
+if(!audioContext) await setupMic();
 
 playIntro();
 animateColor([255,210,80]);
@@ -239,20 +262,15 @@ transcript="";
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
-
 recognition.continuous=true;
 recognition.interimResults=true;
 
 recognition.onresult=function(event){
-
 clearTimeout(noSpeechTimer);
-
 transcript="";
 for(let i=0;i<event.results.length;i++){
 transcript+=event.results[i][0].transcript;
 }
-
-// Reset 2-second silence timer every time speech is detected
 clearTimeout(silenceTimer);
 silenceTimer=setTimeout(()=>{
 recognition.stop();
@@ -262,7 +280,6 @@ processTranscript(transcript);
 
 recognition.start();
 
-// 3.5 second no speech at all fallback
 noSpeechTimer=setTimeout(()=>{
 if(!transcript){
 recognition.stop();
