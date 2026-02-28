@@ -6,8 +6,7 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-MIN_AUDIO_SIZE = 10000
-MIN_TRANSCRIPT_LENGTH = 5
+print("API KEY LOADED:", os.environ.get("OPENAI_API_KEY") is not None)
 
 
 @app.route("/")
@@ -20,7 +19,7 @@ def home():
 </head>
 <body style="background:black;color:white;text-align:center;margin-top:60px;font-family:Arial;">
 
-<h1>AI Hair Advisor</h1>
+<h1>AI Hair Advisor (DEBUG MODE)</h1>
 <button onclick="startRecording()">Click to Speak</button>
 
 <p id="status">Idle</p>
@@ -35,11 +34,7 @@ async function startRecording(){
     document.getElementById("status").innerText = "Listening...";
 
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-
-    // 🔥 FORCE WAV FORMAT
-    const options = { mimeType: 'audio/webm;codecs=pcm' };
-
-    mediaRecorder = new MediaRecorder(stream, options);
+    mediaRecorder = new MediaRecorder(stream);
     audioChunks = [];
 
     mediaRecorder.ondataavailable = event => {
@@ -63,24 +58,14 @@ async function startRecording(){
         });
 
         const data = await response.json();
-
         document.getElementById("status").innerText = data.text;
-
-        if(data.text &&
-           data.text !== "No speech detected" &&
-           data.text !== "I didn’t catch that clearly. Please try again and speak a little louder."){
-
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(data.text);
-            speechSynthesis.speak(utterance);
-        }
     };
 
     mediaRecorder.start();
 
     setTimeout(() => {
         mediaRecorder.stop();
-    }, 6000); // 6 seconds recording
+    }, 6000);
 }
 
 </script>
@@ -93,25 +78,30 @@ async function startRecording(){
 @app.route("/voice", methods=["POST"])
 def voice():
 
+    print("\n===== VOICE ROUTE HIT =====")
+
     if "audio" not in request.files:
+        print("No audio file in request")
         return jsonify({"text": "No audio received"})
 
     file = request.files["audio"]
+    print("Audio file received")
 
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)
 
-    print("Backend received file size:", file_size)
-
-    if file_size < MIN_AUDIO_SIZE:
-        return jsonify({"text": "No speech detected"})
+    print("File size:", file_size)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         temp_audio_path = temp_audio.name
 
+    print("Saved temp file at:", temp_audio_path)
+
     try:
+        print("Starting Whisper transcription...")
+
         with open(temp_audio_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -119,36 +109,33 @@ def voice():
                 response_format="text"
             )
 
+        print("Raw transcript:", transcript)
+
         user_text = transcript.strip()
+        print("Clean transcript:", user_text)
 
-        print("User said:", repr(user_text))
+        if not user_text:
+            print("Transcript empty")
+            return jsonify({"text": "Empty transcript"})
 
-        if not user_text or len(user_text) < MIN_TRANSCRIPT_LENGTH:
-            return jsonify({
-                "text": "I didn’t catch that clearly. Please try again and speak a little louder."
-            })
+        print("Calling GPT...")
 
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {
-                    "role": "system",
-                    "content": "You are a professional hair product advisor. Give short, clear, specific product recommendations."
-                },
-                {
-                    "role": "user",
-                    "content": user_text
-                }
+                {"role": "system", "content": "You are a professional hair product advisor."},
+                {"role": "user", "content": user_text}
             ]
         )
 
         response_text = completion.choices[0].message.content.strip()
+        print("GPT response:", response_text)
 
         return jsonify({"text": response_text})
 
     except Exception as e:
-        print("Error:", e)
-        return jsonify({"text": "Error processing request"})
+        print("FULL ERROR:", str(e))
+        return jsonify({"text": "Server error: " + str(e)})
 
 
 if __name__ == "__main__":
