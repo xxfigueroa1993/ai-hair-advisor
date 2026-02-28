@@ -95,33 +95,31 @@ const langSelect = document.getElementById("langSelect");
 
 let selectedLang="en-US";
 let recognition=null;
-let state="idle";
 let transcript="";
+let listening=false;
+let processing=false;
 let silenceTimer=null;
-let noSpeechTimer=null;
+let hardStopTimer=null;
 
-let audioCtx, analyser, micStream, dataArray;
-
-let premiumVoice;
-
-/* ================= COLOR SYSTEM ================= */
+let state="idle";
 
 let currentColor=[0,255,200];
 
+/* ========== COLOR ========== */
+
 function animateColor(target){
 let start=[...currentColor];
-let duration=800;
+let duration=700;
 let startTime=performance.now();
 
 function frame(now){
 let p=Math.min((now-startTime)/duration,1);
-
 let r=Math.floor(start[0]+(target[0]-start[0])*p);
 let g=Math.floor(start[1]+(target[1]-start[1])*p);
 let b=Math.floor(start[2]+(target[2]-start[2])*p);
 
 halo.style.background=
-`radial-gradient(circle, rgba(${r},${g},${b},0.75) 0%, rgba(${r},${g},${b},0.15) 70%)`;
+`radial-gradient(circle, rgba(${r},${g},${b},0.8) 0%, rgba(${r},${g},${b},0.15) 70%)`;
 
 halo.style.boxShadow=
 `0 0 120px rgba(${r},${g},${b},0.9),
@@ -137,55 +135,31 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-/* ================= PULSE ================= */
+/* ========== PULSE ========== */
 
 function pulse(){
 let scale=1;
 
-if(state==="idle"){
-scale=1+Math.sin(Date.now()*0.002)*0.04;
-}
+if(state==="idle")
+scale=1+Math.sin(Date.now()*0.002)*0.05;
 
-if(state==="listening" && analyser){
-analyser.getByteTimeDomainData(dataArray);
-let sum=0;
-for(let i=0;i<dataArray.length;i++){
-let v=(dataArray[i]-128)/128;
-sum+=v*v;
-}
-let rms=Math.sqrt(sum/dataArray.length);
-scale=1+Math.min(rms*4,0.35);
-}
+if(state==="listening")
+scale=1+Math.sin(Date.now()*0.004)*0.1;
 
-if(state==="speaking"){
-scale=1+Math.sin(Date.now()*0.0035)*0.1;
-}
+if(state==="speaking")
+scale=1+Math.sin(Date.now()*0.003)*0.08;
 
 halo.style.transform=`scale(${scale})`;
 requestAnimationFrame(pulse);
 }
 pulse();
 
-/* ================= MIC ================= */
-
-async function initMic(){
-if(audioCtx) return;
-audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-micStream=await navigator.mediaDevices.getUserMedia({audio:true});
-let source=audioCtx.createMediaStreamSource(micStream);
-analyser=audioCtx.createAnalyser();
-analyser.fftSize=1024;
-source.connect(analyser);
-dataArray=new Uint8Array(analyser.fftSize);
-}
-
-/* ================= SOUNDS ================= */
+/* ========== SOUNDS ========== */
 
 function playTone(start,end,duration){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
-osc.type="sine";
 osc.frequency.setValueAtTime(start,ctx.currentTime);
 osc.frequency.exponentialRampToValueAtTime(end,ctx.currentTime+duration);
 gain.gain.setValueAtTime(0,ctx.currentTime);
@@ -200,23 +174,7 @@ osc.stop(ctx.currentTime+duration);
 function playIntro(){ playTone(250,150,1.4); }
 function playOutro(){ playTone(300,180,1.4); }
 
-/* ================= VOICE ================= */
-
-function loadVoice(){
-let voices=speechSynthesis.getVoices();
-premiumVoice =
-voices.find(v=>v.name.includes("Google US English")) ||
-voices.find(v=>v.lang==="en-US") ||
-voices[0];
-}
-speechSynthesis.onvoiceschanged=loadVoice;
-loadVoice();
-
-langSelect.addEventListener("change",()=>{
-selectedLang=langSelect.value;
-});
-
-/* ================= SPEAK ================= */
+/* ========== VOICE ========== */
 
 function speak(text){
 state="speaking";
@@ -224,7 +182,6 @@ animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
-utter.voice=premiumVoice;
 utter.rate=0.92;
 
 speechSynthesis.cancel();
@@ -234,15 +191,16 @@ utter.onend=()=>{
 playOutro();
 animateColor([0,255,200]);
 state="idle";
+processing=false;
 };
 }
 
-/* ================= PRODUCT LOGIC ================= */
+/* ========== PRODUCT LOGIC ========== */
 
 function chooseProduct(text){
 text=text.toLowerCase();
 
-if(!text || text.length<3)
+if(!text || text.length<2)
 return "I didn’t hear anything. Please describe dryness, oiliness, damage, or color concerns.";
 
 if(/all.?in.?one|complete|everything/.test(text))
@@ -263,15 +221,44 @@ return "Laciador restores smoothness and softness. Price: $48.";
 return "Please describe dryness, oiliness, damage, or color concerns.";
 }
 
-/* ================= LISTEN ================= */
+/* ========== CLEAN STOP ========== */
 
-async function startListening(){
-await initMic();
+function stopListening(){
+if(!listening) return;
+
+listening=false;
+
+clearTimeout(silenceTimer);
+clearTimeout(hardStopTimer);
+
+try{ recognition.stop(); }catch(e){}
+
+processTranscript(transcript);
+}
+
+/* ========== PROCESS ========== */
+
+function processTranscript(text){
+if(processing) return;
+processing=true;
+
+let result=chooseProduct(text);
+responseBox.innerText=result;
+speak(result);
+}
+
+/* ========== START LISTEN ========== */
+
+function startListening(){
+
+if(listening || processing) return;
+
+transcript="";
+listening=true;
 
 playIntro();
 animateColor([255,210,80]);
 state="listening";
-transcript="";
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SR();
@@ -281,50 +268,28 @@ recognition.interimResults=true;
 
 recognition.onresult=(event)=>{
 transcript="";
-for(let i=0;i<event.results.length;i++){
+for(let i=0;i<event.results.length;i++)
 transcript+=event.results[i][0].transcript;
-}
 
 clearTimeout(silenceTimer);
-silenceTimer=setTimeout(()=>{
-recognition.stop();
-},2000);
+silenceTimer=setTimeout(stopListening,2000);
 };
 
-recognition.onend=()=>{
-clearTimeout(silenceTimer);
-processTranscript(transcript);
+recognition.onerror=()=>{
+stopListening();
 };
 
 recognition.start();
 
-/* Failsafe: if absolutely nothing detected */
-noSpeechTimer=setTimeout(()=>{
-if(state==="listening"){
-recognition.stop();
-}
-},4000);
+/* Hard fail-safe (absolute max 5 sec) */
+hardStopTimer=setTimeout(stopListening,5000);
 }
 
-/* ================= PROCESS ================= */
-
-function processTranscript(text){
-let result=chooseProduct(text);
-responseBox.innerText=result;
-speak(result);
-}
-
-/* ================= CLICK ================= */
+/* ========== CLICK ========== */
 
 halo.addEventListener("click",()=>{
-if(state==="idle"){
-startListening();
-}else{
-recognition?.stop();
-speechSynthesis.cancel();
-animateColor([0,255,200]);
-state="idle";
-}
+if(state==="idle") startListening();
+else stopListening();
 });
 
 </script>
@@ -333,5 +298,5 @@ state="idle";
 """
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port=int(os.environ.get("PORT",10000))
     app.run(host="0.0.0.0", port=port)
