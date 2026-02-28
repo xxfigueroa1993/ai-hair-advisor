@@ -30,6 +30,7 @@ Rules:
 - Dry hair ALWAYS Laciador.
 - Always include price.
 - Premium luxury tone.
+Keep response under 120 words.
 """
 
 # =====================================================
@@ -62,7 +63,7 @@ body{
     border-radius:50%;
     cursor:pointer;
     backdrop-filter:blur(25px);
-    transition:all 3s ease;
+    transition:all 0.4s ease;
 }
 
 #response{
@@ -88,13 +89,14 @@ let recorder=null;
 let audioEl=null;
 let silenceTimer=null;
 let state="idle";
+let locked=false;
+let pulseFrame=null;
 
 const idle=[0,255,200];
 const gold=[255,210,80];
 const teal=[0,255,255];
 
 function glassGlow(rgb,intensity=0.4){
-
     halo.style.background=`
     radial-gradient(circle at center,
         rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}) 0%,
@@ -104,23 +106,42 @@ function glassGlow(rgb,intensity=0.4){
         transparent 100%)`;
 
     halo.style.boxShadow=`
-    0 0 160px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5),
+    0 0 150px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.5),
     0 0 300px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.3)`;
 }
 
-function idlePulse(){
-    if(state!=="idle") return;
-    let scale=1+Math.sin(Date.now()*0.0015)*0.025;
-    halo.style.transform=`scale(${scale})`;
-    requestAnimationFrame(idlePulse);
+function startIdlePulse(){
+
+    cancelAnimationFrame(pulseFrame);
+
+    function pulse(){
+        if(state !== "idle") return;
+
+        let scale = 1 + Math.sin(Date.now() * 0.002) * 0.03;
+        halo.style.transform = `scale(${scale})`;
+
+        pulseFrame = requestAnimationFrame(pulse);
+    }
+
+    pulse();
+}
+
+function stopIdlePulse(){
+    cancelAnimationFrame(pulseFrame);
+    halo.style.transform = "scale(1)";
+}
+
+function stopAllAudio(){
+    if(audioEl){
+        audioEl.pause();
+        audioEl.currentTime=0;
+        audioEl=null;
+    }
 }
 
 function hardReset(){
 
-    if(audioEl){
-        audioEl.pause();
-        audioEl=null;
-    }
+    stopAllAudio();
 
     if(recorder){
         try{ recorder.stop(); }catch{}
@@ -132,16 +153,33 @@ function hardReset(){
         stream=null;
     }
 
+    clearTimeout(silenceTimer);
     silenceTimer=null;
+
     state="idle";
+    locked=false;
 
     glassGlow(idle,0.4);
-    idlePulse();
+    startIdlePulse();
+}
+
+function playClick(){
+    const click=new Audio("https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3");
+    click.volume=0.4;
+    click.play();
+}
+
+function playEnd(){
+    const end=new Audio("https://assets.mixkit.co/active_storage/sfx/270/270-preview.mp3");
+    end.volume=0.4;
+    end.play();
 }
 
 halo.addEventListener("click",()=>{
 
-    // Always start fresh — no toggle behavior
+    if(locked) return;
+
+    playClick();
     hardReset();
     startListening();
 });
@@ -149,6 +187,8 @@ halo.addEventListener("click",()=>{
 async function startListening(){
 
     state="listening";
+    locked=true;
+    stopIdlePulse();
     glassGlow(gold,0.7);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -199,7 +239,7 @@ function detectSilence(){
                     if(recorder && recorder.state==="recording"){
                         recorder.stop();
                     }
-                },2000);
+                },1500);
             }
         }else{
             clearTimeout(silenceTimer);
@@ -214,41 +254,31 @@ function detectSilence(){
 
 function speak(b64){
 
-    state="speaking";
-    glassGlow(teal,0.9);
+    stopAllAudio();
 
     if(!b64){
         hardReset();
         return;
     }
 
+    state="speaking";
+    glassGlow(teal,0.9);
+
     audioEl=new Audio("data:audio/mp3;base64,"+b64);
-    audioEl.volume=0;
+    audioEl.volume=1;
     audioEl.play();
 
-    let fadeIn=setInterval(()=>{
-        if(audioEl.volume<1){
-            audioEl.volume+=0.05;
-        }else{
-            clearInterval(fadeIn);
-        }
-    },100);
-
     audioEl.onended=()=>{
-        let fadeOut=setInterval(()=>{
-            if(audioEl.volume>0.05){
-                audioEl.volume-=0.05;
-            }else{
-                clearInterval(fadeOut);
-                hardReset();
-            }
-        },100);
+        playEnd();
+        setTimeout(()=>{
+            hardReset();
+        },300);
     };
 }
 
-// Initialize
+// INITIALIZE IDLE STATE
 glassGlow(idle,0.4);
-idlePulse();
+startIdlePulse();
 
 </script>
 </body>
@@ -271,14 +301,13 @@ def voice():
 
         with open(path,"rb") as audio_file:
             transcript=client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text"
+                model="gpt-4o-mini-transcribe",
+                file=audio_file
             )
 
         os.remove(path)
 
-        user_text=transcript.strip()
+        user_text=transcript.text.strip()
 
         if len(user_text.split()) < 3:
             return jsonify({
