@@ -1,21 +1,162 @@
 import os
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 from openai import OpenAI
 
 app = Flask(__name__)
-
-# ======================
-# OPENAI CLIENT
-# ======================
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ======================
+# =========================
+# INLINE HTML (NO TEMPLATE FOLDER NEEDED)
+# =========================
+
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Hair Orb</title>
+<style>
+body {
+    margin:0;
+    background:#000;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    overflow:hidden;
+}
+.orb {
+    width:220px;
+    height:220px;
+    border-radius:50%;
+    background: radial-gradient(circle at center,
+        rgba(255,215,0,0.18) 0%,
+        rgba(255,215,0,0.08) 40%,
+        rgba(0,0,0,0.9) 70%);
+    box-shadow:
+        0 0 60px rgba(255,215,0,0.25),
+        0 0 120px rgba(255,215,0,0.15);
+    animation: idlePulse 3s infinite ease-in-out;
+    transition: all 0.3s ease;
+    cursor:pointer;
+}
+@keyframes idlePulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+.listening { animation: listeningPulse 0.8s infinite ease-in-out; }
+@keyframes listeningPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.12); }
+    100% { transform: scale(1); }
+}
+.speaking { animation: speakingPulse 1s infinite ease-in-out; }
+@keyframes speakingPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+    100% { transform: scale(1); }
+}
+</style>
+</head>
+<body>
+
+<div class="orb" id="orb"></div>
+
+<script>
+
+const orb = document.getElementById("orb")
+let recognition
+let silenceTimer
+let analyzingTimer
+let isListening = false
+let isSpeaking = false
+
+function fullReset(){
+    if(recognition) recognition.stop()
+    window.speechSynthesis.cancel()
+    clearTimeout(silenceTimer)
+    clearTimeout(analyzingTimer)
+    orb.classList.remove("listening")
+    orb.classList.remove("speaking")
+    isListening = false
+    isSpeaking = false
+}
+
+function startListening(){
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
+    recognition.continuous = true
+    recognition.interimResults = true
+    recognition.lang = "en-US"
+
+    recognition.onresult = (event) => {
+        clearTimeout(silenceTimer)
+        const transcript = Array.from(event.results)
+            .map(result => result[0].transcript)
+            .join("")
+
+        silenceTimer = setTimeout(() => {
+            recognition.stop()
+            startAnalyzing(transcript)
+        }, 2500)
+    }
+
+    recognition.start()
+    orb.classList.add("listening")
+    isListening = true
+}
+
+function startAnalyzing(text){
+    orb.classList.remove("listening")
+    analyzingTimer = setTimeout(() => {
+        fetch("/ask", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({message:text})
+        })
+        .then(res => res.json())
+        .then(data => speakResponse(data.reply))
+    }, 3000)
+}
+
+function speakResponse(text){
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.pitch = 1.2
+    utterance.rate = 1
+
+    utterance.onstart = () => {
+        orb.classList.add("speaking")
+        isSpeaking = true
+    }
+
+    utterance.onend = () => {
+        orb.classList.remove("speaking")
+        isSpeaking = false
+    }
+
+    speechSynthesis.speak(utterance)
+}
+
+orb.addEventListener("click", () => {
+    if(isListening || isSpeaking){
+        fullReset()
+        return
+    }
+    startListening()
+})
+
+</script>
+</body>
+</html>
+"""
+
+# =========================
 # ROUTES
-# ======================
+# =========================
 
 @app.route("/")
-def index():
-    return render_template("index.html")
+def home():
+    return HTML_PAGE
 
 
 @app.route("/ask", methods=["POST"])
@@ -23,28 +164,21 @@ def ask():
     data = request.get_json()
     user_message = data.get("message", "")
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a confident, bright-toned, professional salon hair expert. Give clear, specific recommendations."
-                },
-                {"role": "user", "content": user_message}
-            ]
-        )
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "You are a confident, bright-toned professional salon hair expert."},
+            {"role": "user", "content": user_message}
+        ]
+    )
 
-        reply = response.choices[0].message.content
-        return jsonify({"reply": reply})
-
-    except Exception as e:
-        return jsonify({"reply": "I'm having a temporary connection issue. Please try again."})
+    return jsonify({"reply": response.choices[0].message.content})
 
 
-# ======================
-# RUN (Render Compatible)
-# ======================
+# =========================
+# RENDER PORT FIX
+# =========================
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
