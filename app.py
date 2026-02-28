@@ -6,7 +6,7 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-MIN_AUDIO_SIZE = 15000
+MIN_AUDIO_SIZE = 10000
 MIN_TRANSCRIPT_LENGTH = 5
 
 
@@ -36,11 +36,16 @@ async function startRecording(){
 
     const stream = await navigator.mediaDevices.getUserMedia({audio:true});
 
-    mediaRecorder = new MediaRecorder(stream);
+    // 🔥 FORCE WAV FORMAT
+    const options = { mimeType: 'audio/webm;codecs=pcm' };
+
+    mediaRecorder = new MediaRecorder(stream, options);
     audioChunks = [];
 
     mediaRecorder.ondataavailable = event => {
-        audioChunks.push(event.data);
+        if (event.data.size > 0) {
+            audioChunks.push(event.data);
+        }
     };
 
     mediaRecorder.onstop = async () => {
@@ -48,7 +53,7 @@ async function startRecording(){
         const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
 
         const formData = new FormData();
-        formData.append("audio", audioBlob);
+        formData.append("audio", audioBlob, "audio.webm");
 
         document.getElementById("status").innerText = "Processing...";
 
@@ -65,28 +70,9 @@ async function startRecording(){
            data.text !== "No speech detected" &&
            data.text !== "I didn’t catch that clearly. Please try again and speak a little louder."){
 
-            // 🔥 Fix speech reliability
             window.speechSynthesis.cancel();
-
-            const speakText = () => {
-                const utterance = new SpeechSynthesisUtterance(data.text);
-
-                const voices = speechSynthesis.getVoices();
-                if (voices.length > 0) {
-                    utterance.voice = voices.find(v => v.lang === "en-US") || voices[0];
-                }
-
-                utterance.rate = 1;
-                utterance.pitch = 1;
-
-                speechSynthesis.speak(utterance);
-            };
-
-            if (speechSynthesis.getVoices().length === 0) {
-                speechSynthesis.onvoiceschanged = speakText;
-            } else {
-                speakText();
-            }
+            const utterance = new SpeechSynthesisUtterance(data.text);
+            speechSynthesis.speak(utterance);
         }
     };
 
@@ -94,7 +80,7 @@ async function startRecording(){
 
     setTimeout(() => {
         mediaRecorder.stop();
-    }, 5000);
+    }, 6000); // 6 seconds recording
 }
 
 </script>
@@ -119,7 +105,6 @@ def voice():
     print("Backend received file size:", file_size)
 
     if file_size < MIN_AUDIO_SIZE:
-        print("Detected silence")
         return jsonify({"text": "No speech detected"})
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
@@ -139,7 +124,6 @@ def voice():
         print("User said:", repr(user_text))
 
         if not user_text or len(user_text) < MIN_TRANSCRIPT_LENGTH:
-            print("Transcript too short")
             return jsonify({
                 "text": "I didn’t catch that clearly. Please try again and speak a little louder."
             })
@@ -159,8 +143,6 @@ def voice():
         )
 
         response_text = completion.choices[0].message.content.strip()
-
-        print("AI response:", response_text)
 
         return jsonify({"text": response_text})
 
