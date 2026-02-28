@@ -35,17 +35,17 @@ body{
 }
 
 .halo{
-    width:210px;
-    height:210px;
+    width:220px;
+    height:220px;
     border-radius:50%;
     cursor:pointer;
-    transition:background 3s ease, box-shadow 3s ease, transform 0.1s linear;
     background:radial-gradient(circle at center,
         rgba(0,255,200,0.35) 0%,
         rgba(0,255,200,0.18) 50%,
         rgba(0,255,200,0.08) 75%,
         transparent 95%);
-    box-shadow:0 0 70px rgba(0,255,200,0.35);
+    box-shadow:0 0 80px rgba(0,255,200,0.35);
+    transform:scale(1);
 }
 
 #response{
@@ -59,7 +59,7 @@ body{
 <body>
 
 <div id="halo" class="halo"></div>
-<div id="response">Tap the ring and ask about your hair.</div>
+<div id="response">Tap the ring and describe your hair concern.</div>
 
 <script>
 
@@ -76,45 +76,47 @@ let animationFrame=null;
 const SILENCE_DELAY=2300;
 const SILENCE_THRESHOLD=6;
 
-/* =====================================
-   COLOR STATES
-=====================================*/
+/* ==================================================
+   MANUAL COLOR FADE ENGINE (Ultra Smooth)
+==================================================*/
 
-function setIdleColor(){
-    halo.style.background=`radial-gradient(circle at center,
-        rgba(0,255,200,0.35) 0%,
-        rgba(0,255,200,0.18) 50%,
-        rgba(0,255,200,0.08) 75%,
-        transparent 95%)`;
+function lerp(a,b,t){ return a+(b-a)*t; }
+
+function fadeGradient(from,to,duration,callback){
+    let start=null;
+
+    function animate(timestamp){
+        if(!start) start=timestamp;
+        let progress=(timestamp-start)/duration;
+        if(progress>1) progress=1;
+
+        let r=lerp(from.r,to.r,progress);
+        let g=lerp(from.g,to.g,progress);
+        let b=lerp(from.b,to.b,progress);
+        let a=lerp(from.a,to.a,progress);
+
+        halo.style.background=`radial-gradient(circle at center,
+            rgba(${r},${g},${b},${a}) 0%,
+            rgba(${r},${g},${b},${a*0.5}) 50%,
+            rgba(${r},${g},${b},${a*0.2}) 75%,
+            transparent 95%)`;
+
+        if(progress<1){
+            requestAnimationFrame(animate);
+        }else{
+            if(callback) callback();
+        }
+    }
+    requestAnimationFrame(animate);
 }
 
-function setGold(){
-    halo.style.background=`radial-gradient(circle at center,
-        rgba(255,210,0,0.55) 0%,
-        rgba(255,170,0,0.35) 50%,
-        rgba(255,140,0,0.15) 75%,
-        transparent 95%)`;
-}
+const idleColor={r:0,g:255,b:200,a:0.35};
+const goldColor={r:255,g:200,b:0,a:0.6};
+const brightTeal={r:0,g:255,b:255,a:0.85};
 
-function setThinkingBase(){
-    halo.style.background=`radial-gradient(circle at center,
-        rgba(0,255,255,0.35) 0%,
-        rgba(0,220,255,0.2) 50%,
-        rgba(0,180,255,0.1) 75%,
-        transparent 95%)`;
-}
-
-function setSpeakingColor(){
-    halo.style.background=`radial-gradient(circle at center,
-        rgba(0,255,255,0.6) 0%,
-        rgba(0,220,255,0.4) 50%,
-        rgba(0,180,255,0.2) 75%,
-        transparent 95%)`;
-}
-
-/* =====================================
+/* ==================================================
    IDLE PULSE
-=====================================*/
+==================================================*/
 
 function idlePulse(){
     if(state!=="idle") return;
@@ -123,36 +125,15 @@ function idlePulse(){
     animationFrame=requestAnimationFrame(idlePulse);
 }
 
-/* =====================================
-   REACTIVE PULSE
-=====================================*/
-
-function reactivePulse(){
-    if(!analyser) return;
-
-    const data=new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(data);
-
-    let sum=0;
-    for(let i=0;i<data.length;i++) sum+=data[i];
-    let volume=sum/data.length;
-
-    let scale=1+(volume/300);
-    halo.style.transform=`scale(${scale})`;
-
-    animationFrame=requestAnimationFrame(reactivePulse);
-}
-
-/* =====================================
-   CLICK SOUND
-=====================================*/
+/* ==================================================
+   CLICK SOUND (unchanged, you liked it)
+==================================================*/
 
 function playClick(){
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
     const gain=ctx.createGain();
 
-    osc.type="sine";
     osc.frequency.setValueAtTime(320,ctx.currentTime);
     osc.frequency.linearRampToValueAtTime(600,ctx.currentTime+0.8);
 
@@ -162,94 +143,74 @@ function playClick(){
 
     osc.connect(gain);
     gain.connect(ctx.destination);
-
     osc.start();
     osc.stop(ctx.currentTime+1.3);
 }
 
-/* =====================================
-   FINISH SHIMMER SOUND
-=====================================*/
+/* ==================================================
+   NEW FINISH SOUND (Soft Bloom)
+==================================================*/
 
 function playEndTone(){
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
-    const osc1=ctx.createOscillator();
-    const osc2=ctx.createOscillator();
+    const osc=ctx.createOscillator();
     const gain=ctx.createGain();
 
-    osc1.frequency.setValueAtTime(520,ctx.currentTime);
-    osc2.frequency.setValueAtTime(780,ctx.currentTime);
+    osc.type="triangle";
+    osc.frequency.setValueAtTime(400,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(520,ctx.currentTime+1.2);
 
-    gain.gain.setValueAtTime(0.25,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+2.5);
+    gain.gain.setValueAtTime(0.3,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+3);
 
-    osc1.connect(gain);
-    osc2.connect(gain);
+    osc.connect(gain);
     gain.connect(ctx.destination);
 
-    osc1.start();
-    osc2.start();
-    osc1.stop(ctx.currentTime+2.5);
-    osc2.stop(ctx.currentTime+2.5);
+    osc.start();
+    osc.stop(ctx.currentTime+3);
 }
 
-/* =====================================
+/* ==================================================
    RESET
-=====================================*/
+==================================================*/
 
 function fullReset(){
-
     cancelAnimationFrame(animationFrame);
 
-    if(silenceTimer){
-        clearTimeout(silenceTimer);
-        silenceTimer=null;
-    }
+    if(silenceTimer) clearTimeout(silenceTimer);
+    if(mediaRecorder && mediaRecorder.state!=="inactive") mediaRecorder.stop();
+    if(stream) stream.getTracks().forEach(t=>t.stop());
+    if(audioElement) audioElement.pause();
 
-    if(mediaRecorder && mediaRecorder.state!=="inactive"){
-        mediaRecorder.stop();
-    }
-
-    if(stream){
-        stream.getTracks().forEach(t=>t.stop());
-        stream=null;
-    }
-
-    if(audioElement){
-        audioElement.pause();
-        audioElement=null;
-    }
-
-    analyser=null;
     state="idle";
-    halo.style.transform="scale(1)";
-    setIdleColor();
-    idlePulse();
+    fadeGradient(brightTeal,idleColor,3000,()=>{
+        idlePulse();
+    });
 }
 
-/* =====================================
+/* ==================================================
    CLICK HANDLER
-=====================================*/
+==================================================*/
 
 halo.addEventListener("click",()=>{
     playClick();
-
     if(state!=="idle"){
         fullReset();
         return;
     }
-
     startRecording();
 });
 
-/* =====================================
+/* ==================================================
    RECORD
-=====================================*/
+==================================================*/
 
 async function startRecording(){
 
     state="listening";
-    setGold();
+
+    // 5 SECOND GOLD FADE IN
+    fadeGradient(idleColor,goldColor,5000);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const audioContext=new (window.AudioContext||window.webkitAudioContext)();
@@ -265,10 +226,11 @@ async function startRecording(){
     mediaRecorder.ondataavailable=e=>chunks.push(e.data);
 
     mediaRecorder.onstop=async()=>{
+
         state="thinking";
 
-        // Immediately morph gold → teal (NO GAP)
-        setThinkingBase();
+        // 5 SECOND GOLD → BRIGHT TEAL
+        fadeGradient(goldColor,brightTeal,5000);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -284,11 +246,9 @@ async function startRecording(){
 
     mediaRecorder.start();
     detectSilence();
-    reactivePulse();
 }
 
 function detectSilence(){
-
     const data=new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
 
@@ -299,82 +259,66 @@ function detectSilence(){
     if(volume<SILENCE_THRESHOLD){
         if(!silenceTimer){
             silenceTimer=setTimeout(()=>{
-                if(mediaRecorder && mediaRecorder.state==="recording"){
+                if(mediaRecorder.state==="recording"){
                     mediaRecorder.stop();
                 }
             },SILENCE_DELAY);
         }
     }else{
-        if(silenceTimer){
-            clearTimeout(silenceTimer);
-            silenceTimer=null;
-        }
+        if(silenceTimer) clearTimeout(silenceTimer);
     }
 
     if(state==="listening")
         requestAnimationFrame(detectSilence);
 }
 
-/* =====================================
+/* ==================================================
    AI SPEAK
-=====================================*/
+==================================================*/
 
 function speakAI(base64Audio){
 
     state="speaking";
-
-    setSpeakingColor();
-
     audioElement=new Audio("data:audio/mp3;base64,"+base64Audio);
-
-    const audioContext=new (window.AudioContext||window.webkitAudioContext)();
-    analyser=audioContext.createAnalyser();
-    analyser.fftSize=256;
-
-    const sourceNode=audioContext.createMediaElementSource(audioElement);
-    sourceNode.connect(analyser);
-    analyser.connect(audioContext.destination);
-
     audioElement.play();
-    reactivePulse();
 
     audioElement.onended=()=>{
         playEndTone();
-
         setTimeout(()=>{
             fullReset();
-        },2500);
+        },3000);
     };
 }
 
-setIdleColor();
 idlePulse();
 
 </script>
 </body>
 </html>
 """
+
 # =====================================================
-# BACKEND (unchanged)
+# EXPANDED HAIR KNOWLEDGE
 # =====================================================
 
-PRODUCTS={
-    "Laciador":{"description":"It deeply hydrates dry hair and restores softness.","price":34.99},
-    "Gotero":{"description":"It balances oily scalp while keeping hair fresh.","price":29.99}
+HAIR_DATABASE = {
+    "dry": "Your hair may be lacking moisture and natural oils.",
+    "damaged": "Damage is often caused by heat styling or chemical treatments.",
+    "tangly": "Tangles usually mean dryness or cuticle roughness.",
+    "lost color": "Color fading can happen from UV exposure and washing.",
+    "oily": "Excess oil comes from overactive sebaceous glands.",
+    "not bouncy": "Flat hair often needs lightweight nourishment.",
+    "falling out": "Hair shedding can result from stress or scalp imbalance.",
+    "frizzy": "Frizz is caused by moisture imbalance.",
+    "flat": "Flatness may mean buildup or lack of volume support.",
+    "dull": "Dull hair often lacks proper hydration and shine protection.",
+    "split ends": "Split ends are signs of structural damage.",
+    "itchy": "Itchiness can signal scalp imbalance."
 }
-
-def choose_product(text):
-    text=text.lower()
-    if "dry" in text: return "Laciador"
-    if "oily" in text: return "Gotero"
-    return None
 
 @app.route("/voice",methods=["POST"])
 def voice():
     try:
-        if "audio" not in request.files:
-            return speak("I didn’t quite catch that. Could you repeat?")
-
         file=request.files["audio"]
 
         with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
@@ -388,22 +332,21 @@ def voice():
                 response_format="text"
             )
 
-        text=transcript.strip()
+        text=transcript.lower()
 
-        if not text or len(text)<2:
-            return speak("I didn’t quite catch that. Could you repeat your hair concern?")
+        response=""
 
-        product=choose_product(text)
+        for key,val in HAIR_DATABASE.items():
+            if key in text:
+                response=f"I understand. {val} I recommend using our advanced repair formula designed specifically for this concern. It restores balance, improves texture, and promotes healthy shine."
+                break
 
-        if not product:
-            return speak("Please tell me if your hair is dry or oily.")
+        if response=="":
+            response="Tell me more about your hair concern so I can recommend the right solution."
 
-        info=PRODUCTS[product]
-        message=f"I recommend {product}. {info['description']} With tax and shipping you're looking at ${info['price']}."
+        return speak(response)
 
-        return speak(message)
-
-    except Exception:
+    except:
         return speak("Something went wrong. Please try again.")
 
 def speak(message):
