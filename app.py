@@ -50,7 +50,6 @@ body{
     cursor:pointer;
     backdrop-filter:blur(60px);
     background:rgba(0,255,200,0.22);
-    transition:transform 0.4s ease;
 }
 
 #response{
@@ -87,18 +86,19 @@ const responseBox=document.getElementById("response");
 let state="idle";
 let recognition=null;
 let silenceTimer=null;
+let noSpeechTimer=null;
 let transcript="";
-let lastSpeechTime=0;
+let speaking=false;
 
-// ==========================
-// DEEPER PULSE ENGINE
-// ==========================
+// =====================
+// DEEP BREATHING PULSE
+// =====================
 
 function pulse(){
+    let intensity=0.05;
     let speed=0.0012;
-    let intensity=0.06;
 
-    if(state==="listening") intensity=0.09;
+    if(state==="listening") intensity=0.085;
     if(state==="speaking") intensity=0.11;
 
     let scale=1+Math.sin(Date.now()*speed)*intensity;
@@ -107,78 +107,98 @@ function pulse(){
     requestAnimationFrame(pulse);
 }
 
-// ==========================
+// =====================
 // PRODUCT ENGINE
-// ==========================
+// =====================
 
 function chooseProduct(text){
 
-text=text.toLowerCase();
+text=text.toLowerCase().trim();
 
-const vague = text.length < 8;
-
-if(vague){
-return null;
-}
+if(text.length<12) return null;
 
 if(text.includes("under 16") && text.includes("color")){
-return "For individuals under sixteen experiencing pigment changes, we recommend consulting a licensed medical professional before cosmetic treatment.";
+return "For clients under sixteen experiencing pigment changes, we strongly recommend consulting a licensed medical professional before cosmetic treatment.";
 }
 
-if(text.includes("dry"))
-return "Laciador. Dry hair indicates moisture depletion within the cuticle layer. Laciador restores hydration balance and improves elasticity. Price point: $48 professional size.";
+const issues={
+dry:{
+name:"Laciador",
+desc:"Dry hair indicates cuticle dehydration. Laciador restores moisture balance and smoothness.",
+price:"$48"
+},
+oily:{
+name:"Gotero",
+desc:"Oily scalp imbalance requires lightweight regulation. Gotero balances sebum without stripping hydration.",
+price:"$42"
+},
+damaged:{
+name:"Formula Exclusiva",
+desc:"Structural damage affects protein bonds. Formula Exclusiva rebuilds strength and elasticity.",
+price:"$65"
+},
+fall:{
+name:"Formula Exclusiva",
+desc:"Shedding and breakage require strengthening at the root level. Formula Exclusiva supports healthier cycles.",
+price:"$65"
+},
+color:{
+name:"Gotika",
+desc:"Color fading occurs from oxidation and UV exposure. Gotika restores vibrancy and pigment longevity.",
+price:"$54"
+}
+};
 
-if(text.includes("oily"))
-return "Gotero. Oily scalp imbalance requires lightweight regulation. Gotero balances sebum production without stripping protective lipids. Price point: $42 professional size.";
-
-if(text.includes("damaged"))
-return "Formula Exclusiva. Structural damage affects internal protein bonds. Formula Exclusiva rebuilds strength, resilience, and shine. Price point: $65 professional treatment.";
-
-if(text.includes("fall"))
-return "Formula Exclusiva. Shedding and breakage require bond reinforcement and scalp support. Formula Exclusiva strengthens the growth cycle. Price point: $65 professional treatment.";
-
-if(text.includes("color"))
-return "Gotika. Color fading results from oxidation and cuticle wear. Gotika restores vibrancy and enhances pigment longevity. Price point: $54 professional size.";
+for(let key in issues){
+if(text.includes(key)){
+let p=issues[key];
+return p.name+". "+p.desc+" Professional price point: "+p.price+".";
+}
+}
 
 return null;
 }
 
-// ==========================
-// VOICE (BRIGHTER SELECTION)
-// ==========================
+// =====================
+// VOICE SELECTION
+// =====================
+
+function getBestVoice(){
+let voices=speechSynthesis.getVoices();
+
+let preferred=
+voices.find(v=>v.name.includes("Google UK English Female")) ||
+voices.find(v=>v.name.includes("Samantha")) ||
+voices.find(v=>v.name.toLowerCase().includes("female"));
+
+return preferred || voices[0];
+}
 
 function speak(text){
 
 speechSynthesis.cancel();
 
 const utter=new SpeechSynthesisUtterance(text);
-utter.rate=0.92;
-utter.pitch=1.08;
+utter.voice=getBestVoice();
+utter.rate=0.9;
+utter.pitch=1.05;
 utter.volume=1;
 
-let voices=speechSynthesis.getVoices();
-
-let preferred = voices.find(v =>
-v.name.includes("Samantha") ||
-v.name.includes("Google UK English Female") ||
-v.name.toLowerCase().includes("female")
-);
-
-if(preferred) utter.voice=preferred;
-
 state="speaking";
+speaking=true;
+
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
+speaking=false;
 state="idle";
 responseBox.innerText="Tap and describe your hair concern.";
 };
-
 }
 
-// ==========================
-// LISTENING
-// ==========================
+// =====================
+// LISTENING SYSTEM
+// =====================
 
 function startListening(){
 
@@ -197,40 +217,44 @@ responseBox.innerText="Listening...";
 recognition.onresult=function(event){
 
 clearTimeout(silenceTimer);
+clearTimeout(noSpeechTimer);
+
+let interim="";
 
 for(let i=event.resultIndex;i<event.results.length;i++){
 if(event.results[i].isFinal){
 transcript+=event.results[i][0].transcript+" ";
+}else{
+interim+=event.results[i][0].transcript;
 }
 }
 
 silenceTimer=setTimeout(()=>{
 recognition.stop();
-processSpeech(transcript.trim());
+handleFinalTranscript(transcript.trim());
 },2500);
 
 };
 
 recognition.start();
 
-// 3.5 sec fallback if nothing meaningful
-setTimeout(()=>{
-if(state==="listening" && transcript.length<5){
+// 3.5s full silence fallback
+noSpeechTimer=setTimeout(()=>{
+if(transcript.trim().length<5){
 recognition.stop();
 speak("I didn’t hear anything. Could you please describe your specific hair concern?");
 }
 },3500);
-
 }
 
-// ==========================
-// PROCESS SPEECH
-// ==========================
+// =====================
+// PROCESS FINAL SPEECH
+// =====================
 
-function processSpeech(text){
+function handleFinalTranscript(text){
 
-if(!text || text.length<5){
-speak("I didn’t catch that clearly. Could you describe a specific hair problem?");
+if(!text || text.length<10){
+speak("I didn’t catch that clearly. Could you describe a specific hair concern?");
 return;
 }
 
@@ -238,23 +262,22 @@ responseBox.innerText="Analyzing...";
 
 setTimeout(()=>{
 
-const reply=chooseProduct(text);
+const result=chooseProduct(text);
 
-if(!reply){
-speak("I didn’t catch that clearly. Could you describe a specific hair problem?");
+if(!result){
+speak("I didn’t catch a specific hair issue. Could you clarify whether it's dryness, oiliness, damage, color fading, or shedding?");
 return;
 }
 
-responseBox.innerText=reply;
-speak(reply);
+responseBox.innerText=result;
+speak(result);
 
 },3000);
-
 }
 
-// ==========================
-// CLICK
-// ==========================
+// =====================
+// CLICK HANDLER
+// =====================
 
 halo.addEventListener("click",()=>{
 
@@ -265,8 +288,13 @@ responseBox.innerText="Tap and describe your hair concern.";
 return;
 }
 
-startListening();
+if(state==="speaking"){
+speechSynthesis.cancel();
+state="idle";
+return;
+}
 
+startListening();
 });
 
 pulse();
