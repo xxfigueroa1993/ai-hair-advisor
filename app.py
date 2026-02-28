@@ -44,6 +44,7 @@ body{
         transparent 95%);
     box-shadow:0 0 80px rgba(0,255,200,0.35);
     transform:scale(1);
+    transition:box-shadow 0.1s linear;
 }
 #response{
     margin-top:40px;
@@ -66,10 +67,16 @@ let mediaRecorder=null;
 let stream=null;
 let silenceTimer=null;
 let analyser=null;
+let audioCtx=null;
+let aiAnalyser=null;
 let audioElement=null;
 
 const SILENCE_DELAY=2300;
 const SILENCE_THRESHOLD=6;
+
+// -----------------------------------------------------
+// COLOR ENGINE
+// -----------------------------------------------------
 
 function lerp(a,b,t){return a+(b-a)*t;}
 
@@ -93,16 +100,46 @@ function fade(from,to,duration){
     requestAnimationFrame(step);
 }
 
-const idle={r:0,g:255,b:200,a:0.35};
-const gold={r:255,g:200,b:0,a:0.6};
-const brightTeal={r:0,g:255,b:255,a:0.9};
+const idleColor={r:0,g:255,b:200,a:0.35};
+const goldColor={r:255,g:200,b:0,a:0.6};
+const brightTeal={r:0,g:255,b:255,a:0.95};
+
+// -----------------------------------------------------
+// AUDIO REACTIVE PULSE
+// -----------------------------------------------------
+
+function reactivePulse(analyserNode){
+    if(!analyserNode) return;
+
+    const data = new Uint8Array(analyserNode.frequencyBinCount);
+    analyserNode.getByteFrequencyData(data);
+
+    let sum=0;
+    for(let i=0;i<data.length;i++) sum+=data[i];
+    let volume = sum/data.length;
+
+    let intensity = Math.min(volume/120,1);
+    let scale = 1 + intensity*0.25;
+    let glow = 80 + intensity*120;
+
+    halo.style.transform = `scale(${scale})`;
+    halo.style.boxShadow = `0 0 ${glow}px rgba(0,255,255,0.6)`;
+
+    if(state==="listening" || state==="speaking"){
+        requestAnimationFrame(()=>reactivePulse(analyserNode));
+    }
+}
 
 function idlePulse(){
-    if(state!=="idle")return;
+    if(state!=="idle") return;
     let scale=1+Math.sin(Date.now()*0.002)*0.03;
     halo.style.transform=`scale(${scale})`;
     requestAnimationFrame(idlePulse);
 }
+
+// -----------------------------------------------------
+// SOUNDS
+// -----------------------------------------------------
 
 function playClick(){
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -121,18 +158,22 @@ function playEndTone(){
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
     const gain=ctx.createGain();
-    osc.type="sine";
-    osc.frequency.setValueAtTime(700,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+3);
-    gain.gain.setValueAtTime(0.25,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+3);
+    osc.type="triangle";
+    osc.frequency.setValueAtTime(900,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(250,ctx.currentTime+2.5);
+    gain.gain.setValueAtTime(0.3,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+2.5);
     osc.connect(gain);gain.connect(ctx.destination);
-    osc.start();osc.stop(ctx.currentTime+3);
+    osc.start();osc.stop(ctx.currentTime+2.5);
 }
+
+// -----------------------------------------------------
+// STATES
+// -----------------------------------------------------
 
 function fullReset(){
     state="idle";
-    fade(brightTeal,idle,3000);
+    fade(brightTeal,idleColor,4000);
     idlePulse();
 }
 
@@ -144,10 +185,10 @@ halo.addEventListener("click",()=>{
 
 async function startRecording(){
     state="listening";
-    fade(idle,gold,5000);
+    fade(idleColor,goldColor,5000);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    const audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
     analyser=audioCtx.createAnalyser();
     analyser.fftSize=256;
     const source=audioCtx.createMediaStreamSource(stream);
@@ -160,7 +201,7 @@ async function startRecording(){
 
     mediaRecorder.onstop=async()=>{
         state="thinking";
-        fade(gold,brightTeal,5000);
+        fade(goldColor,brightTeal,5000);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -174,6 +215,7 @@ async function startRecording(){
     };
 
     mediaRecorder.start();
+    reactivePulse(analyser);
     detectSilence();
 }
 
@@ -203,7 +245,17 @@ function detectSilence(){
 function speakAI(base64Audio){
     state="speaking";
     audioElement=new Audio("data:audio/mp3;base64,"+base64Audio);
+
+    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const source=ctx.createMediaElementSource(audioElement);
+    aiAnalyser=ctx.createAnalyser();
+    aiAnalyser.fftSize=256;
+    source.connect(aiAnalyser);
+    aiAnalyser.connect(ctx.destination);
+
     audioElement.play();
+    reactivePulse(aiAnalyser);
+
     audioElement.onended=()=>{
         playEndTone();
         setTimeout(()=>{fullReset();},3000);
@@ -218,26 +270,14 @@ idlePulse();
 """
 
 # =====================================================
-# YOUR 4 PRODUCTS ONLY
+# PRODUCTS
 # =====================================================
 
 PRODUCTS = {
-    "Laciador": {
-        "price": 34.99,
-        "tags": ["dry","damaged","tangly","frizzy","split","dull"]
-    },
-    "Gotero": {
-        "price": 29.99,
-        "tags": ["oily","flat","not bouncy","itchy"]
-    },
-    "Volumizer": {
-        "price": 39.99,
-        "tags": ["flat","not bouncy","falling","thin"]
-    },
-    "Color Protect": {
-        "price": 36.99,
-        "tags": ["color","lost color","dull"]
-    }
+    "Laciador": {"price":34.99,"tags":["dry","damaged","tangly","frizzy","split","dull"]},
+    "Gotero": {"price":29.99,"tags":["oily","flat","itchy"]},
+    "Volumizer": {"price":39.99,"tags":["flat","not bouncy","falling","thin"]},
+    "Color Protect": {"price":36.99,"tags":["color","lost color","fade","dull"]}
 }
 
 def match_product(text):
@@ -250,31 +290,24 @@ def match_product(text):
 
 @app.route("/voice",methods=["POST"])
 def voice():
-    try:
-        file=request.files["audio"]
-        with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
-            file.save(temp.name)
-            path=temp.name
+    file=request.files["audio"]
+    with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
+        file.save(temp.name)
+        path=temp.name
 
-        with open(path,"rb") as audio_file:
-            transcript=client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="text"
-            )
+    with open(path,"rb") as audio_file:
+        transcript=client.audio.transcriptions.create(
+            model="whisper-1",
+            file=audio_file,
+            response_format="text"
+        )
 
-        text=transcript.lower()
-        product,price=match_product(text)
+    product,price=match_product(transcript)
+    if not product:
+        return speak("Tell me more about your hair so I can recommend the right product.")
 
-        if not product:
-            return speak("Tell me more about your hair so I can choose the right product.")
-
-        message=f"Based on what you described, I recommend {product}. It directly addresses your concern and will restore balance and shine. The price is ${price}."
-
-        return speak(message)
-
-    except:
-        return speak("Something went wrong. Please try again.")
+    message=f"I recommend {product}. It directly targets your concern. The price is ${price}."
+    return speak(message)
 
 def speak(message):
     speech=client.audio.speech.create(
