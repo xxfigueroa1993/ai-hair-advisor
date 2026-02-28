@@ -10,7 +10,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# SYSTEM PROMPT (IMPROVED LOGIC)
+# SYSTEM PROMPT (UNCHANGED LOGIC)
 # =====================================================
 
 def build_system_prompt(language):
@@ -23,20 +23,16 @@ You ONLY recommend one of these 4 products:
 - Volumizer ($39.99) → thin / flat / falling out / no bounce
 - Formula Exclusiva ($49.99) → multiple problems or all-in-one request
 
-Important interpretation rules:
-
-• If user mentions:
-  event, party, wedding, date, special occasion, styling, sleek, polished look
-  → Recommend Laciador.
-
-• If multiple concerns → Formula Exclusiva.
+Interpretation:
+• If user mentions event, party, wedding, date, special occasion, styling,
+  polished look, sleek → Recommend Laciador.
+• Multiple concerns → Formula Exclusiva.
 
 Rules:
 - NEVER invent product names.
 - ALWAYS include price.
 - ALWAYS respond strictly in {language}.
-- If unclear, politely guide the user using example keywords in {language}.
-- Tone must feel premium, confident, luxury brand.
+- Tone must feel premium, confident, emotionally supportive.
 """
 
 # =====================================================
@@ -77,13 +73,11 @@ select{
     border-radius:50%;
     cursor:pointer;
     transform:scale(1);
-    transition:background 2s ease, box-shadow 2s ease;
     background:radial-gradient(circle at center,
-        rgba(0,255,200,0.4) 0%,
-        rgba(0,255,200,0.2) 50%,
-        rgba(0,255,200,0.1) 75%,
-        transparent 95%);
-    box-shadow:0 0 80px rgba(0,255,200,0.4);
+        rgba(0,255,200,0.2) 0%,
+        rgba(0,255,200,0.1) 50%,
+        transparent 90%);
+    box-shadow:0 0 40px rgba(0,255,200,0.3);
 }
 #response{
     margin-top:40px;
@@ -110,6 +104,7 @@ select{
 <script>
 const halo=document.getElementById("halo");
 const languageSelect=document.getElementById("language");
+
 let state="idle";
 let analyser, mediaRecorder, stream;
 let silenceTimer;
@@ -121,35 +116,85 @@ const idleColor=[0,255,200];
 const gold=[255,200,0];
 const teal=[0,255,255];
 
-function setColor(rgb,intensity=0.4){
+let currentIntensity=0.2;
+let targetIntensity=0.2;
+let currentColor=idleColor;
+
+function animateColor(){
+    currentIntensity += (targetIntensity - currentIntensity)*0.05;
+
     halo.style.background=`radial-gradient(circle at center,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}) 0%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}) 50%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.2}) 75%,
-        transparent 95%)`;
-    halo.style.boxShadow=`0 0 ${80+intensity*150}px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7)`;
+        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${currentIntensity}) 0%,
+        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${currentIntensity*0.5}) 50%,
+        transparent 90%)`;
+
+    halo.style.boxShadow=`0 0 ${40+currentIntensity*140}px rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},0.6)`;
+
+    requestAnimationFrame(animateColor);
+}
+animateColor();
+
+function transitionTo(color,intensity){
+    currentColor=color;
+    targetIntensity=intensity;
 }
 
-function fadeToColor(color){
-    setColor(color,0.8);
+/* ========================
+   INTRO SOUND (SLOW SWELL)
+======================== */
+function playIntroSound(){
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+
+    osc.type="sine";
+    osc.frequency.setValueAtTime(500,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(720,ctx.currentTime+1.0);
+
+    gain.gain.setValueAtTime(0.0001,ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.3,ctx.currentTime+0.8);
+    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+1.6);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime+1.6);
 }
 
-function idlePulse(){
-    if(state!=="idle")return;
-    let scale=1+Math.sin(Date.now()*0.002)*0.03;
-    halo.style.transform=`scale(${scale})`;
-    requestAnimationFrame(idlePulse);
+/* ========================
+   OUTRO SOUND (SLOW DESCEND)
+======================== */
+function playOutroSound(){
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+
+    osc.type="triangle";
+    osc.frequency.setValueAtTime(650,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+2.0);
+
+    gain.gain.setValueAtTime(0.25,ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+2.2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime+2.2);
 }
-idlePulse();
+
+/* ======================== */
 
 halo.addEventListener("click",()=>{
     if(state!=="idle")return;
+    playIntroSound();
     startRecording();
 });
 
 async function startRecording(){
     state="listening";
-    fadeToColor(gold);
+    transitionTo(gold,0.9);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -164,7 +209,7 @@ async function startRecording(){
 
     mediaRecorder.onstop=async()=>{
         state="thinking";
-        fadeToColor(teal);
+        transitionTo(teal,1.0);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -173,6 +218,7 @@ async function startRecording(){
 
         const res=await fetch("/voice",{method:"POST",body:form});
         const data=await res.json();
+
         document.getElementById("response").innerText=data.text;
         speakAI(data.audio);
     };
@@ -208,10 +254,11 @@ function speakAI(base64Audio){
     state="speaking";
     const audio=new Audio("data:audio/mp3;base64,"+base64Audio);
     audio.play();
+
     audio.onended=()=>{
+        playOutroSound();
+        transitionTo(idleColor,0.2);
         state="idle";
-        fadeToColor(idleColor);
-        idlePulse();
     };
 }
 </script>
@@ -220,7 +267,7 @@ function speakAI(base64Audio){
 """
 
 # =====================================================
-# VOICE ENDPOINT
+# BACKEND VOICE
 # =====================================================
 
 @app.route("/voice",methods=["POST"])
