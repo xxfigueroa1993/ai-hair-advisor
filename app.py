@@ -41,8 +41,8 @@ body{
     border-radius:50%;
     cursor:pointer;
     backdrop-filter:blur(60px);
-    background:rgba(255,255,255,0.05);
-    transition:transform 1.5s ease;
+    background:rgba(255,255,255,0.04);
+    transition:transform 1.2s ease;
 }
 
 #response{
@@ -73,11 +73,11 @@ let currentColor=[0,255,200];
 let activeAnimation=null;
 let currentOsc=null;
 
-const FADE_DURATION=2300; // 1.5x faster than 3.5s
+const FADE_DURATION=1750; // 1.3x faster
 
-// ======================
+// ==========================
 // COLOR INTERPOLATION
-// ======================
+// ==========================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
@@ -102,13 +102,13 @@ function animateColor(targetColor,onComplete=null){
             0 0 260px rgba(${r},${g},${b},0.25)
         `;
 
-        /* Center now 3x less transparent */
+        /* Inner glow now 3x MORE transparent */
         halo.style.background = `
             radial-gradient(circle at center,
-                rgba(${r},${g},${b},0.30) 0%,
-                rgba(${r},${g},${b},0.22) 40%,
-                rgba(${r},${g},${b},0.12) 75%,
-                rgba(255,255,255,0.05) 100%)
+                rgba(${r},${g},${b},0.10) 0%,
+                rgba(${r},${g},${b},0.07) 45%,
+                rgba(${r},${g},${b},0.04) 75%,
+                rgba(255,255,255,0.03) 100%)
         `;
 
         currentColor=[r,g,b];
@@ -124,9 +124,9 @@ function animateColor(targetColor,onComplete=null){
     activeAnimation=requestAnimationFrame(step);
 }
 
-// ======================
+// ==========================
 // PULSE
-// ======================
+// ==========================
 
 function pulse(){
     if(state==="idle"){
@@ -136,11 +136,11 @@ function pulse(){
     requestAnimationFrame(pulse);
 }
 
-// ======================
-// PLAY UNIQUE TONE
-// ======================
+// ==========================
+// SOUND (Controlled)
+// ==========================
 
-function playTone(type){
+function playTone(startFreq,endFreq){
 
     if(currentOsc){
         currentOsc.stop();
@@ -153,20 +153,8 @@ function playTone(type){
 
     osc.type="sine";
 
-    if(type==="click"){
-        osc.frequency.setValueAtTime(220,ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+FADE_DURATION/1000);
-    }
-
-    if(type==="analyzing"){
-        osc.frequency.setValueAtTime(300,ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(380,ctx.currentTime+FADE_DURATION/1000);
-    }
-
-    if(type==="finish"){
-        osc.frequency.setValueAtTime(380,ctx.currentTime);
-        osc.frequency.linearRampToValueAtTime(240,ctx.currentTime+FADE_DURATION/1000);
-    }
+    osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(endFreq,ctx.currentTime+FADE_DURATION/1000);
 
     gain.gain.setValueAtTime(0.12,ctx.currentTime);
     gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+FADE_DURATION/1000);
@@ -180,9 +168,9 @@ function playTone(type){
     currentOsc=osc;
 }
 
-// ======================
+// ==========================
 // RESET
-// ======================
+// ==========================
 
 function resetToIdle(){
 
@@ -196,13 +184,13 @@ function resetToIdle(){
     });
 }
 
-// ======================
+// ==========================
 // CLICK HANDLER
-// ======================
+// ==========================
 
 halo.addEventListener("click",()=>{
 
-    // SECOND CLICK → RESET (NO SOUND)
+    // SECOND CLICK → RESET ONLY (NO SOUND)
     if(state==="transition" || state==="thinking"){
         resetToIdle();
         return;
@@ -214,24 +202,30 @@ halo.addEventListener("click",()=>{
     state="transition";
     responseBox.innerText="Listening...";
 
-    playTone("click");
+    // Sound #1 (only on first click)
+    playTone(220,300);
 
     animateColor([255,210,80],()=>{
 
         state="thinking";
         responseBox.innerText="Analyzing...";
 
-        playTone("analyzing");
-
         animateColor([0,255,255],()=>{
 
-            playTone("finish");
-
+            // Simulate AI finished speaking
             setTimeout(()=>{
+
                 responseBox.innerText=
                 "I didn’t hear you. Can you please share your hair concerns for a recommendation?";
-                resetToIdle();
-            },1200);
+
+                // Sound #2 only when AI finishes
+                playTone(380,240);
+
+                setTimeout(()=>{
+                    resetToIdle();
+                },500);
+
+            },800);
 
         });
 
