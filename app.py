@@ -41,7 +41,6 @@ body{
     border-radius:50%;
     cursor:pointer;
     backdrop-filter:blur(40px);
-    background:rgba(255,255,255,0.03);
     transition:transform 2s ease;
 }
 
@@ -69,18 +68,18 @@ const responseBox=document.getElementById("response");
 
 let state="idle";
 let locked=false;
-let animationFrame=null;
-
-// INITIAL COLOR (IDLE)
 let currentColor=[0,255,200];
+let activeAnimation=null;
 
 // ===============================
-// TRUE SMOOTH COLOR INTERPOLATION
+// SMOOTH COLOR INTERPOLATION
 // ===============================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
-function animateColor(targetColor,duration=8000,callback=null){
+function animateColor(targetColor,duration=8000,onComplete=null){
+
+    if(activeAnimation) cancelAnimationFrame(activeAnimation);
 
     const startColor=[...currentColor];
     const startTime=performance.now();
@@ -95,22 +94,25 @@ function animateColor(targetColor,duration=8000,callback=null){
 
         halo.style.background=`
             radial-gradient(circle at center,
-                rgba(${r},${g},${b},0.6) 0%,
-                rgba(${r},${g},${b},0.4) 40%,
-                rgba(${r},${g},${b},0.2) 65%,
-                transparent 85%)
+                rgba(${r},${g},${b},0.25) 0%,
+                rgba(${r},${g},${b},0.35) 30%,
+                rgba(${r},${g},${b},0.45) 55%,
+                rgba(${r},${g},${b},0.35) 75%,
+                rgba(${r},${g},${b},0.2) 85%,
+                rgba(${r},${g},${b},0.05) 100%)
         `;
 
         currentColor=[r,g,b];
 
         if(progress<1){
-            requestAnimationFrame(step);
+            activeAnimation=requestAnimationFrame(step);
         }else{
-            if(callback) callback();
+            activeAnimation=null;
+            if(onComplete) onComplete();
         }
     }
 
-    requestAnimationFrame(step);
+    activeAnimation=requestAnimationFrame(step);
 }
 
 // ===============================
@@ -126,10 +128,10 @@ function pulse(){
 }
 
 // ===============================
-// ULTRA SLOW SYNCHRONIZED SOUND
+// ULTRA SLOW SYNCED SOUND
 // ===============================
 
-function playUltraSlowTone(startFreq,endFreq,duration=6){
+function playUltraSlowTone(startFreq,endFreq,duration=8){
 
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
@@ -151,12 +153,13 @@ function playUltraSlowTone(startFreq,endFreq,duration=6){
 }
 
 // ===============================
-// RESET TO TRUE WEBSITE STATE
+// TRUE INSTANT RESET TRIGGER
 // ===============================
 
-function resetToIdle(){
+function resetToIdleInstant(){
 
     state="resetting";
+    locked=true;
 
     playUltraSlowTone(260,180,8);
 
@@ -173,27 +176,32 @@ function resetToIdle(){
 
 halo.addEventListener("click",()=>{
 
+    if(state==="transition" || state==="thinking"){
+        // SECOND CLICK → immediate reset start
+        resetToIdleInstant();
+        return;
+    }
+
     if(locked) return;
+
     locked=true;
     state="transition";
 
     responseBox.innerText="Listening...";
 
-    // GOLD VERY SLOW
     playUltraSlowTone(200,260,8);
 
     animateColor([255,210,80],8000,()=>{
 
+        state="thinking";
         responseBox.innerText="Analyzing...";
 
-        // TEAL VERY SLOW
         playUltraSlowTone(260,330,8);
 
         animateColor([0,255,255],8000,()=>{
-
-            resetToIdle();
-
+            resetToIdleInstant();
         });
+
     });
 
 });
