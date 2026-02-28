@@ -49,17 +49,18 @@ text-align:center;
 font-size:18px;
 }
 
+/* Language Selector */
 #langBox{
 position:absolute;
-top:18px;
+top:20px;
 right:22px;
 }
 
 #langSelect{
-background:rgba(0,0,0,0.7);
+background:rgba(0,0,0,0.6);
 color:white;
 border:1px solid rgba(255,255,255,0.3);
-padding:7px 10px;
+padding:6px 10px;
 border-radius:8px;
 font-size:13px;
 cursor:pointer;
@@ -102,7 +103,12 @@ let recognition=null;
 let transcript="";
 let silenceTimer=null;
 
-/* ================= LOAD VOICES ================= */
+let audioCtx=null;
+let analyser=null;
+let micStream=null;
+let dataArray=null;
+
+/* ================= VOICES ================= */
 
 function loadVoices(){
 return new Promise(resolve=>{
@@ -120,16 +126,15 @@ resolve(voices);
 async function initVoices(){
 let voices=await loadVoices();
 
-/* Lock premium US English voice */
 premiumEnglishVoice =
 voices.find(v=>v.name.includes("Google US English")) ||
 voices.find(v=>v.name.includes("Jenny")) ||
 voices.find(v=>v.lang==="en-US");
 
-updateVoiceSelection();
+updateVoice();
 }
 
-function updateVoiceSelection(){
+function updateVoice(){
 let voices=speechSynthesis.getVoices();
 
 if(selectedLang==="en-US"){
@@ -143,17 +148,124 @@ voices.find(v=>v.lang.startsWith(selectedLang.split("-")[0])) ||
 premiumEnglishVoice;
 }
 
-/* ================= LANGUAGE CHANGE ================= */
-
 langSelect.addEventListener("change",()=>{
 selectedLang=langSelect.value;
-updateVoiceSelection();
+updateVoice();
 });
+
+/* ================= COLOR FADE ================= */
+
+let currentColor=[0,255,200];
+
+function animateColor(target){
+let start=[...currentColor];
+let duration=900;
+let startTime=performance.now();
+
+function frame(now){
+let progress=Math.min((now-startTime)/duration,1);
+
+let r=Math.floor(start[0]+(target[0]-start[0])*progress);
+let g=Math.floor(start[1]+(target[1]-start[1])*progress);
+let b=Math.floor(start[2]+(target[2]-start[2])*progress);
+
+halo.style.boxShadow=
+`0 0 120px rgba(${r},${g},${b},0.9),
+ 0 0 260px rgba(${r},${g},${b},0.6),
+ 0 0 380px rgba(${r},${g},${b},0.4)`;
+
+halo.style.background=
+`radial-gradient(circle, rgba(${r},${g},${b},0.7) 0%, rgba(${r},${g},${b},0.15) 70%)`;
+
+if(progress<1) requestAnimationFrame(frame);
+}
+
+currentColor=target;
+requestAnimationFrame(frame);
+}
+
+animateColor([0,255,200]);
+
+/* ================= PULSE ================= */
+
+function pulse(){
+let scale=1;
+
+if(state==="idle"){
+scale=1+Math.sin(Date.now()*0.002)*0.04;
+}
+
+if(state==="listening" && analyser){
+analyser.getByteTimeDomainData(dataArray);
+let sum=0;
+for(let i=0;i<dataArray.length;i++){
+let val=(dataArray[i]-128)/128;
+sum+=val*val;
+}
+let rms=Math.sqrt(sum/dataArray.length);
+scale=1+Math.min(rms*4,0.35);
+}
+
+if(state==="speaking"){
+scale=1+Math.sin(Date.now()*0.0035)*0.1;
+}
+
+halo.style.transform=`scale(${scale})`;
+requestAnimationFrame(pulse);
+}
+pulse();
+
+/* ================= MIC ================= */
+
+async function initMic(){
+if(audioCtx) return;
+
+audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+let source=audioCtx.createMediaStreamSource(micStream);
+analyser=audioCtx.createAnalyser();
+analyser.fftSize=1024;
+source.connect(analyser);
+dataArray=new Uint8Array(analyser.fftSize);
+}
+
+/* ================= SOUNDS ================= */
+
+/* Intro = 1.5x deeper */
+function playIntro(){
+playTone(250,150,1.4);
+}
+
+/* Outro = original tone */
+function playOutro(){
+playTone(300,180,1.4);
+}
+
+function playTone(startFreq,endFreq,duration){
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+const osc=ctx.createOscillator();
+const gain=ctx.createGain();
+
+osc.type="sine";
+osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(endFreq,ctx.currentTime+duration);
+
+gain.gain.setValueAtTime(0,ctx.currentTime);
+gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+0.2);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+duration);
+
+osc.connect(gain);
+gain.connect(ctx.destination);
+
+osc.start();
+osc.stop(ctx.currentTime+duration);
+}
 
 /* ================= SPEAK ================= */
 
 function speak(text){
 state="speaking";
+animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
@@ -165,74 +277,62 @@ speechSynthesis.cancel();
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
+playOutro();
+animateColor([0,255,200]);
 state="idle";
 };
-}
-
-/* ================= TRANSLATION LAYER ================= */
-
-function translate(text){
-
-const translations={
-"es-ES":{
-"complete":"Formula Exclusiva es tu solución completa todo en uno. Precio: $65.",
-"damage":"Formula Exclusiva fortalece y reconstruye el cabello. Precio: $65.",
-"default":"Describe sequedad, grasa, daño o color."
-},
-"pt-BR":{
-"complete":"Formula Exclusiva é sua solução completa tudo em um. Preço: $65.",
-"damage":"Formula Exclusiva fortalece e reconstrói o cabelo. Preço: $65.",
-"default":"Descreva ressecamento, oleosidade, danos ou cor."
-}
-};
-
-if(selectedLang==="en-US") return null;
-
-if(translations[selectedLang]){
-return translations[selectedLang];
-}
-
-return null;
 }
 
 /* ================= PRODUCT LOGIC ================= */
 
 function chooseProduct(text){
-
 text=text.toLowerCase();
 
-let translation=translate(text);
-
-if(/all.?in.?one|complete|everything/.test(text)){
-if(translation) return translation.complete;
+if(/all.?in.?one|everything|complete/.test(text))
 return "Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.";
-}
 
-if(/damage|weak|break/.test(text)){
-if(translation) return translation.damage;
+if(/damage|weak|break/.test(text))
 return "Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.";
-}
 
-if(translation) return translation.default;
+if(/color|brassy|fade/.test(text))
+return "Gotika restores color vibrancy and tone. Price: $54.";
+
+if(/oily|greasy/.test(text))
+return "Gotero balances excess oil while keeping hydration. Price: $42.";
+
+if(/dry|frizz|brittle/.test(text))
+return "Laciador restores smoothness and softness. Price: $48.";
 
 return "Please describe dryness, oiliness, damage, or color concerns.";
 }
 
 /* ================= LISTEN ================= */
 
-function startListening(){
+async function startListening(){
+await initMic();
+
+playIntro();
+animateColor([255,210,80]);
+state="listening";
+transcript="";
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SpeechRecognition();
 recognition.lang=selectedLang;
 recognition.continuous=true;
-recognition.interimResults=false;
+recognition.interimResults=true;
 
 recognition.onresult=function(event){
+transcript="";
+for(let i=0;i<event.results.length;i++){
+transcript+=event.results[i][0].transcript;
+}
 
-transcript=event.results[0][0].transcript;
+clearTimeout(silenceTimer);
+silenceTimer=setTimeout(()=>{
 recognition.stop();
 processTranscript(transcript);
+},2000);
 };
 
 recognition.start();
@@ -252,8 +352,9 @@ halo.addEventListener("click",()=>{
 if(state==="idle"){
 startListening();
 }else{
-speechSynthesis.cancel();
 if(recognition) recognition.stop();
+speechSynthesis.cancel();
+animateColor([0,255,200]);
 state="idle";
 }
 });
