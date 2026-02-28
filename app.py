@@ -5,23 +5,23 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# ============================================
-# PRODUCT ENGINE (Race Ignored in Logic)
-# ============================================
+# =====================================================
+# PRODUCT ENGINE (NO ETHNICITY LOGIC)
+# =====================================================
 
 PRODUCTS = {
-    "Formula Exclusiva": "An all-in-one natural professional salon hair treatment designed to restore strength, elasticity, and shine.",
-    "Laciador": "A high-performance all-natural professional hair styler that smooths and controls without buildup.",
-    "Gotero": "A precision-formulated natural hair gel designed for structure, scalp control, and oil balance.",
-    "Gotika": "A natural hair color revitalizing treatment that restores vibrancy and brilliance."
+    "Formula Exclusiva": "An advanced all-in-one natural professional salon treatment engineered to rebuild internal structure, repair damage, and restore elasticity and luminosity.",
+    "Laciador": "A precision-crafted natural smoothing styler that deeply hydrates, reduces dryness, and enhances manageability without heaviness.",
+    "Gotero": "A lightweight natural gel system designed for oil regulation, bounce restoration, and controlled structure without residue.",
+    "Gotika": "A botanical-based color revitalizing treatment that restores vibrancy, brilliance, and reflective shine."
 }
 
-def select_product(age, issue):
+def rule_engine(issue: str, age: int):
     issue = issue.lower()
 
-    # Under 16 medical safeguard
+    # Under 16 safeguard
     if age < 16 and "color" in issue:
-        return "Error", "For clients under 16 experiencing loss of color, we recommend consulting a medical professional."
+        return "Error", "For clients under 16 experiencing pigment loss, we recommend consulting a licensed medical professional before cosmetic treatment."
 
     if "dry" in issue:
         return "Laciador", PRODUCTS["Laciador"]
@@ -44,12 +44,12 @@ def select_product(age, issue):
     if "color" in issue:
         return "Gotika", PRODUCTS["Gotika"]
 
-    # Fallback (dynamic knowledge style)
+    # Fallback always picks one product
     return "Formula Exclusiva", PRODUCTS["Formula Exclusiva"]
 
-# ============================================
-# INLINE HTML
-# ============================================
+# =====================================================
+# HTML (FULL STABLE ORB VERSION)
+# =====================================================
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -57,14 +57,15 @@ HTML_PAGE = """
 <head>
 <meta charset="UTF-8">
 <title>AI Hair Orb</title>
+
 <style>
 body{
     margin:0;
-    background:#000;
+    background:black;
     display:flex;
     flex-direction:column;
-    justify-content:center;
     align-items:center;
+    justify-content:center;
     height:100vh;
     overflow:hidden;
     color:white;
@@ -75,7 +76,7 @@ select{
     margin-bottom:20px;
     padding:8px;
     background:black;
-    color:white;
+    color:gold;
     border:1px solid gold;
 }
 
@@ -92,29 +93,35 @@ select{
         0 0 120px rgba(255,215,0,0.15);
     animation: idlePulse 3s infinite ease-in-out;
     cursor:pointer;
+    transition: all 0.3s ease;
 }
 
 @keyframes idlePulse{
-    0%{transform:scale(1);}
-    50%{transform:scale(1.05);}
-    100%{transform:scale(1);}
+    0%{ transform:scale(1); }
+    50%{ transform:scale(1.05); }
+    100%{ transform:scale(1); }
 }
 
-.listening{ animation:listeningPulse .8s infinite ease-in-out; }
+.listening{
+    animation:listeningPulse .8s infinite ease-in-out;
+}
 @keyframes listeningPulse{
-    0%{transform:scale(1);}
-    50%{transform:scale(1.12);}
-    100%{transform:scale(1);}
+    0%{ transform:scale(1); }
+    50%{ transform:scale(1.12); }
+    100%{ transform:scale(1); }
 }
 
-.speaking{ animation:speakingPulse 1s infinite ease-in-out; }
+.speaking{
+    animation:speakingPulse 1s infinite ease-in-out;
+}
 @keyframes speakingPulse{
-    0%{transform:scale(1);}
-    50%{transform:scale(1.15);}
-    100%{transform:scale(1);}
+    0%{ transform:scale(1); }
+    50%{ transform:scale(1.15); }
+    100%{ transform:scale(1); }
 }
 </style>
 </head>
+
 <body>
 
 <select id="continent">
@@ -138,24 +145,30 @@ const orb = document.getElementById("orb")
 const clickSound = document.getElementById("clickSound")
 const completeSound = document.getElementById("completeSound")
 
-let recognition
-let silenceTimer
-let analyzingTimer
-let finalTranscript = ""
+let recognition = null
+let silenceTimer = null
+let analyzingTimer = null
+let transcriptFinal = ""
 let isListening = false
 let isSpeaking = false
 
 function fullReset(){
     if(recognition){
+        recognition.onresult = null
         recognition.stop()
         recognition = null
     }
+
     speechSynthesis.cancel()
     clearTimeout(silenceTimer)
     clearTimeout(analyzingTimer)
-    orb.classList.remove("listening","speaking")
+
+    transcriptFinal = ""
     isListening = false
     isSpeaking = false
+
+    orb.classList.remove("listening")
+    orb.classList.remove("speaking")
 }
 
 function startListening(){
@@ -163,17 +176,20 @@ function startListening(){
     recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
     recognition.continuous = true
     recognition.interimResults = true
+    recognition.lang = "en-US"
 
     recognition.onresult = (event)=>{
         clearTimeout(silenceTimer)
-        finalTranscript = Array.from(event.results)
+
+        transcriptFinal = Array.from(event.results)
             .map(r=>r[0].transcript)
             .join("")
 
         silenceTimer = setTimeout(()=>{
             recognition.stop()
-            startAnalyzing(finalTranscript)
-        },2500)
+            recognition = null
+            startAnalyzing(transcriptFinal)
+        },2500)  // 2.5 sec silence
     }
 
     recognition.start()
@@ -183,18 +199,16 @@ function startListening(){
 
 function startAnalyzing(text){
     orb.classList.remove("listening")
+
     analyzingTimer = setTimeout(()=>{
         fetch("/ask",{
             method:"POST",
             headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({
-                message:text,
-                continent:document.getElementById("continent").value
-            })
+            body:JSON.stringify({ message:text })
         })
         .then(res=>res.json())
         .then(data=>speakResponse(data.reply))
-    },3000)
+    },3000) // 3 sec analyze delay
 }
 
 function speakResponse(text){
@@ -202,15 +216,17 @@ function speakResponse(text){
     const utter = new SpeechSynthesisUtterance(text)
     utter.pitch = 1.2
     utter.rate = 1
+    utter.volume = 1
 
-    utter.onstart=()=>{
-        isSpeaking=true
+    utter.onstart = ()=>{
+        isSpeaking = true
         orb.classList.add("speaking")
     }
 
-    utter.onend=()=>{
-        isSpeaking=false
+    utter.onend = ()=>{
+        isSpeaking = false
         orb.classList.remove("speaking")
+        completeSound.currentTime = 0
         completeSound.play()
     }
 
@@ -222,6 +238,8 @@ orb.addEventListener("click",()=>{
         fullReset()
         return
     }
+
+    clickSound.currentTime = 0
     clickSound.play()
     startListening()
 })
@@ -231,35 +249,31 @@ orb.addEventListener("click",()=>{
 </html>
 """
 
-# ============================================
+# =====================================================
 # ROUTES
-# ============================================
+# =====================================================
 
 @app.route("/")
 def home():
     return HTML_PAGE
 
-
 @app.route("/ask", methods=["POST"])
 def ask():
     data = request.get_json()
     message = data.get("message","")
-    age = 30  # default
-    issue = message
+    age = 30
 
-    product, description = select_product(age, issue)
+    product, desc = rule_engine(message, age)
 
     if product == "Error":
-        return jsonify({"reply": description})
+        return jsonify({"reply": desc})
 
-    reply = f"Based on your concern, I confidently recommend {product}. {description}"
-
+    reply = f"Based on your concern, I confidently recommend {product}. {desc}"
     return jsonify({"reply": reply})
 
-
-# ============================================
-# RENDER PORT
-# ============================================
+# =====================================================
+# RENDER PORT FIX
+# =====================================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT",10000))
