@@ -24,7 +24,7 @@ def home():
 body {
     margin: 0;
     height: 100vh;
-    background: radial-gradient(circle at center, #0f0f0f 0%, #000000 100%);
+    background: radial-gradient(circle at center, #0a0f12 0%, #000000 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -34,31 +34,21 @@ body {
     overflow: hidden;
 }
 
+/* PERFECT SEAMLESS HALO */
 .halo {
-    width: 180px;
-    height: 180px;
+    width: 190px;
+    height: 190px;
     border-radius: 50%;
     cursor: pointer;
     position: relative;
-    background: rgba(255,255,255,0.03);
-    backdrop-filter: blur(8px);
-    transition: transform 0.05s linear, box-shadow 0.05s linear;
-    box-shadow:
-        0 0 30px rgba(0,255,255,0.25),
-        inset 0 0 50px rgba(0,255,255,0.12);
-}
-
-.halo::before {
-    content: "";
-    position: absolute;
-    inset: -14px;
-    border-radius: 50%;
-    background: radial-gradient(circle,
-        rgba(0,255,255,0.5) 0%,
-        rgba(0,255,255,0.25) 40%,
-        rgba(0,255,255,0.08) 70%,
+    transition: all 0.6s ease;
+    background: radial-gradient(circle at center,
+        rgba(0,255,200,0.35) 0%,
+        rgba(0,255,200,0.25) 35%,
+        rgba(0,255,200,0.12) 60%,
+        rgba(0,255,200,0.05) 75%,
         transparent 85%);
-    opacity: 0.7;
+    box-shadow: 0 0 50px rgba(0,255,200,0.35);
 }
 
 #response {
@@ -68,6 +58,7 @@ body {
     font-size: 18px;
     line-height: 1.6;
 }
+
 </style>
 </head>
 <body>
@@ -78,30 +69,119 @@ body {
 <script>
 
 const halo = document.getElementById("halo");
+
+let state = "idle"; // idle | listening | thinking | speaking
+let silenceTimer = null;
 let audioContext;
 let analyser;
 let dataArray;
 let animationId;
 
-let silenceTimer = null;
-const SILENCE_DELAY = 2300;  // 2.3 seconds
-const SILENCE_THRESHOLD = 8; // mic sensitivity
+const SILENCE_DELAY = 2300;
+const SILENCE_THRESHOLD = 8;
+
+/* =========================
+   VIBRANT CLICK SOUND
+========================= */
+function playClickSound() {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(440, ctx.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+
+    gainNode.gain.setValueAtTime(0.3, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.3);
+}
+
+/* =========================
+   COLOR TRANSITIONS
+========================= */
+
+function setColorIdle() {
+    halo.style.background = `radial-gradient(circle at center,
+        rgba(0,255,200,0.35) 0%,
+        rgba(0,255,200,0.25) 40%,
+        rgba(0,255,200,0.1) 70%,
+        transparent 90%)`;
+}
+
+function setColorGold() {
+    halo.style.background = `radial-gradient(circle at center,
+        rgba(255,200,0,0.45) 0%,
+        rgba(255,180,0,0.35) 40%,
+        rgba(255,150,0,0.15) 70%,
+        transparent 90%)`;
+}
+
+function setColorThinking() {
+    halo.style.background = `radial-gradient(circle at center,
+        rgba(0,255,255,0.6) 0%,
+        rgba(0,220,255,0.4) 40%,
+        rgba(0,180,255,0.2) 70%,
+        transparent 90%)`;
+}
+
+/* =========================
+   IDLE PULSE
+========================= */
 
 function idlePulse() {
+    if (state !== "idle") return;
+
     let scale = 1 + Math.sin(Date.now() * 0.002) * 0.03;
     halo.style.transform = `scale(${scale})`;
     requestAnimationFrame(idlePulse);
 }
+
+setColorIdle();
 idlePulse();
 
-halo.addEventListener("click", startRecording);
+/* =========================
+   CLICK BEHAVIOR
+========================= */
+
+halo.addEventListener("click", () => {
+
+    playClickSound();
+
+    if (state !== "idle") {
+        resetToIdle();
+        return;
+    }
+
+    startRecording();
+});
+
+/* =========================
+   RESET
+========================= */
+
+function resetToIdle() {
+    state = "idle";
+    cancelAnimationFrame(animationId);
+    setColorIdle();
+    idlePulse();
+}
+
+/* =========================
+   RECORDING
+========================= */
 
 async function startRecording() {
 
-    cancelAnimationFrame(animationId);
+    state = "listening";
+    setColorGold();
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
@@ -119,6 +199,9 @@ async function startRecording() {
     mediaRecorder.onstop = async () => {
 
         stream.getTracks().forEach(track => track.stop());
+
+        state = "thinking";
+        setColorThinking();
 
         const blob = new Blob(chunks, { type: "audio/webm" });
         const form = new FormData();
@@ -139,22 +222,21 @@ async function startRecording() {
     detectSpeech(mediaRecorder);
 }
 
+/* =========================
+   SPEECH DETECTION
+========================= */
+
 function detectSpeech(mediaRecorder) {
+
     analyser.getByteFrequencyData(dataArray);
 
     let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-    }
-
+    for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
     let volume = sum / dataArray.length;
 
-    // Live mic reactive halo
     let scale = 1 + (volume / 300);
     halo.style.transform = `scale(${scale})`;
-    halo.style.boxShadow = `0 0 ${30 + volume/4}px rgba(0,255,255,0.7)`;
 
-    // Silence detection
     if (volume < SILENCE_THRESHOLD) {
         if (!silenceTimer) {
             silenceTimer = setTimeout(() => {
@@ -172,13 +254,18 @@ function detectSpeech(mediaRecorder) {
     animationId = requestAnimationFrame(() => detectSpeech(mediaRecorder));
 }
 
+/* =========================
+   AI RESPONSE
+========================= */
+
 function playAIResponse(base64Audio) {
+
+    state = "speaking";
 
     const audio = new Audio("data:audio/mp3;base64," + base64Audio);
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
 
     const sourceNode = audioContext.createMediaElementSource(audio);
     sourceNode.connect(analyser);
@@ -187,29 +274,15 @@ function playAIResponse(base64Audio) {
     dataArray = new Uint8Array(analyser.frequencyBinCount);
 
     audio.play();
-    reactToAI();
 
     audio.onended = () => {
+        state = "idle";
+        setColorIdle();
         idlePulse();
     };
 }
 
-function reactToAI() {
-    analyser.getByteFrequencyData(dataArray);
-
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i];
-    }
-
-    let volume = sum / dataArray.length;
-    let scale = 1 + (volume / 300);
-
-    halo.style.transform = `scale(${scale})`;
-    halo.style.boxShadow = `0 0 ${30 + volume/4}px rgba(0,255,150,0.8)`;
-
-    animationId = requestAnimationFrame(reactToAI);
-}
+/* ========================= */
 
 </script>
 </body>
@@ -217,7 +290,7 @@ function reactToAI() {
 """
 
 # =====================================================
-# BACKEND LOGIC
+# BACKEND
 # =====================================================
 
 PRODUCTS = {
@@ -228,62 +301,56 @@ PRODUCTS = {
     "Gotero": {
         "description": "It balances excess oil while keeping your scalp fresh and clean.",
         "price": 29.99
-    },
-    "Formula Exclusiva": {
-        "description": "It repairs damaged strands and strengthens hair from root to tip.",
-        "price": 39.99
-    },
-    "Gotika": {
-        "description": "It protects color-treated hair and enhances vibrancy and glow.",
-        "price": 36.99
     }
 }
 
 def choose_product(text):
     text = text.lower()
     if "dry" in text: return "Laciador"
-    if "damaged" in text: return "Formula Exclusiva"
     if "oily" in text: return "Gotero"
-    if "color" in text: return "Gotika"
     return None
 
 @app.route("/voice", methods=["POST"])
 def voice():
-    if "audio" not in request.files:
-        return jsonify({"error": "No audio"}), 400
+    try:
+        if "audio" not in request.files:
+            return speak("I’m sorry, I didn’t quite catch that. Could you please repeat your hair concern?")
 
-    file = request.files["audio"]
+        file = request.files["audio"]
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
-        file.save(temp_audio.name)
-        audio_path = temp_audio.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
+            file.save(temp_audio.name)
+            audio_path = temp_audio.name
 
-    with open(audio_path, "rb") as audio_file:
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="text"
+        with open(audio_path, "rb") as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text"
+            )
+
+        user_text = transcript.strip()
+
+        if not user_text or len(user_text) < 3:
+            return speak("I’m sorry, I didn’t quite catch that. Could you please repeat your hair concern?")
+
+        product = choose_product(user_text)
+
+        if not product:
+            return speak("Please tell me if your hair is dry or oily so I can recommend the right product.")
+
+        info = PRODUCTS[product]
+
+        message = (
+            f"I recommend {product}. "
+            f"{info['description']} "
+            f"With tax and shipping, you're looking at ${info['price']}."
         )
 
-    user_text = transcript.strip()
+        return speak(message)
 
-    if not user_text or len(user_text) < 3:
-        return speak("I didn't hear anything. Please try again.")
-
-    product = choose_product(user_text)
-
-    if not product:
-        return speak("Please tell me your hair concern like dry, damaged, oily, or color-treated.")
-
-    info = PRODUCTS[product]
-
-    message = (
-        f"I recommend {product}. "
-        f"{info['description']} "
-        f"With tax and shipping, you're looking at ${info['price']}."
-    )
-
-    return speak(message)
+    except Exception:
+        return speak("I’m sorry, something went wrong. Please try again.")
 
 def speak(message):
     speech = client.audio.speech.create(
