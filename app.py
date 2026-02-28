@@ -93,23 +93,24 @@ const halo = document.getElementById("halo");
 const responseBox = document.getElementById("response");
 const langSelect = document.getElementById("langSelect");
 
-let selectedLang = "en-US";
-let recognition;
+let selectedLang="en-US";
+let recognition=null;
 let state="idle";
 let transcript="";
-let silenceTimer;
+let silenceTimer=null;
+let noSpeechTimer=null;
 
 let audioCtx, analyser, micStream, dataArray;
 
 let premiumVoice;
 
-/* ================= INITIAL GLOW ================= */
+/* ================= COLOR SYSTEM ================= */
 
 let currentColor=[0,255,200];
 
 function animateColor(target){
 let start=[...currentColor];
-let duration=1000;
+let duration=800;
 let startTime=performance.now();
 
 function frame(now){
@@ -169,7 +170,6 @@ pulse();
 
 async function initMic(){
 if(audioCtx) return;
-
 audioCtx=new (window.AudioContext||window.webkitAudioContext)();
 micStream=await navigator.mediaDevices.getUserMedia({audio:true});
 let source=audioCtx.createMediaStreamSource(micStream);
@@ -185,39 +185,30 @@ function playTone(start,end,duration){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
-
 osc.type="sine";
 osc.frequency.setValueAtTime(start,ctx.currentTime);
 osc.frequency.exponentialRampToValueAtTime(end,ctx.currentTime+duration);
-
 gain.gain.setValueAtTime(0,ctx.currentTime);
 gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+0.2);
 gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+duration);
-
 osc.connect(gain);
 gain.connect(ctx.destination);
-
 osc.start();
 osc.stop(ctx.currentTime+duration);
 }
 
-/* intro deeper */
 function playIntro(){ playTone(250,150,1.4); }
-
-/* outro original */
 function playOutro(){ playTone(300,180,1.4); }
 
 /* ================= VOICE ================= */
 
 function loadVoice(){
 let voices=speechSynthesis.getVoices();
-
 premiumVoice =
 voices.find(v=>v.name.includes("Google US English")) ||
 voices.find(v=>v.lang==="en-US") ||
 voices[0];
 }
-
 speechSynthesis.onvoiceschanged=loadVoice;
 loadVoice();
 
@@ -250,6 +241,9 @@ state="idle";
 
 function chooseProduct(text){
 text=text.toLowerCase();
+
+if(!text || text.length<3)
+return "I didn’t hear anything. Please describe dryness, oiliness, damage, or color concerns.";
 
 if(/all.?in.?one|complete|everything/.test(text))
 return "Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.";
@@ -294,18 +288,33 @@ transcript+=event.results[i][0].transcript;
 clearTimeout(silenceTimer);
 silenceTimer=setTimeout(()=>{
 recognition.stop();
-processTranscript(transcript);
 },2000);
 };
 
+recognition.onend=()=>{
+clearTimeout(silenceTimer);
+processTranscript(transcript);
+};
+
 recognition.start();
+
+/* Failsafe: if absolutely nothing detected */
+noSpeechTimer=setTimeout(()=>{
+if(state==="listening"){
+recognition.stop();
 }
+},4000);
+}
+
+/* ================= PROCESS ================= */
 
 function processTranscript(text){
 let result=chooseProduct(text);
 responseBox.innerText=result;
 speak(result);
 }
+
+/* ================= CLICK ================= */
 
 halo.addEventListener("click",()=>{
 if(state==="idle"){
