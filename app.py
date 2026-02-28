@@ -73,9 +73,33 @@ let analyser=null;
 let micStream=null;
 let dataArray=null;
 
-// ================= COLOR =================
+// ================= PREMIUM VOICE SELECTION =================
 
-let color=[0,255,200];
+function getPremiumVoice(){
+let voices=speechSynthesis.getVoices();
+
+let priorityOrder=[
+"Google US English",
+"Microsoft Jenny",
+"Microsoft Aria",
+"Samantha"
+];
+
+for(let name of priorityOrder){
+let found=voices.find(v=>v.name.includes(name));
+if(found) return found;
+}
+
+// fallback any en-US neural
+let us=voices.find(v=>v.lang==="en-US");
+if(us) return us;
+
+return voices[0];
+}
+
+speechSynthesis.onvoiceschanged=()=>{};
+
+// ================= COLOR =================
 
 function setColor(r,g,b){
 halo.style.boxShadow=`
@@ -83,7 +107,8 @@ halo.style.boxShadow=`
 0 0 260px rgba(${r},${g},${b},0.6),
 0 0 380px rgba(${r},${g},${b},0.4)
 `;
-halo.style.background=`radial-gradient(circle, rgba(${r},${g},${b},0.6) 0%, rgba(${r},${g},${b},0.2) 70%)`;
+halo.style.background=
+`radial-gradient(circle, rgba(${r},${g},${b},0.65) 0%, rgba(${r},${g},${b},0.2) 70%)`;
 }
 
 setColor(0,255,200);
@@ -99,7 +124,6 @@ scale=1+Math.sin(Date.now()*0.002)*0.04;
 
 if(state==="listening" && analyser){
 analyser.getByteTimeDomainData(dataArray);
-
 let sum=0;
 for(let i=0;i<dataArray.length;i++){
 let val=(dataArray[i]-128)/128;
@@ -110,7 +134,7 @@ scale=1+Math.min(rms*4,0.35);
 }
 
 if(state==="speaking"){
-scale=1+Math.sin(Date.now()*0.004)*0.12;
+scale=1+Math.sin(Date.now()*0.0035)*0.10;
 }
 
 halo.style.transform=`scale(${scale})`;
@@ -132,15 +156,19 @@ source.connect(analyser);
 dataArray=new Uint8Array(analyser.fftSize);
 }
 
-// ================= VOICE =================
+// ================= PREMIUM SPEAK =================
 
 function speak(text){
 state="speaking";
 setColor(0,200,255);
 
 let utter=new SpeechSynthesisUtterance(text);
-utter.rate=0.95;
-utter.pitch=1.02;
+utter.voice=getPremiumVoice();
+
+// Premium human pacing
+utter.rate=0.92;   // slightly slower
+utter.pitch=1.05;  // slightly warmer
+utter.volume=1;
 
 speechSynthesis.speak(utter);
 
