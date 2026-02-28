@@ -10,47 +10,34 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# STRONGER SYSTEM PROMPT
+# SYSTEM PROMPT
 # =====================================================
 
 def build_system_prompt(language):
     return f"""
 You are a luxury AI hair advisor.
 
-You MUST follow this decision hierarchy strictly.
+Follow this strict hierarchy:
 
-PRODUCT LOGIC (in priority order):
-
-1️⃣ DRY / DULL / GLOW / SHINE / SLEEK / FRIZZ / EVENT / STYLING
-→ Primary recommendation: Laciador ($34.99)
-
-2️⃣ OILY / GREASY SCALP
-→ Primary recommendation: Gotero ($29.99)
-
-3️⃣ THIN / FLAT / FALLING OUT / HAIR LOSS
-→ Primary recommendation: Volumizer ($39.99)
-
-4️⃣ RESTORATIVE / DAMAGE REPAIR / MULTIPLE PROBLEMS / ALL-IN-ONE
-→ Primary recommendation: Formula Exclusiva ($49.99)
+1. Dry / Glow / Shine / Frizz / Sleek / Event → Laciador ($34.99)
+2. Oily / Greasy → Gotero ($29.99)
+3. Thin / Falling out / Flat → Volumizer ($39.99)
+4. Restorative / Damage / Multiple problems → Formula Exclusiva ($49.99)
 
 Rules:
-
-• If user mentions dry hair → ALWAYS Laciador.
-• If user mentions glow or shine → ALWAYS Laciador.
-• If user mentions curls needing bounce → Laciador primary, optionally suggest Formula Exclusiva as secondary nourishment.
-• If multiple distinct problems → Formula Exclusiva primary.
-• Never confuse glow with volume.
-• Never confuse restorative with volumizing.
-• Always include price.
-• Always respond strictly in {language}.
-• Tone must feel premium, confident, and luxurious.
+- Glow NEVER equals volume.
+- Restorative NEVER equals volumizing.
+- Dry hair ALWAYS → Laciador.
+- Always include price.
+- Respond only in {language}.
+- Premium luxury tone.
 """
 
 # =====================================================
 # FRONTEND
 # =====================================================
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
     return """
 <!DOCTYPE html>
@@ -65,32 +52,22 @@ body{
     justify-content:center;
     align-items:center;
     flex-direction:column;
-    background:radial-gradient(circle at center,#0b1114 0%,#000 100%);
+    background:#000;
     font-family:Arial;
     color:white;
-}
-select{
-    position:absolute;
-    top:20px;
-    right:20px;
-    padding:8px;
-    background:#111;
-    color:white;
-    border:1px solid #444;
 }
 .halo{
     width:240px;
     height:240px;
     border-radius:50%;
     cursor:pointer;
-    transform:scale(1);
-    transition:background 3s ease, box-shadow 3s ease, transform 3s ease;
-    background:radial-gradient(circle at center,
-        rgba(0,255,200,0.4) 0%,
-        rgba(0,255,200,0.2) 50%,
-        rgba(0,255,200,0.1) 75%,
+    transition:all 2.5s ease;
+    background:radial-gradient(circle,
+        rgba(0,255,200,0.5) 0%,
+        rgba(0,255,200,0.25) 60%,
+        rgba(0,255,200,0.1) 80%,
         transparent 95%);
-    box-shadow:0 0 120px rgba(0,255,200,0.5);
+    box-shadow:0 0 140px rgba(0,255,200,0.6);
 }
 #response{
     margin-top:40px;
@@ -102,144 +79,174 @@ select{
 </head>
 <body>
 
-<select id="language">
-<option value="English">English</option>
-<option value="Spanish">Spanish</option>
-<option value="French">French</option>
-<option value="Portuguese">Portuguese</option>
-<option value="Arabic">Arabic</option>
-<option value="German">German</option>
-</select>
-
 <div id="halo" class="halo"></div>
-<div id="response">Tap the ring and describe your hair concern.</div>
+<div id="response">Tap and describe your concern.</div>
 
 <script>
 
-const halo=document.getElementById("halo");
-const languageSelect=document.getElementById("language");
+const halo = document.getElementById("halo");
+const responseBox = document.getElementById("response");
 
-let state="idle";
-let analyser, mediaRecorder, stream;
-let silenceTimer;
-let audioElement=null;
+let state = "idle";
+let stream = null;
+let recorder = null;
+let audioEl = null;
+let analyser = null;
+let silenceTimer = null;
+let fetchController = null;
 
-const idleColor=[0,255,200];
-const gold=[255,200,0];
-const teal=[0,255,255];
+const idleColor = [0,255,200];
+const gold = [255,200,0];
+const teal = [0,255,255];
 
-function setColor(rgb,intensity=0.5){
-    halo.style.background=`radial-gradient(circle at center,
+function setColor(rgb,intensity=0.6){
+    halo.style.background=`radial-gradient(circle,
         rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}) 0%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.6}) 50%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.3}) 75%,
-        transparent 95%)`;
-    halo.style.boxShadow=`0 0 ${140+intensity*200}px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7)`;
+        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}) 60%,
+        rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.1) 85%,
+        transparent 100%)`;
+    halo.style.boxShadow=`0 0 180px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7)`;
 }
 
-function idlePulse(){
-    if(state!=="idle") return;
-    let scale=1+Math.sin(Date.now()*0.0015)*0.02;
-    halo.style.transform=`scale(${scale})`;
-    requestAnimationFrame(idlePulse);
+function hardReset(){
+
+    state="idle";
+
+    if(fetchController){
+        fetchController.abort();
+        fetchController=null;
+    }
+
+    if(audioEl){
+        audioEl.pause();
+        audioEl=null;
+    }
+
+    if(recorder){
+        try{ recorder.stop(); }catch{}
+        recorder=null;
+    }
+
+    if(stream){
+        stream.getTracks().forEach(t=>t.stop());
+        stream=null;
+    }
+
+    silenceTimer=null;
+
+    setColor(idleColor,0.6);
 }
-idlePulse();
 
 halo.addEventListener("click",()=>{
-    if(state!=="idle") return;
-    startRecording();
+
+    if(state==="idle"){
+        startRecording();
+    }else{
+        hardReset();
+    }
 });
 
 async function startRecording(){
 
+    hardReset();
     state="listening";
     setColor(gold,0.9);
 
-    stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    analyser=ctx.createAnalyser();
-    analyser.fftSize=256;
-    const source=ctx.createMediaStreamSource(stream);
-    source.connect(analyser);
+    stream = await navigator.mediaDevices.getUserMedia({audio:true});
 
-    mediaRecorder=new MediaRecorder(stream);
+    recorder = new MediaRecorder(stream);
     let chunks=[];
-    mediaRecorder.ondataavailable=e=>chunks.push(e.data);
 
-    mediaRecorder.onstop=async()=>{
+    recorder.ondataavailable=e=>chunks.push(e.data);
+
+    recorder.onstop=async()=>{
+
         state="thinking";
         setColor(teal,0.8);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
         form.append("audio",blob);
-        form.append("language",languageSelect.value);
 
-        const res=await fetch("/voice",{method:"POST",body:form});
+        fetchController = new AbortController();
+
+        const res=await fetch("/voice",{
+            method:"POST",
+            body:form,
+            signal:fetchController.signal
+        });
+
         const data=await res.json();
 
-        document.getElementById("response").innerText=data.text;
+        responseBox.innerText=data.text;
 
-        speakAI(data.audio);
+        speak(data.audio);
     };
 
-    mediaRecorder.start();
+    recorder.start();
     detectSilence();
 }
 
 function detectSilence(){
-    if(!analyser)return;
-    const data=new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(data);
-    let sum=0;
-    for(let i=0;i<data.length;i++) sum+=data[i];
-    let volume=sum/data.length;
 
-    if(volume<6){
-        if(!silenceTimer){
-            silenceTimer=setTimeout(()=>{
-                if(mediaRecorder && mediaRecorder.state==="recording"){
-                    mediaRecorder.stop();
-                }
-            },2000);
+    const ctx=new AudioContext();
+    analyser=ctx.createAnalyser();
+    const src=ctx.createMediaStreamSource(stream);
+    src.connect(analyser);
+    analyser.fftSize=256;
+
+    function loop(){
+
+        if(state!=="listening") return;
+
+        const data=new Uint8Array(analyser.frequencyBinCount);
+        analyser.getByteFrequencyData(data);
+        const volume=data.reduce((a,b)=>a+b)/data.length;
+
+        if(volume<5){
+            if(!silenceTimer){
+                silenceTimer=setTimeout(()=>{
+                    if(recorder && recorder.state==="recording"){
+                        recorder.stop();
+                    }
+                },2000);
+            }
+        }else{
+            clearTimeout(silenceTimer);
+            silenceTimer=null;
         }
-    }else{
-        clearTimeout(silenceTimer);
-        silenceTimer=null;
+
+        requestAnimationFrame(loop);
     }
 
-    if(state==="listening") requestAnimationFrame(detectSilence);
+    loop();
 }
 
-function speakAI(base64Audio){
+function speak(b64){
 
     state="speaking";
-    setColor(teal,1.0);
+    setColor(teal,1);
 
-    audioElement=new Audio("data:audio/mp3;base64,"+base64Audio);
-    audioElement.volume=0;
+    audioEl=new Audio("data:audio/mp3;base64,"+b64);
+    audioEl.volume=0;
+    audioEl.play();
 
-    audioElement.play();
-
-    // Slow fade in
     let fadeIn=setInterval(()=>{
-        if(audioElement.volume<1){
-            audioElement.volume+=0.05;
+        if(audioEl.volume<1){
+            audioEl.volume+=0.05;
         }else{
             clearInterval(fadeIn);
         }
     },100);
 
-    audioElement.onended=()=>{
-        // Fade out
+    audioEl.onended=()=>{
+
         let fadeOut=setInterval(()=>{
-            if(audioElement.volume>0.05){
-                audioElement.volume-=0.05;
+            if(audioEl.volume>0.05){
+                audioEl.volume-=0.05;
             }else{
                 clearInterval(fadeOut);
-                state="idle";
-                setColor(idleColor,0.5);
-                idlePulse();
+                hardReset();
             }
         },100);
     };
@@ -257,44 +264,58 @@ function speakAI(base64Audio){
 @app.route("/voice",methods=["POST"])
 def voice():
 
-    language=request.form.get("language","English")
+    try:
+        file=request.files["audio"]
 
-    file=request.files["audio"]
-    with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
-        file.save(temp.name)
-        path=temp.name
+        with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
+            file.save(temp.name)
+            path=temp.name
 
-    with open(path,"rb") as audio_file:
-        transcript=client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-            response_format="text"
+        with open(path,"rb") as audio_file:
+            transcript=client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                response_format="text"
+            )
+
+        os.remove(path)
+
+        user_text=transcript.strip()
+
+        # Ignore accidental noise like "you're welcome"
+        if len(user_text.split()) < 3:
+            return jsonify({
+                "text":"I didn't quite catch that. Please describe your hair concern.",
+                "audio":""
+            })
+
+        completion=client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role":"system","content":build_system_prompt("English")},
+                {"role":"user","content":user_text}
+            ],
+            temperature=0.3
         )
 
-    user_text=transcript.strip()
-    os.remove(path)
+        ai_message=completion.choices[0].message.content
 
-    completion=client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role":"system","content":build_system_prompt(language)},
-            {"role":"user","content":user_text}
-        ],
-        temperature=0.3
-    )
+        speech=client.audio.speech.create(
+            model="gpt-4o-mini-tts",
+            voice="alloy",
+            input=ai_message
+        )
 
-    ai_message=completion.choices[0].message.content
+        audio_bytes=speech.read()
+        audio_base64=base64.b64encode(audio_bytes).decode("utf-8")
 
-    speech=client.audio.speech.create(
-        model="gpt-4o-mini-tts",
-        voice="alloy",
-        input=ai_message
-    )
+        return jsonify({"text":ai_message,"audio":audio_base64})
 
-    audio_bytes=speech.read()
-    audio_base64=base64.b64encode(audio_bytes).decode("utf-8")
-
-    return jsonify({"text":ai_message,"audio":audio_base64})
+    except Exception:
+        return jsonify({
+            "text":"Please try again.",
+            "audio":""
+        })
 
 
 if __name__=="__main__":
