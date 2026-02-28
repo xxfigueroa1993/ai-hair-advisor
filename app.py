@@ -36,37 +36,17 @@ body{
     align-items:center;
 }
 
-/* MASSIVE BLURRED OUTER HALO */
-.outerGlow{
-    position:absolute;
-    width:360px;
-    height:360px;
-    border-radius:50%;
-    pointer-events:none;
-    filter:blur(110px);
-    opacity:0.9;
-    transition:background 2.8s ease;
-}
-
-/* TRUE THICK RING (transparent inside) */
-.ring{
-    position:absolute;
-    width:300px;
-    height:300px;
-    border-radius:50%;
-    pointer-events:none;
-    transition:box-shadow 2.8s ease;
-}
-
-/* GLASS INNER ORB */
+/* ONE SINGLE TRANSPARENT GLOWING ORB */
 .halo{
-    width:220px;
-    height:220px;
+    width:280px;
+    height:280px;
     border-radius:50%;
     cursor:pointer;
-    backdrop-filter:blur(25px);
-    background:rgba(255,255,255,0.05);
-    transition:transform 0.3s ease;
+    background:rgba(255,255,255,0.03);
+    backdrop-filter:blur(30px);
+    transition:
+        box-shadow 4s ease,
+        transform 2s ease;
 }
 
 #response{
@@ -81,8 +61,6 @@ body{
 <body>
 
 <div class="wrapper">
-    <div id="outerGlow" class="outerGlow"></div>
-    <div id="ring" class="ring"></div>
     <div id="halo" class="halo"></div>
 </div>
 
@@ -91,121 +69,119 @@ body{
 <script>
 
 const halo=document.getElementById("halo");
-const ring=document.getElementById("ring");
-const outerGlow=document.getElementById("outerGlow");
 const responseBox=document.getElementById("response");
 
 let state="idle";
 let locked=false;
-let phaseTimer1=null;
-let phaseTimer2=null;
+let timers=[];
 
 // COLORS
 const idle=[0,255,200];
 const gold=[255,210,80];
 const teal=[0,255,255];
 
-// =================================
-// APPLY GLOW TO THICK RING
-// =================================
+// ================================
+// APPLY SUPER SOFT HALO GLOW
+// ================================
 
-function applyGlow(rgb,intensity=0.6){
+function applyGlow(rgb,intensity=0.5){
 
-    ring.style.boxShadow=
-        `0 0 0 25px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity})`;
-
-    outerGlow.style.background=
-        `radial-gradient(circle,
-            rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7) 0%,
-            rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4) 40%,
-            transparent 80%)`;
+    halo.style.boxShadow=
+        `
+        0 0 60px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}),
+        0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}),
+        0 0 200px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.3})
+        `;
 }
 
-// =================================
-// IDLE PULSE
-// =================================
+// ================================
+// WHOLE ORB PULSE
+// ================================
 
 function pulseLoop(){
     if(state==="idle"){
-        let scale=1+Math.sin(Date.now()*0.0018)*0.05;
+        let scale=1+Math.sin(Date.now()*0.001)*0.05;
         halo.style.transform=`scale(${scale})`;
-    }else{
-        halo.style.transform="scale(1)";
     }
     requestAnimationFrame(pulseLoop);
 }
 
-// =================================
-// SLOWER LUXURY CLICK SOUND
-// =================================
+// ================================
+// VERY SLOW SYNCHRONIZED SOUND
+// ================================
 
-function playClick(){
+function playSlowTone(targetFreq){
+
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
     const gain=ctx.createGain();
 
     osc.type="sine";
-    osc.frequency.setValueAtTime(300,ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(180,ctx.currentTime+0.35);
 
-    gain.gain.setValueAtTime(0.12,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.4);
+    osc.frequency.setValueAtTime(targetFreq+100,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(targetFreq,ctx.currentTime+2.5);
+
+    gain.gain.setValueAtTime(0.15,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+3);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime+0.4);
+    osc.stop(ctx.currentTime+3);
 }
 
-// =================================
-// HARD RESET → THEN SLOW FADE TO IDLE
-// =================================
+// ================================
+// RESET TO WEBSITE OPEN STATE
+// ================================
 
 function resetToIdle(){
 
-    clearTimeout(phaseTimer1);
-    clearTimeout(phaseTimer2);
+    timers.forEach(t=>clearTimeout(t));
+    timers=[];
 
-    locked=false;
     state="idle";
 
-    // Immediately stop pulse jump
-    halo.style.transform="scale(1)";
-
-    // Slow fade back to idle color
+    // SUPER SLOW fade back
     applyGlow(idle,0.6);
+    playSlowTone(200);
+
+    setTimeout(()=>{
+        locked=false; // unlock only AFTER fade completes
+    },4000);
 
     responseBox.innerText="Tap and describe your hair concern.";
 }
 
-// =================================
+// ================================
 // CLICK HANDLER
-// =================================
+// ================================
 
 halo.addEventListener("click",()=>{
 
-    playClick();
-
-    // SECOND CLICK → FORCE RESET
-    if(locked){
-        resetToIdle();
-        return;
-    }
+    if(locked) return;
 
     locked=true;
-    state="listening";
-    applyGlow(gold,0.75);
+    state="transition";
 
-    phaseTimer1=setTimeout(()=>{
+    // SLOW GOLD TRANSITION
+    applyGlow(gold,0.7);
+    playSlowTone(260);
+
+    timers.push(setTimeout(()=>{
+
+        // SLOW TEAL TRANSITION
         state="thinking";
         applyGlow(teal,0.85);
+        playSlowTone(320);
 
-        phaseTimer2=setTimeout(()=>{
+        timers.push(setTimeout(()=>{
+
             resetToIdle();
-        },3500);
 
-    },2500);
+        },4500));
+
+    },4500));
 });
 
 // INIT
