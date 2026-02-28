@@ -10,45 +10,35 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# PRODUCT DATABASE (ONLY 4 PRODUCTS)
+# PRODUCT SYSTEM (4 PRODUCTS ONLY)
 # =====================================================
-
-PRODUCTS = {
-    "Laciador": 34.99,
-    "Gotero": 29.99,
-    "Volumizer": 39.99,
-    "Formula Exclusiva": 49.99
-}
 
 SYSTEM_PROMPT = """
 You are a luxury AI hair advisor.
 
 You ONLY recommend one of these 4 products:
-- Laciador
-- Gotero
-- Volumizer
-- Formula Exclusiva
+- Laciador ($34.99)
+- Gotero ($29.99)
+- Volumizer ($39.99)
+- Formula Exclusiva ($49.99)
 
 Rules:
-
 • Frizz / Dry / Damage → Laciador
 • Oily / Greasy → Gotero
 • Thin / Flat / Falling Out → Volumizer
-• Multiple problems OR All-in-one request → Formula Exclusiva
+• Multiple problems OR All-in-one → Formula Exclusiva
 
 IMPORTANT:
 - NEVER invent product names.
-- ALWAYS include the price in your answer.
-- ALWAYS respond in the SAME language the user speaks.
-- If unclear, guide them in their language:
-  Say something like:
-  "I didn’t quite understand. You can say things like Frizz, Dry, Oily, Falling Out, or ask for an all-in-one solution."
-- Keep tone premium and confident.
+- ALWAYS include the price.
+- ALWAYS respond in the SAME language as the user.
+- If unclear, guide them politely in their language:
+  Suggest keywords like Frizz, Dry, Oily, Falling Out, or All-in-One.
+- Tone must feel premium and confident.
 """
 
-
 # =====================================================
-# FRONTEND (Reactive + Cinematic + Audio Pulse)
+# FRONTEND
 # =====================================================
 
 @app.route("/", methods=["GET"])
@@ -99,10 +89,8 @@ body{
 <script>
 const halo=document.getElementById("halo");
 let state="idle";
-let analyser=null;
-let mediaRecorder=null;
-let stream=null;
-let silenceTimer=null;
+let analyser, mediaRecorder, stream;
+let silenceTimer;
 
 const SILENCE_DELAY=2000;
 const SILENCE_THRESHOLD=6;
@@ -120,24 +108,6 @@ function setColor(rgb,intensity=0.4){
     halo.style.boxShadow=`0 0 ${80+intensity*120}px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6)`;
 }
 
-function reactivePulse(analyserNode,color){
-    const data=new Uint8Array(analyserNode.frequencyBinCount);
-    analyserNode.getByteFrequencyData(data);
-
-    let sum=0;
-    for(let i=0;i<data.length;i++)sum+=data[i];
-    let volume=sum/data.length;
-    let intensity=Math.min(volume/100,1);
-    let scale=1+intensity*0.3;
-
-    halo.style.transform=`scale(${scale})`;
-    setColor(color,0.4+intensity*0.5);
-
-    if(state==="listening"||state==="speaking"){
-        requestAnimationFrame(()=>reactivePulse(analyserNode,color));
-    }
-}
-
 function idlePulse(){
     if(state!=="idle")return;
     let scale=1+Math.sin(Date.now()*0.002)*0.03;
@@ -146,14 +116,60 @@ function idlePulse(){
 }
 idlePulse();
 
+/* =========================
+   PREMIUM CLICK SOUND
+========================= */
+function playClickSound(){
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+
+    osc.type="sine";
+    osc.frequency.setValueAtTime(520,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(780,ctx.currentTime+0.6);
+
+    gain.gain.setValueAtTime(0.0001,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.3,ctx.currentTime+0.4);
+    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+1.2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime+1.2);
+}
+
+/* =========================
+   PREMIUM OUTRO SOUND
+========================= */
+function playOutroSound(){
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const osc=ctx.createOscillator();
+    const gain=ctx.createGain();
+
+    osc.type="triangle";
+    osc.frequency.setValueAtTime(640,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(320,ctx.currentTime+1.8);
+
+    gain.gain.setValueAtTime(0.25,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+2.2);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime+2.2);
+}
+
+/* ========================= */
+
 halo.addEventListener("click",()=>{
     if(state!=="idle")return;
+    playClickSound();
     startRecording();
 });
 
 async function startRecording(){
     state="listening";
-    setColor(gold,0.6);
+    setColor(gold,0.7);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -168,7 +184,7 @@ async function startRecording(){
 
     mediaRecorder.onstop=async()=>{
         state="thinking";
-        setColor(teal,0.8);
+        setColor(teal,0.9);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -177,12 +193,10 @@ async function startRecording(){
         const res=await fetch("/voice",{method:"POST",body:form});
         const data=await res.json();
         document.getElementById("response").innerText=data.text;
-
         speakAI(data.audio);
     };
 
     mediaRecorder.start();
-    reactivePulse(analyser,gold);
     detectSilence();
 }
 
@@ -190,6 +204,7 @@ function detectSilence(){
     if(!analyser)return;
     const data=new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
+
     let sum=0;
     for(let i=0;i<data.length;i++)sum+=data[i];
     let volume=sum/data.length;
@@ -212,18 +227,10 @@ function detectSilence(){
 function speakAI(base64Audio){
     state="speaking";
     const audio=new Audio("data:audio/mp3;base64,"+base64Audio);
-
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const source=ctx.createMediaElementSource(audio);
-    const aiAnalyser=ctx.createAnalyser();
-    aiAnalyser.fftSize=256;
-    source.connect(aiAnalyser);
-    aiAnalyser.connect(ctx.destination);
-
     audio.play();
-    reactivePulse(aiAnalyser,teal);
 
     audio.onended=()=>{
+        playOutroSound();
         state="idle";
         setColor(idleColor,0.4);
         idlePulse();
@@ -234,9 +241,8 @@ function speakAI(base64Audio){
 </html>
 """
 
-
 # =====================================================
-# AI ENDPOINT (SMART MULTI-LANGUAGE BRAIN)
+# VOICE ENDPOINT
 # =====================================================
 
 @app.route("/voice",methods=["POST"])
@@ -264,9 +270,7 @@ def voice():
     )
 
     ai_message=completion.choices[0].message.content
-
     return speak(ai_message)
-
 
 def speak(message):
     speech=client.audio.speech.create(
@@ -277,7 +281,6 @@ def speak(message):
     audio_bytes=speech.read()
     audio_base64=base64.b64encode(audio_bytes).decode("utf-8")
     return jsonify({"text":message,"audio":audio_base64})
-
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT",10000))
