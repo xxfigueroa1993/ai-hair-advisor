@@ -48,9 +48,35 @@ width:75%;
 text-align:center;
 font-size:18px;
 }
+
+/* 🌍 Languages Top Right */
+#languages{
+position:absolute;
+top:15px;
+right:20px;
+font-size:12px;
+line-height:18px;
+text-align:right;
+color:rgba(255,255,255,0.75);
+letter-spacing:0.5px;
+}
+
+#languages span{
+display:block;
+opacity:0.8;
+}
 </style>
 </head>
 <body>
+
+<div id="languages">
+<span>North America: English, Spanish</span>
+<span>South America: Spanish, Portuguese</span>
+<span>Europe: English, Spanish, French, German</span>
+<span>Africa: Arabic, French, English</span>
+<span>Asia: Mandarin, Hindi, Arabic</span>
+<span>Oceania: English</span>
+</div>
 
 <div class="wrapper">
 <div id="halo"></div>
@@ -93,9 +119,7 @@ resolve(speechSynthesis.getVoices());
 
 async function initVoice(){
 let voices=await loadVoices();
-
 let priority=["Google US English","Microsoft Jenny","Microsoft Aria","Samantha"];
-
 for(let name of priority){
 let found=voices.find(v=>v.name.includes(name));
 if(found){
@@ -103,7 +127,6 @@ premiumVoice=found;
 return;
 }
 }
-
 premiumVoice=voices.find(v=>v.lang==="en-US") || voices[0];
 }
 
@@ -112,7 +135,6 @@ premiumVoice=voices.find(v=>v.lang==="en-US") || voices[0];
 let currentColor=[0,255,200];
 
 function animateColor(target){
-
 let start=[...currentColor];
 let duration=1000;
 let startTime=performance.now();
@@ -184,10 +206,9 @@ source.connect(analyser);
 dataArray=new Uint8Array(analyser.fftSize);
 }
 
-// ================= FADE AUDIO =================
+// ================= AUDIO FX =================
 
 function playTone(startFreq,endFreq,duration){
-
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
@@ -213,16 +234,13 @@ function playOutro(){ playTone(180,300,1.4); }
 // ================= SPEAK =================
 
 function speak(text){
-
 state="speaking";
 animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 if(premiumVoice) utter.voice=premiumVoice;
-
 utter.rate=0.90;
 utter.pitch=1.05;
-utter.volume=1;
 
 speechSynthesis.speak(utter);
 
@@ -277,7 +295,6 @@ speak(result);
 // ================= LISTEN =================
 
 async function startListening(){
-
 await initMic();
 await initVoice();
 
