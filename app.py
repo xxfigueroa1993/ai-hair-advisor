@@ -11,6 +11,7 @@ def home():
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Luxury Hair AI</title>
+
 <style>
 body{
 margin:0;
@@ -24,6 +25,7 @@ font-family:Arial;
 color:white;
 overflow:hidden;
 }
+
 .wrapper{
 width:380px;
 height:380px;
@@ -31,6 +33,7 @@ display:flex;
 justify-content:center;
 align-items:center;
 }
+
 #halo{
 width:280px;
 height:280px;
@@ -38,6 +41,7 @@ border-radius:50%;
 cursor:pointer;
 transition:transform 0.05s linear;
 }
+
 #response{
 margin-top:30px;
 width:75%;
@@ -72,12 +76,12 @@ let dataArray=null;
 
 let premiumVoice=null;
 
-// ================= FORCE VOICE LOAD =================
+// ================= VOICE LOADING =================
 
 function loadVoices(){
 return new Promise(resolve=>{
 let voices=speechSynthesis.getVoices();
-if(voices.length!==0){
+if(voices.length){
 resolve(voices);
 }else{
 speechSynthesis.onvoiceschanged=()=>{
@@ -90,14 +94,9 @@ resolve(speechSynthesis.getVoices());
 async function initVoice(){
 let voices=await loadVoices();
 
-let preferredOrder=[
-"Google US English",
-"Microsoft Jenny",
-"Microsoft Aria",
-"Samantha"
-];
+let priority=["Google US English","Microsoft Jenny","Microsoft Aria","Samantha"];
 
-for(let name of preferredOrder){
+for(let name of priority){
 let found=voices.find(v=>v.name.includes(name));
 if(found){
 premiumVoice=found;
@@ -105,22 +104,42 @@ return;
 }
 }
 
-// fallback to any natural US voice
 premiumVoice=voices.find(v=>v.lang==="en-US") || voices[0];
 }
 
-// ================= COLOR =================
+// ================= SMOOTH COLOR FADE =================
 
-function setColor(r,g,b){
-halo.style.boxShadow=`
-0 0 120px rgba(${r},${g},${b},0.9),
-0 0 260px rgba(${r},${g},${b},0.6),
-0 0 380px rgba(${r},${g},${b},0.4)
-`;
+let currentColor=[0,255,200];
+
+function animateColor(target){
+
+let start=[...currentColor];
+let duration=1000;
+let startTime=performance.now();
+
+function frame(now){
+let progress=Math.min((now-startTime)/duration,1);
+
+let r=Math.floor(start[0]+(target[0]-start[0])*progress);
+let g=Math.floor(start[1]+(target[1]-start[1])*progress);
+let b=Math.floor(start[2]+(target[2]-start[2])*progress);
+
+halo.style.boxShadow=
+`0 0 120px rgba(${r},${g},${b},0.9),
+ 0 0 260px rgba(${r},${g},${b},0.6),
+ 0 0 380px rgba(${r},${g},${b},0.4)`;
+
 halo.style.background=
 `radial-gradient(circle, rgba(${r},${g},${b},0.65) 0%, rgba(${r},${g},${b},0.2) 70%)`;
+
+if(progress<1) requestAnimationFrame(frame);
 }
-setColor(0,255,200);
+
+currentColor=target;
+requestAnimationFrame(frame);
+}
+
+animateColor([0,255,200]);
 
 // ================= PULSE =================
 
@@ -165,16 +184,42 @@ source.connect(analyser);
 dataArray=new Uint8Array(analyser.fftSize);
 }
 
+// ================= FADE AUDIO =================
+
+function playTone(startFreq,endFreq,duration){
+
+const ctx=new (window.AudioContext||window.webkitAudioContext)();
+const osc=ctx.createOscillator();
+const gain=ctx.createGain();
+
+osc.type="sine";
+osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(endFreq,ctx.currentTime+duration);
+
+gain.gain.setValueAtTime(0,ctx.currentTime);
+gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+0.2);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+duration);
+
+osc.connect(gain);
+gain.connect(ctx.destination);
+
+osc.start();
+osc.stop(ctx.currentTime+duration);
+}
+
+function playIntro(){ playTone(300,180,1.4); }
+function playOutro(){ playTone(180,300,1.4); }
+
 // ================= SPEAK =================
 
 function speak(text){
+
 state="speaking";
-setColor(0,200,255);
+animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 if(premiumVoice) utter.voice=premiumVoice;
 
-// premium pacing
 utter.rate=0.90;
 utter.pitch=1.05;
 utter.volume=1;
@@ -182,7 +227,8 @@ utter.volume=1;
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
-setColor(0,255,200);
+playOutro();
+animateColor([0,255,200]);
 state="idle";
 };
 }
@@ -217,11 +263,13 @@ if(!text || text.length<3){
 speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
 return;
 }
+
 let result=chooseProduct(text);
 if(!result){
 speak("I didn't quite understand. Could you describe dryness, oiliness, damage or color concerns?");
 return;
 }
+
 responseBox.innerText=result;
 speak(result);
 }
@@ -233,8 +281,9 @@ async function startListening(){
 await initMic();
 await initVoice();
 
+playIntro();
+animateColor([255,210,80]);
 state="listening";
-setColor(255,210,80);
 transcript="";
 
 const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -276,7 +325,7 @@ startListening();
 }else{
 if(recognition) recognition.stop();
 speechSynthesis.cancel();
-setColor(0,255,200);
+animateColor([0,255,200]);
 state="idle";
 }
 });
