@@ -5,10 +5,6 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
 
-# =====================================================
-# FRONTEND
-# =====================================================
-
 @app.route("/")
 def home():
     return """
@@ -28,37 +24,49 @@ body{
     background:#05080a;
     font-family:Arial;
     color:white;
+    overflow:hidden;
 }
 
 .wrapper{
     position:relative;
-    width:340px;
-    height:340px;
+    width:360px;
+    height:360px;
     display:flex;
     justify-content:center;
     align-items:center;
 }
 
-/* Thick luxury outer halo */
+/* MASSIVE BLURRED OUTER HALO */
 .outerGlow{
     position:absolute;
-    width:340px;
-    height:340px;
+    width:360px;
+    height:360px;
     border-radius:50%;
     pointer-events:none;
-    filter:blur(90px);
+    filter:blur(110px);
     opacity:0.9;
-    transition:background 2.5s ease;
+    transition:background 2.8s ease;
 }
 
-/* Inner glass orb */
+/* TRUE THICK RING (transparent inside) */
+.ring{
+    position:absolute;
+    width:300px;
+    height:300px;
+    border-radius:50%;
+    pointer-events:none;
+    transition:box-shadow 2.8s ease;
+}
+
+/* GLASS INNER ORB */
 .halo{
-    width:260px;
-    height:260px;
+    width:220px;
+    height:220px;
     border-radius:50%;
     cursor:pointer;
     backdrop-filter:blur(25px);
-    transition:background 2.5s ease, transform 0.3s ease;
+    background:rgba(255,255,255,0.05);
+    transition:transform 0.3s ease;
 }
 
 #response{
@@ -74,6 +82,7 @@ body{
 
 <div class="wrapper">
     <div id="outerGlow" class="outerGlow"></div>
+    <div id="ring" class="ring"></div>
     <div id="halo" class="halo"></div>
 </div>
 
@@ -82,113 +91,125 @@ body{
 <script>
 
 const halo=document.getElementById("halo");
+const ring=document.getElementById("ring");
 const outerGlow=document.getElementById("outerGlow");
 const responseBox=document.getElementById("response");
 
 let state="idle";
 let locked=false;
+let phaseTimer1=null;
+let phaseTimer2=null;
 
 // COLORS
 const idle=[0,255,200];
 const gold=[255,210,80];
 const teal=[0,255,255];
 
-// ==============================================
-// APPLY GLOW
-// ==============================================
+// =================================
+// APPLY GLOW TO THICK RING
+// =================================
 
-function applyGlow(rgb,intensity=0.5){
+function applyGlow(rgb,intensity=0.6){
 
-    halo.style.background=`
-    radial-gradient(circle at center,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}) 0%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}) 50%,
-        transparent 100%)`;
+    ring.style.boxShadow=
+        `0 0 0 25px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity})`;
 
-    outerGlow.style.background=`
-    radial-gradient(circle,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.65) 0%,
-        rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.35) 45%,
-        transparent 80%)`;
+    outerGlow.style.background=
+        `radial-gradient(circle,
+            rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7) 0%,
+            rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.4) 40%,
+            transparent 80%)`;
 }
 
-// ==============================================
-// IDLE PULSE LOOP
-// ==============================================
+// =================================
+// IDLE PULSE
+// =================================
 
 function pulseLoop(){
     if(state==="idle"){
-        let scale=1+Math.sin(Date.now()*0.002)*0.04;
+        let scale=1+Math.sin(Date.now()*0.0018)*0.05;
         halo.style.transform=`scale(${scale})`;
-    } else {
+    }else{
         halo.style.transform="scale(1)";
     }
     requestAnimationFrame(pulseLoop);
 }
 
-// ==============================================
-// CLICK SOUND (Web Audio - reliable)
-// ==============================================
+// =================================
+// SLOWER LUXURY CLICK SOUND
+// =================================
 
 function playClick(){
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
     const gain=ctx.createGain();
+
     osc.type="sine";
-    osc.frequency.value=520;
-    gain.gain.value=0.08;
+    osc.frequency.setValueAtTime(300,ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(180,ctx.currentTime+0.35);
+
+    gain.gain.setValueAtTime(0.12,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.4);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime+0.07);
+    osc.stop(ctx.currentTime+0.4);
 }
 
-// ==============================================
-// FULL RESET TO WEBSITE-OPEN STATE
-// ==============================================
+// =================================
+// HARD RESET → THEN SLOW FADE TO IDLE
+// =================================
 
 function resetToIdle(){
-    state="idle";
+
+    clearTimeout(phaseTimer1);
+    clearTimeout(phaseTimer2);
+
     locked=false;
-    applyGlow(idle,0.4);
+    state="idle";
+
+    // Immediately stop pulse jump
+    halo.style.transform="scale(1)";
+
+    // Slow fade back to idle color
+    applyGlow(idle,0.6);
+
     responseBox.innerText="Tap and describe your hair concern.";
 }
 
-// ==============================================
+// =================================
 // CLICK HANDLER
-// ==============================================
+// =================================
 
 halo.addEventListener("click",()=>{
 
     playClick();
 
-    if(!locked){
-
-        locked=true;
-        state="listening";
-        applyGlow(gold,0.75);
-
-        // Simulate AI cycle
-        setTimeout(()=>{
-            state="thinking";
-            applyGlow(teal,0.85);
-
-            setTimeout(()=>{
-                resetToIdle();
-            },3000);
-
-        },2000);
-
-    } else {
-        // Second click forces full reset
+    // SECOND CLICK → FORCE RESET
+    if(locked){
         resetToIdle();
+        return;
     }
+
+    locked=true;
+    state="listening";
+    applyGlow(gold,0.75);
+
+    phaseTimer1=setTimeout(()=>{
+        state="thinking";
+        applyGlow(teal,0.85);
+
+        phaseTimer2=setTimeout(()=>{
+            resetToIdle();
+        },3500);
+
+    },2500);
 });
 
-// INIT STATE
-applyGlow(idle,0.4);
+// INIT
+applyGlow(idle,0.6);
 pulseLoop();
 
 </script>
