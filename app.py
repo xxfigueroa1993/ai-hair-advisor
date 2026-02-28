@@ -5,27 +5,22 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# =====================================================
-# PRODUCT DEFINITIONS
-# =====================================================
+# ============================================================
+# PRODUCT SYSTEM (Layered – Does NOT interfere with orb)
+# ============================================================
 
 PRODUCTS = {
-    "Formula Exclusiva": "An advanced all-in-one natural professional salon treatment engineered to rebuild structure, repair damage, and restore elasticity and brilliance.",
-    "Laciador": "A precision-crafted natural smoothing styler that deeply hydrates, eliminates dryness, and enhances manageability without heaviness.",
-    "Gotero": "A lightweight natural gel system designed for oil balance, bounce restoration, and controlled structure without residue.",
+    "Formula Exclusiva": "An advanced all-in-one natural professional salon treatment designed to rebuild internal structure, repair damage, and restore elasticity and brilliance.",
+    "Laciador": "A precision natural smoothing styler that deeply hydrates, eliminates dryness, and enhances manageability without weight.",
+    "Gotero": "A lightweight natural gel system engineered for oil balance, bounce restoration, and controlled structure.",
     "Gotika": "A botanical-based color revitalizing treatment that restores vibrancy, shine, and reflective luminosity."
 }
 
-# =====================================================
-# RULE ENGINE (NO ETHNICITY LOGIC)
-# =====================================================
-
-def select_product(issue: str, age: int):
+def choose_product(issue: str, age: int):
     issue = issue.lower()
 
-    # Under 16 safeguard
     if age < 16 and "color" in issue:
-        return "Error"
+        return "MEDICAL"
 
     if "dry" in issue:
         return "Laciador"
@@ -42,42 +37,42 @@ def select_product(issue: str, age: int):
     if "color" in issue:
         return "Gotika"
 
-    # Guaranteed fallback
-    return "Formula Exclusiva"
+    return "Formula Exclusiva"  # guaranteed fallback
 
-# =====================================================
-# HTML (Stable Orb Version Restored)
-# =====================================================
 
-HTML_PAGE = """
+# ============================================================
+# HTML (ORIGINAL STABLE ORB ARCHITECTURE RESTORED)
+# ============================================================
+
+HTML = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
 <title>AI Hair Orb</title>
-
 <style>
 body{
     margin:0;
-    background:black;
+    background:#000;
     display:flex;
     flex-direction:column;
-    align-items:center;
     justify-content:center;
+    align-items:center;
     height:100vh;
     overflow:hidden;
-    color:white;
     font-family:Arial;
+    color:white;
 }
 
 select{
-    margin-bottom:20px;
-    padding:8px;
+    margin-bottom:25px;
+    padding:10px;
     background:black;
     color:gold;
     border:1px solid gold;
 }
 
+/* ===== ORB BASE (YOUR PERFECT TRANSPARENCY) ===== */
 .orb{
     width:220px;
     height:220px;
@@ -90,23 +85,31 @@ select{
         0 0 60px rgba(255,215,0,0.25),
         0 0 120px rgba(255,215,0,0.15);
     animation: idlePulse 3s infinite ease-in-out;
+    transition: all 0.2s ease;
     cursor:pointer;
 }
 
+/* Deep idle pulse */
 @keyframes idlePulse{
     0%{transform:scale(1);}
     50%{transform:scale(1.05);}
     100%{transform:scale(1);}
 }
 
-.listening{animation:listeningPulse .8s infinite ease-in-out;}
+/* Listening pulse */
+.listening{
+    animation:listeningPulse .8s infinite ease-in-out;
+}
 @keyframes listeningPulse{
     0%{transform:scale(1);}
     50%{transform:scale(1.12);}
     100%{transform:scale(1);}
 }
 
-.speaking{animation:speakingPulse 1s infinite ease-in-out;}
+/* Speaking pulse */
+.speaking{
+    animation:speakingPulse 1s infinite ease-in-out;
+}
 @keyframes speakingPulse{
     0%{transform:scale(1);}
     50%{transform:scale(1.15);}
@@ -139,71 +142,78 @@ const completeSound = document.getElementById("completeSound")
 
 let recognition=null
 let silenceTimer=null
-let analyzingTimer=null
-let transcriptFinal=""
-let isListening=false
-let isSpeaking=false
+let analyzeTimer=null
+let transcript=""
+let listening=false
+let speaking=false
 
-function fullReset(){
+// ===== HARD RESET =====
+function resetAll(){
     if(recognition){
         recognition.stop()
         recognition=null
     }
     speechSynthesis.cancel()
     clearTimeout(silenceTimer)
-    clearTimeout(analyzingTimer)
-    transcriptFinal=""
-    isListening=false
-    isSpeaking=false
+    clearTimeout(analyzeTimer)
+    transcript=""
+    listening=false
+    speaking=false
     orb.classList.remove("listening","speaking")
 }
 
+// ===== START LISTENING =====
 function startListening(){
-    recognition=new(window.SpeechRecognition||window.webkitSpeechRecognition)()
+    recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)()
     recognition.continuous=true
     recognition.interimResults=true
 
-    recognition.onresult=(event)=>{
+    recognition.onresult=(e)=>{
         clearTimeout(silenceTimer)
-        transcriptFinal=Array.from(event.results)
+
+        transcript = Array.from(e.results)
             .map(r=>r[0].transcript)
             .join("")
+
         silenceTimer=setTimeout(()=>{
             recognition.stop()
-            startAnalyzing(transcriptFinal)
-        },2500)
+            analyze(transcript)
+        },2500)   // 2.5 second silence
     }
 
     recognition.start()
-    isListening=true
+    listening=true
     orb.classList.add("listening")
 }
 
-function startAnalyzing(text){
+// ===== ANALYZE DELAY =====
+function analyze(text){
     orb.classList.remove("listening")
-    analyzingTimer=setTimeout(()=>{
+
+    analyzeTimer=setTimeout(()=>{
         fetch("/ask",{
             method:"POST",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({message:text})
         })
         .then(res=>res.json())
-        .then(data=>speakResponse(data.reply))
-    },3000)
+        .then(data=>speak(data.reply))
+    },3000)   // 3 second delay
 }
 
-function speakResponse(text){
+// ===== SPEAK =====
+function speak(text){
     const utter=new SpeechSynthesisUtterance(text)
     utter.pitch=1.2
     utter.rate=1
 
     utter.onstart=()=>{
-        isSpeaking=true
+        speaking=true
         orb.classList.add("speaking")
     }
 
     utter.onend=()=>{
-        isSpeaking=false
+        speaking=false
         orb.classList.remove("speaking")
         completeSound.currentTime=0
         completeSound.play()
@@ -212,11 +222,13 @@ function speakResponse(text){
     speechSynthesis.speak(utter)
 }
 
+// ===== CLICK HANDLER =====
 orb.addEventListener("click",()=>{
-    if(isListening||isSpeaking){
-        fullReset()
+    if(listening || speaking){
+        resetAll()
         return
     }
+
     clickSound.currentTime=0
     clickSound.play()
     startListening()
@@ -227,40 +239,37 @@ orb.addEventListener("click",()=>{
 </html>
 """
 
-# =====================================================
+# ============================================================
 # ROUTES
-# =====================================================
+# ============================================================
 
 @app.route("/")
 def home():
-    return HTML_PAGE
+    return HTML
 
 @app.route("/ask", methods=["POST"])
 def ask():
     data=request.get_json()
     message=data.get("message","")
-    age=30  # You can later replace with parsed input
+    age=30
 
-    product=select_product(message, age)
+    product=choose_product(message,age)
 
-    if product=="Error":
-        return jsonify({"reply":"For clients under 16 experiencing pigment loss, we recommend consulting a medical professional before cosmetic treatment."})
+    if product=="MEDICAL":
+        return jsonify({"reply":"For clients under 16 experiencing pigment loss, we recommend consulting a licensed medical professional before cosmetic treatment."})
 
-    # OpenAI generates professional explanation but product is hard-set
-    ai_response=client.chat.completions.create(
+    ai = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role":"system","content":"You are a confident, bright-toned professional salon hair expert."},
-            {"role":"user","content":f"Client concern: {message}. Explain why {product} is the ideal solution in a professional salon FAQ tone."}
+            {"role":"user","content":f"Client concern: {message}. Recommend {product} and explain why in a high-end salon FAQ tone."}
         ]
     )
 
-    explanation=ai_response.choices[0].message.content
+    return jsonify({"reply":ai.choices[0].message.content})
 
-    return jsonify({"reply":explanation})
-
-# =====================================================
+# ============================================================
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT",10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0",port=port)
