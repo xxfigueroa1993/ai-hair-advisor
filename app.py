@@ -9,35 +9,35 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# =====================================================
-# SYSTEM PROMPT (UNCHANGED LOGIC)
-# =====================================================
+# =========================
+# SYSTEM PROMPT (UNCHANGED)
+# =========================
 
 def build_system_prompt(language):
     return f"""
 You are a luxury AI hair advisor.
 
 You ONLY recommend one of these 4 products:
-- Laciador ($34.99)  → smoothing / styling / frizz / events / sleek look
-- Gotero ($29.99)    → oily / greasy scalp
-- Volumizer ($39.99) → thin / flat / falling out / no bounce
-- Formula Exclusiva ($49.99) → multiple problems or all-in-one request
+- Laciador ($34.99)
+- Gotero ($29.99)
+- Volumizer ($39.99)
+- Formula Exclusiva ($49.99)
 
 Interpretation:
-• If user mentions event, party, wedding, date, special occasion, styling,
-  polished look, sleek → Recommend Laciador.
-• Multiple concerns → Formula Exclusiva.
+• Event / styling / sleek look → Laciador
+• Oily → Gotero
+• Thin / falling out → Volumizer
+• Multiple issues → Formula Exclusiva
 
-Rules:
-- NEVER invent product names.
-- ALWAYS include price.
-- ALWAYS respond strictly in {language}.
-- Tone must feel premium, confident, emotionally supportive.
+Always:
+- Include price
+- Respond strictly in {language}
+- Keep tone premium and emotionally supportive
 """
 
-# =====================================================
+# =========================
 # FRONTEND
-# =====================================================
+# =========================
 
 @app.route("/", methods=["GET"])
 def home():
@@ -54,7 +54,7 @@ body{
     justify-content:center;
     align-items:center;
     flex-direction:column;
-    background:radial-gradient(circle at center,#0b1114 0%,#000 100%);
+    background:#000;
     font-family:Arial;
     color:white;
 }
@@ -73,11 +73,6 @@ select{
     border-radius:50%;
     cursor:pointer;
     transform:scale(1);
-    background:radial-gradient(circle at center,
-        rgba(0,255,200,0.2) 0%,
-        rgba(0,255,200,0.1) 50%,
-        transparent 90%);
-    box-shadow:0 0 40px rgba(0,255,200,0.3);
 }
 #response{
     margin-top:40px;
@@ -102,46 +97,60 @@ select{
 <div id="response">Tap the ring and describe your hair concern.</div>
 
 <script>
-const halo=document.getElementById("halo");
-const languageSelect=document.getElementById("language");
 
-let state="idle";
+const halo = document.getElementById("halo");
+const languageSelect = document.getElementById("language");
+
+let state = "idle";
 let analyser, mediaRecorder, stream;
 let silenceTimer;
 
-const SILENCE_DELAY=2000;
-const SILENCE_THRESHOLD=6;
+const SILENCE_DELAY = 2000;
+const SILENCE_THRESHOLD = 6;
 
-const idleColor=[0,255,200];
-const gold=[255,200,0];
-const teal=[0,255,255];
+const idleColor = [0,255,200];
+const gold = [255,200,0];
+const teal = [0,255,255];
 
-let currentIntensity=0.2;
-let targetIntensity=0.2;
-let currentColor=idleColor;
+let currentColor = [...idleColor];
+let targetColor = [...idleColor];
 
-function animateColor(){
-    currentIntensity += (targetIntensity - currentIntensity)*0.05;
+let currentIntensity = 0.15;
+let targetIntensity = 0.15;
 
-    halo.style.background=`radial-gradient(circle at center,
+// TRUE RGB INTERPOLATION
+function lerp(a,b,t){
+    return a + (b - a) * t;
+}
+
+function animateVisual(){
+    // Smooth intensity
+    currentIntensity = lerp(currentIntensity, targetIntensity, 0.03);
+
+    // Smooth RGB
+    for(let i=0;i<3;i++){
+        currentColor[i] = lerp(currentColor[i], targetColor[i], 0.03);
+    }
+
+    halo.style.background = `radial-gradient(circle at center,
         rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${currentIntensity}) 0%,
         rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${currentIntensity*0.5}) 50%,
         transparent 90%)`;
 
-    halo.style.boxShadow=`0 0 ${40+currentIntensity*140}px rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},0.6)`;
+    halo.style.boxShadow = `0 0 ${40 + currentIntensity*160}px rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},0.7)`;
 
-    requestAnimationFrame(animateColor);
+    requestAnimationFrame(animateVisual);
 }
-animateColor();
+animateVisual();
 
-function transitionTo(color,intensity){
-    currentColor=color;
-    targetIntensity=intensity;
+function transitionTo(color, intensity){
+    targetColor = [...color];
+    targetIntensity = intensity;
 }
 
-/* ========================
-   INTRO SOUND (SLOW SWELL)
-======================== */
+/* =========================
+   INTRO SOUND
+========================= */
 function playIntroSound(){
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
@@ -149,22 +158,21 @@ function playIntroSound(){
 
     osc.type="sine";
     osc.frequency.setValueAtTime(500,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(720,ctx.currentTime+1.0);
+    osc.frequency.linearRampToValueAtTime(750,ctx.currentTime+1.0);
 
     gain.gain.setValueAtTime(0.0001,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.3,ctx.currentTime+0.8);
-    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+1.6);
+    gain.gain.linearRampToValueAtTime(0.3,ctx.currentTime+1.0);
+    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+1.8);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
-
     osc.start();
-    osc.stop(ctx.currentTime+1.6);
+    osc.stop(ctx.currentTime+1.8);
 }
 
-/* ========================
-   OUTRO SOUND (SLOW DESCEND)
-======================== */
+/* =========================
+   OUTRO SOUND
+========================= */
 function playOutroSound(){
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
@@ -172,19 +180,16 @@ function playOutroSound(){
 
     osc.type="triangle";
     osc.frequency.setValueAtTime(650,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+2.0);
+    osc.frequency.linearRampToValueAtTime(280,ctx.currentTime+2.2);
 
     gain.gain.setValueAtTime(0.25,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+2.2);
+    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+2.5);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
-
     osc.start();
-    osc.stop(ctx.currentTime+2.2);
+    osc.stop(ctx.currentTime+2.5);
 }
-
-/* ======================== */
 
 halo.addEventListener("click",()=>{
     if(state!=="idle")return;
@@ -194,7 +199,7 @@ halo.addEventListener("click",()=>{
 
 async function startRecording(){
     state="listening";
-    transitionTo(gold,0.9);
+    transitionTo(gold, 1.0);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -209,7 +214,7 @@ async function startRecording(){
 
     mediaRecorder.onstop=async()=>{
         state="thinking";
-        transitionTo(teal,1.0);
+        transitionTo(teal, 1.1);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -231,6 +236,7 @@ function detectSilence(){
     if(!analyser)return;
     const data=new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
+
     let sum=0;
     for(let i=0;i<data.length;i++)sum+=data[i];
     let volume=sum/data.length;
@@ -257,18 +263,19 @@ function speakAI(base64Audio){
 
     audio.onended=()=>{
         playOutroSound();
-        transitionTo(idleColor,0.2);
+        transitionTo(idleColor, 0.15);
         state="idle";
     };
 }
+
 </script>
 </body>
 </html>
 """
 
-# =====================================================
-# BACKEND VOICE
-# =====================================================
+# =========================
+# BACKEND
+# =========================
 
 @app.route("/voice",methods=["POST"])
 def voice():
@@ -286,13 +293,11 @@ def voice():
             response_format="text"
         )
 
-    user_text=transcript.strip()
-
     completion=client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role":"system","content":build_system_prompt(language)},
-            {"role":"user","content":user_text}
+            {"role":"user","content":transcript.strip()}
         ]
     )
 
