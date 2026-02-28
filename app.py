@@ -16,160 +16,208 @@ client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 @app.route("/", methods=["GET"])
 def home():
     return """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>AI Hair Advisor</title>
-        <style>
-            body {
-                margin: 0;
-                height: 100vh;
-                background: radial-gradient(circle at center, #0f0f0f 0%, #000000 100%);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex-direction: column;
-                font-family: Arial;
-                color: white;
-                overflow: hidden;
-            }
+<!DOCTYPE html>
+<html>
+<head>
+<title>AI Hair Advisor</title>
+<style>
+body {
+    margin: 0;
+    height: 100vh;
+    background: radial-gradient(circle at center, #0f0f0f 0%, #000000 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    font-family: Arial;
+    color: white;
+    overflow: hidden;
+}
 
-            .halo {
-                width: 180px;
-                height: 180px;
-                border-radius: 50%;
-                cursor: pointer;
-                position: relative;
-                background: rgba(255,255,255,0.02);
-                backdrop-filter: blur(4px);
-                box-shadow:
-                    0 0 30px rgba(0,255,255,0.25),
-                    inset 0 0 40px rgba(0,255,255,0.15);
-                transition: all 0.3s ease;
-            }
+.halo {
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    cursor: pointer;
+    position: relative;
+    background: rgba(255,255,255,0.03);
+    backdrop-filter: blur(8px);
+    transition: transform 0.05s linear, box-shadow 0.05s linear;
+    box-shadow:
+        0 0 30px rgba(0,255,255,0.25),
+        inset 0 0 50px rgba(0,255,255,0.12);
+}
 
-            /* Seamless outer glow ring */
-            .halo::before {
-                content: "";
-                position: absolute;
-                inset: -8px;
-                border-radius: 50%;
-                background: radial-gradient(circle,
-                    rgba(0,255,255,0.4) 0%,
-                    rgba(0,255,255,0.2) 40%,
-                    rgba(0,255,255,0.05) 70%,
-                    transparent 80%);
-                opacity: 0.6;
-            }
+.halo::before {
+    content: "";
+    position: absolute;
+    inset: -14px;
+    border-radius: 50%;
+    background: radial-gradient(circle,
+        rgba(0,255,255,0.5) 0%,
+        rgba(0,255,255,0.25) 40%,
+        rgba(0,255,255,0.08) 70%,
+        transparent 85%);
+    opacity: 0.7;
+}
 
-            .idle {
-                animation: idlePulse 2.5s infinite ease-in-out;
-            }
+#response {
+    margin-top: 40px;
+    width: 70%;
+    text-align: center;
+    font-size: 18px;
+    line-height: 1.6;
+}
+</style>
+</head>
+<body>
 
-            .recording {
-                animation: recordPulse 1.2s infinite ease-in-out;
-            }
+<div id="halo" class="halo"></div>
+<div id="response">Tap the ring and ask about your hair.</div>
 
-            .speaking {
-                animation: speakPulse 1s infinite ease-in-out;
-            }
+<script>
 
-            @keyframes idlePulse {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.05); }
-                100% { transform: scale(1); }
-            }
+const halo = document.getElementById("halo");
+let audioContext;
+let analyser;
+let dataArray;
+let animationId;
 
-            @keyframes recordPulse {
-                0% { transform: scale(1); box-shadow: 0 0 40px cyan; }
-                50% { transform: scale(1.15); box-shadow: 0 0 70px cyan; }
-                100% { transform: scale(1); box-shadow: 0 0 40px cyan; }
-            }
+let silenceTimer = null;
+const SILENCE_DELAY = 2300;  // 2.3 seconds
+const SILENCE_THRESHOLD = 8; // mic sensitivity
 
-            @keyframes speakPulse {
-                0% { transform: scale(1); box-shadow: 0 0 40px lime; }
-                50% { transform: scale(1.12); box-shadow: 0 0 70px lime; }
-                100% { transform: scale(1); box-shadow: 0 0 40px lime; }
-            }
+function idlePulse() {
+    let scale = 1 + Math.sin(Date.now() * 0.002) * 0.03;
+    halo.style.transform = `scale(${scale})`;
+    requestAnimationFrame(idlePulse);
+}
+idlePulse();
 
-            #response {
-                margin-top: 40px;
-                font-size: 18px;
-                width: 70%;
-                text-align: center;
-                line-height: 1.6;
-            }
-        </style>
-    </head>
-    <body>
+halo.addEventListener("click", startRecording);
 
-        <div id="halo" class="halo idle"></div>
-        <div id="response">Tap the ring and ask about your hair.</div>
+async function startRecording() {
 
-        <script>
+    cancelAnimationFrame(animationId);
 
-        let recorder;
-        let chunks = [];
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-        const halo = document.getElementById("halo");
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
 
-        halo.addEventListener("click", record);
+    const source = audioContext.createMediaStreamSource(stream);
+    source.connect(analyser);
 
-        async function record() {
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
 
-            halo.classList.remove("idle", "speaking");
-            halo.classList.add("recording");
+    const mediaRecorder = new MediaRecorder(stream);
+    let chunks = [];
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            recorder = new MediaRecorder(stream);
-            chunks = [];
+    mediaRecorder.ondataavailable = e => chunks.push(e.data);
 
-            recorder.ondataavailable = e => chunks.push(e.data);
+    mediaRecorder.onstop = async () => {
 
-            recorder.onstop = async () => {
+        stream.getTracks().forEach(track => track.stop());
 
-                const blob = new Blob(chunks, { type: "audio/webm" });
-                const form = new FormData();
-                form.append("audio", blob);
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const form = new FormData();
+        form.append("audio", blob);
 
-                const res = await fetch("/voice", {
-                    method: "POST",
-                    body: form
-                });
+        const res = await fetch("/voice", {
+            method: "POST",
+            body: form
+        });
 
-                const data = await res.json();
-                document.getElementById("response").innerText = data.text;
+        const data = await res.json();
+        document.getElementById("response").innerText = data.text;
 
-                halo.classList.remove("recording");
-                halo.classList.add("speaking");
+        playAIResponse(data.audio);
+    };
 
-                if (data.audio) {
-                    const audio = new Audio("data:audio/mp3;base64," + data.audio);
-                    audio.play();
+    mediaRecorder.start();
+    detectSpeech(mediaRecorder);
+}
 
-                    audio.onended = () => {
-                        halo.classList.remove("speaking");
-                        halo.classList.add("idle");
-                    };
-                }
-            };
+function detectSpeech(mediaRecorder) {
+    analyser.getByteFrequencyData(dataArray);
 
-            recorder.start();
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+    }
 
-            // 6 seconds = speaking time + 2-3 sec grace delay
-            setTimeout(() => {
-                recorder.stop();
-            }, 6000);
+    let volume = sum / dataArray.length;
+
+    // Live mic reactive halo
+    let scale = 1 + (volume / 300);
+    halo.style.transform = `scale(${scale})`;
+    halo.style.boxShadow = `0 0 ${30 + volume/4}px rgba(0,255,255,0.7)`;
+
+    // Silence detection
+    if (volume < SILENCE_THRESHOLD) {
+        if (!silenceTimer) {
+            silenceTimer = setTimeout(() => {
+                mediaRecorder.stop();
+                silenceTimer = null;
+            }, SILENCE_DELAY);
         }
+    } else {
+        if (silenceTimer) {
+            clearTimeout(silenceTimer);
+            silenceTimer = null;
+        }
+    }
 
-        </script>
+    animationId = requestAnimationFrame(() => detectSpeech(mediaRecorder));
+}
 
-    </body>
-    </html>
-    """
+function playAIResponse(base64Audio) {
+
+    const audio = new Audio("data:audio/mp3;base64," + base64Audio);
+
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 256;
+
+    const sourceNode = audioContext.createMediaElementSource(audio);
+    sourceNode.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    audio.play();
+    reactToAI();
+
+    audio.onended = () => {
+        idlePulse();
+    };
+}
+
+function reactToAI() {
+    analyser.getByteFrequencyData(dataArray);
+
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+    }
+
+    let volume = sum / dataArray.length;
+    let scale = 1 + (volume / 300);
+
+    halo.style.transform = `scale(${scale})`;
+    halo.style.boxShadow = `0 0 ${30 + volume/4}px rgba(0,255,150,0.8)`;
+
+    animationId = requestAnimationFrame(reactToAI);
+}
+
+</script>
+</body>
+</html>
+"""
 
 # =====================================================
-# PRODUCT DATABASE
+# BACKEND LOGIC
 # =====================================================
 
 PRODUCTS = {
@@ -191,31 +239,16 @@ PRODUCTS = {
     }
 }
 
-# =====================================================
-# RULE ENGINE
-# =====================================================
-
 def choose_product(text):
     text = text.lower()
-
-    if "dry" in text:
-        return "Laciador"
-    if "damaged" in text:
-        return "Formula Exclusiva"
-    if "oily" in text:
-        return "Gotero"
-    if "color" in text:
-        return "Gotika"
-
+    if "dry" in text: return "Laciador"
+    if "damaged" in text: return "Formula Exclusiva"
+    if "oily" in text: return "Gotero"
+    if "color" in text: return "Gotika"
     return None
-
-# =====================================================
-# VOICE ROUTE
-# =====================================================
 
 @app.route("/voice", methods=["POST"])
 def voice():
-
     if "audio" not in request.files:
         return jsonify({"error": "No audio"}), 400
 
@@ -237,47 +270,30 @@ def voice():
     if not user_text or len(user_text) < 3:
         return speak("I didn't hear anything. Please try again.")
 
-    if not any(word in user_text.lower() for word in ["dry", "damaged", "oily", "color"]):
+    product = choose_product(user_text)
+
+    if not product:
         return speak("Please tell me your hair concern like dry, damaged, oily, or color-treated.")
 
-    product_name = choose_product(user_text)
-
-    if product_name is None:
-        return speak("I couldn't determine your hair concern. Please try again.")
-
-    info = PRODUCTS[product_name]
+    info = PRODUCTS[product]
 
     message = (
-        f"I recommend {product_name}. "
+        f"I recommend {product}. "
         f"{info['description']} "
         f"With tax and shipping, you're looking at ${info['price']}."
     )
 
     return speak(message)
 
-# =====================================================
-# SPEECH
-# =====================================================
-
 def speak(message):
-
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
         input=message
     )
-
     audio_bytes = speech.read()
     audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
-
-    return jsonify({
-        "text": message,
-        "audio": audio_base64
-    })
-
-# =====================================================
-# RUN
-# =====================================================
+    return jsonify({"text": message, "audio": audio_base64})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
