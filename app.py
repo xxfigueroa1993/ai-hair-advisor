@@ -35,15 +35,14 @@ body{
     align-items:center;
 }
 
-/* TRANSPARENT GLASS ORB */
 .halo{
     width:300px;
     height:300px;
     border-radius:50%;
     cursor:pointer;
-    backdrop-filter:blur(45px);
-    background:rgba(255,255,255,0.04);
-    transition:transform 2s ease;
+    backdrop-filter:blur(60px);
+    background:rgba(255,255,255,0.02);
+    transition:transform 1.5s ease;
 }
 
 #response{
@@ -72,15 +71,16 @@ let state="idle";
 let locked=false;
 let currentColor=[0,255,200];
 let activeAnimation=null;
-let currentOsc=null;
+let soundPlayed=false;
+let silenceTimer=null;
 
-// =================================
-// COLOR INTERPOLATION (REAL GLOW)
-// =================================
+// =============================
+// SMOOTH COLOR FADE (3.5s)
+// =============================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
-function animateColor(targetColor,duration=6000,onComplete=null){
+function animateColor(targetColor,duration=3500,onComplete=null){
 
     if(activeAnimation) cancelAnimationFrame(activeAnimation);
 
@@ -95,20 +95,18 @@ function animateColor(targetColor,duration=6000,onComplete=null){
         let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
         let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
 
-        // TRUE GLOW (layered shadows)
         halo.style.boxShadow = `
-            0 0 80px rgba(${r},${g},${b},0.6),
-            0 0 160px rgba(${r},${g},${b},0.45),
-            0 0 260px rgba(${r},${g},${b},0.3)
+            0 0 80px rgba(${r},${g},${b},0.45),
+            0 0 160px rgba(${r},${g},${b},0.35),
+            0 0 260px rgba(${r},${g},${b},0.25)
         `;
 
-        // Glass center glow
         halo.style.background = `
             radial-gradient(circle at center,
-                rgba(${r},${g},${b},0.18) 0%,
-                rgba(${r},${g},${b},0.12) 40%,
-                rgba(${r},${g},${b},0.08) 70%,
-                rgba(255,255,255,0.03) 100%)
+                rgba(${r},${g},${b},0.10) 0%,
+                rgba(${r},${g},${b},0.08) 40%,
+                rgba(${r},${g},${b},0.05) 70%,
+                rgba(255,255,255,0.02) 100%)
         `;
 
         currentColor=[r,g,b];
@@ -124,28 +122,23 @@ function animateColor(targetColor,duration=6000,onComplete=null){
     activeAnimation=requestAnimationFrame(step);
 }
 
-// =================================
-// PULSE ENTIRE ORB
-// =================================
+// =============================
+// PULSE
+// =============================
 
 function pulse(){
     if(state==="idle"){
-        let scale=1+Math.sin(Date.now()*0.001)*0.05;
+        let scale=1+Math.sin(Date.now()*0.0012)*0.05;
         halo.style.transform=`scale(${scale})`;
     }
     requestAnimationFrame(pulse);
 }
 
-// =================================
-// SOUND (NO OVERLAP)
-// =================================
+// =============================
+// SOUND (FIRST CLICK ONLY)
+// =============================
 
-function playTone(startFreq,endFreq,duration=6){
-
-    if(currentOsc){
-        currentOsc.stop();
-        currentOsc=null;
-    }
+function playTone(startFreq,endFreq,duration=3.5){
 
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
@@ -164,34 +157,34 @@ function playTone(startFreq,endFreq,duration=6){
 
     osc.start();
     osc.stop(ctx.currentTime+duration);
-
-    currentOsc=osc;
 }
 
-// =================================
-// RESET (INSTANT START)
-// =================================
+// =============================
+// RESET
+// =============================
 
 function resetToIdle(){
 
     state="resetting";
     locked=true;
 
-    playTone(260,200,6);
+    clearTimeout(silenceTimer);
 
-    animateColor([0,255,200],6000,()=>{
+    animateColor([0,255,200],3500,()=>{
         state="idle";
         locked=false;
+        soundPlayed=false;
         responseBox.innerText="Tap and describe your hair concern.";
     });
 }
 
-// =================================
+// =============================
 // CLICK HANDLER
-// =================================
+// =============================
 
 halo.addEventListener("click",()=>{
 
+    // SECOND CLICK → only reset color (no sound)
     if(state==="transition" || state==="thinking"){
         resetToIdle();
         return;
@@ -203,20 +196,29 @@ halo.addEventListener("click",()=>{
     state="transition";
     responseBox.innerText="Listening...";
 
-    playTone(200,260,6);
+    if(!soundPlayed){
+        playTone(200,260,3.5);
+        soundPlayed=true;
+    }
 
-    animateColor([255,210,80],6000,()=>{
+    animateColor([255,210,80],3500,()=>{
 
         state="thinking";
         responseBox.innerText="Analyzing...";
 
-        playTone(260,340,6);
+        animateColor([0,255,255],3500,()=>{
 
-        animateColor([0,255,255],6000,()=>{
-            resetToIdle();
+            // Silence check
+            silenceTimer=setTimeout(()=>{
+                responseBox.innerText=
+                "I didn’t hear you. Can you please share your hair concerns for a recommendation?";
+                resetToIdle();
+            },3000);
+
         });
 
     });
+
 });
 
 // INIT
