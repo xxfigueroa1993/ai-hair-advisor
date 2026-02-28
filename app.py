@@ -6,8 +6,12 @@ from openai import OpenAI
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# Minimum file size to consider real speech (Bluetooth safe)
-MIN_AUDIO_SIZE = 15000  # bytes
+# Minimum audio size (prevents silence triggering Whisper)
+MIN_AUDIO_SIZE = 15000  # bytes (Bluetooth safe)
+
+# Minimum transcript length (prevents GPT reacting to fragments)
+MIN_TRANSCRIPT_LENGTH = 5
+
 
 @app.route("/")
 def home():
@@ -60,7 +64,10 @@ async function startRecording(){
 
         document.getElementById("status").innerText = data.text;
 
-        if(data.text && data.text !== "No speech detected"){
+        if(data.text &&
+           data.text !== "No speech detected" &&
+           data.text !== "I didn’t catch that clearly. Please try again and speak a little louder."){
+
             const speech = new SpeechSynthesisUtterance(data.text);
             speech.lang = "en-US";
             speechSynthesis.speak(speech);
@@ -71,7 +78,7 @@ async function startRecording(){
 
     setTimeout(() => {
         mediaRecorder.stop();
-    }, 5000); // record 5 seconds
+    }, 5000); // record for 5 seconds
 }
 
 </script>
@@ -79,6 +86,7 @@ async function startRecording(){
 </body>
 </html>
 """
+
 
 @app.route("/voice", methods=["POST"])
 def voice():
@@ -88,21 +96,24 @@ def voice():
 
     file = request.files["audio"]
 
+    # Get file size to detect silence
     file.seek(0, os.SEEK_END)
     file_size = file.tell()
     file.seek(0)
 
     print("Backend received file size:", file_size)
 
-    # Silence protection
     if file_size < MIN_AUDIO_SIZE:
+        print("Detected silence (file too small)")
         return jsonify({"text": "No speech detected"})
 
+    # Save temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         temp_audio_path = temp_audio.name
 
     try:
+        # Transcribe with Whisper
         with open(temp_audio_path, "rb") as audio_file:
             transcript = client.audio.transcriptions.create(
                 model="whisper-1",
@@ -111,26 +122,40 @@ def voice():
 
         user_text = transcript.text.strip()
 
-        if not user_text:
-            return jsonify({"text": "No speech detected"})
+        print("User said:", repr(user_text))
 
-        print("User said:", user_text)
+        # Protect against empty or fragment transcripts
+        if not user_text or len(user_text) < MIN_TRANSCRIPT_LENGTH:
+            print("Transcript too short — asking user to repeat")
+            return jsonify({
+                "text": "I didn’t catch that clearly. Please try again and speak a little louder."
+            })
 
+        # GPT product recommendation
         completion = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role":"system","content":"You are a professional hair product advisor. Give short, clear product recommendations."},
-                {"role":"user","content":user_text}
+                {
+                    "role": "system",
+                    "content": "You are a professional hair product advisor. Give short, clear, specific product recommendations."
+                },
+                {
+                    "role": "user",
+                    "content": user_text
+                }
             ]
         )
 
         response_text = completion.choices[0].message.content.strip()
+
+        print("AI response:", response_text)
 
         return jsonify({"text": response_text})
 
     except Exception as e:
         print("Error:", e)
         return jsonify({"text": "Error processing request"})
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
