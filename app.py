@@ -10,7 +10,7 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =========================
-# SYSTEM PROMPT (UNCHANGED)
+# AI LOGIC (UNCHANGED)
 # =========================
 
 def build_system_prompt(language):
@@ -23,23 +23,21 @@ You ONLY recommend one of these 4 products:
 - Volumizer ($39.99)
 - Formula Exclusiva ($49.99)
 
-Interpretation:
-• Event / styling / sleek look → Laciador
-• Oily → Gotero
-• Thin / falling out → Volumizer
-• Multiple issues → Formula Exclusiva
+Event / styling / sleek → Laciador
+Oily → Gotero
+Thin / falling out → Volumizer
+Multiple issues → Formula Exclusiva
 
-Always:
-- Include price
-- Respond strictly in {language}
-- Keep tone premium and emotionally supportive
+Always include price.
+Always respond in {language}.
+Tone must feel premium and emotionally supportive.
 """
 
 # =========================
 # FRONTEND
 # =========================
 
-@app.route("/", methods=["GET"])
+@app.route("/")
 def home():
     return """
 <!DOCTYPE html>
@@ -71,8 +69,6 @@ select{
     width:240px;
     height:240px;
     border-radius:50%;
-    cursor:pointer;
-    transform:scale(1);
 }
 #response{
     margin-top:40px;
@@ -101,105 +97,103 @@ select{
 const halo = document.getElementById("halo");
 const languageSelect = document.getElementById("language");
 
-let state = "idle";
+let state="idle";
 let analyser, mediaRecorder, stream;
 let silenceTimer;
+let audioElement;
 
-const SILENCE_DELAY = 2000;
-const SILENCE_THRESHOLD = 6;
+const SILENCE_DELAY=2000;
+const SILENCE_THRESHOLD=6;
 
-const idleColor = [0,255,200];
-const gold = [255,200,0];
-const teal = [0,255,255];
+const idleColor=[0,255,200];
+const gold=[255,200,0];
+const teal=[0,255,255];
 
-let currentColor = [...idleColor];
-let targetColor = [...idleColor];
+let color=[...idleColor];
+let intensity=0.25;
+let targetColor=[...idleColor];
+let targetIntensity=0.25;
 
-let currentIntensity = 0.15;
-let targetIntensity = 0.15;
+function lerp(a,b,t){ return a+(b-a)*t; }
 
-// TRUE RGB INTERPOLATION
-function lerp(a,b,t){
-    return a + (b - a) * t;
-}
+// Smooth but LIGHT animation
+function animate(){
+    intensity=lerp(intensity,targetIntensity,0.01); // very slow build
 
-function animateVisual(){
-    // Smooth intensity
-    currentIntensity = lerp(currentIntensity, targetIntensity, 0.03);
-
-    // Smooth RGB
     for(let i=0;i<3;i++){
-        currentColor[i] = lerp(currentColor[i], targetColor[i], 0.03);
+        color[i]=lerp(color[i],targetColor[i],0.01);
     }
 
-    halo.style.background = `radial-gradient(circle at center,
-        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${currentIntensity}) 0%,
-        rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},${currentIntensity*0.5}) 50%,
-        transparent 90%)`;
+    halo.style.background=`radial-gradient(circle at center,
+        rgba(${color[0]},${color[1]},${color[2]},${intensity}) 0%,
+        rgba(${color[0]},${color[1]},${color[2]},${intensity*0.5}) 60%,
+        rgba(${color[0]},${color[1]},${color[2]},${intensity*0.2}) 85%,
+        transparent 100%)`;
 
-    halo.style.boxShadow = `0 0 ${40 + currentIntensity*160}px rgba(${currentColor[0]},${currentColor[1]},${currentColor[2]},0.7)`;
+    halo.style.boxShadow=`0 0 ${60+intensity*200}px rgba(${color[0]},${color[1]},${color[2]},0.7)`;
 
-    requestAnimationFrame(animateVisual);
+    requestAnimationFrame(animate);
 }
-animateVisual();
+animate();
 
-function transitionTo(color, intensity){
-    targetColor = [...color];
-    targetIntensity = intensity;
+function transitionTo(newColor,newIntensity){
+    targetColor=[...newColor];
+    targetIntensity=newIntensity;
 }
 
-/* =========================
-   INTRO SOUND
-========================= */
-function playIntroSound(){
+// =========================
+// IDLE BREATHING PULSE
+// =========================
+function idlePulse(){
+    if(state==="idle"){
+        targetIntensity=0.25 + Math.sin(Date.now()*0.002)*0.05;
+    }
+    requestAnimationFrame(idlePulse);
+}
+idlePulse();
+
+// =========================
+// INTRO SOUND
+// =========================
+function playIntro(){
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-
-    osc.type="sine";
-    osc.frequency.setValueAtTime(500,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(750,ctx.currentTime+1.0);
-
-    gain.gain.setValueAtTime(0.0001,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.3,ctx.currentTime+1.0);
-    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+1.8);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime+1.8);
+    const o=ctx.createOscillator();
+    const g=ctx.createGain();
+    o.type="sine";
+    o.frequency.setValueAtTime(450,ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(700,ctx.currentTime+2.5);
+    g.gain.setValueAtTime(0.0001,ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.25,ctx.currentTime+2);
+    g.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+3.5);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime+3.5);
 }
 
-/* =========================
-   OUTRO SOUND
-========================= */
-function playOutroSound(){
+// =========================
+// OUTRO SOUND
+// =========================
+function playOutro(){
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-
-    osc.type="triangle";
-    osc.frequency.setValueAtTime(650,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(280,ctx.currentTime+2.2);
-
-    gain.gain.setValueAtTime(0.25,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+2.5);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime+2.5);
+    const o=ctx.createOscillator();
+    const g=ctx.createGain();
+    o.type="triangle";
+    o.frequency.setValueAtTime(650,ctx.currentTime);
+    o.frequency.linearRampToValueAtTime(200,ctx.currentTime+3.5);
+    g.gain.setValueAtTime(0.3,ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.0001,ctx.currentTime+4);
+    o.connect(g); g.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime+4);
 }
 
 halo.addEventListener("click",()=>{
     if(state!=="idle")return;
-    playIntroSound();
+    playIntro();
     startRecording();
 });
 
 async function startRecording(){
     state="listening";
-    transitionTo(gold, 1.0);
+    transitionTo(gold,0.9);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -213,8 +207,10 @@ async function startRecording(){
     mediaRecorder.ondataavailable=e=>chunks.push(e.data);
 
     mediaRecorder.onstop=async()=>{
+        stream.getTracks().forEach(t=>t.stop()); // STOP MIC IMMEDIATELY
+
         state="thinking";
-        transitionTo(teal, 1.1);
+        transitionTo(teal,1.1);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -232,14 +228,19 @@ async function startRecording(){
     detectSilence();
 }
 
+// =========================
+// VOICE REACTIVE PULSE
+// =========================
 function detectSilence(){
     if(!analyser)return;
+
     const data=new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
-
     let sum=0;
     for(let i=0;i<data.length;i++)sum+=data[i];
     let volume=sum/data.length;
+
+    targetIntensity=0.8 + volume/150; // reactive pulse
 
     if(volume<SILENCE_THRESHOLD){
         if(!silenceTimer){
@@ -256,14 +257,37 @@ function detectSilence(){
     if(state==="listening")requestAnimationFrame(detectSilence);
 }
 
+// =========================
+// AI SPEECH REACTIVE
+// =========================
 function speakAI(base64Audio){
     state="speaking";
-    const audio=new Audio("data:audio/mp3;base64,"+base64Audio);
-    audio.play();
+    audioElement=new Audio("data:audio/mp3;base64,"+base64Audio);
 
-    audio.onended=()=>{
-        playOutroSound();
-        transitionTo(idleColor, 0.15);
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const source=ctx.createMediaElementSource(audioElement);
+    const analyser2=ctx.createAnalyser();
+    analyser2.fftSize=256;
+    source.connect(analyser2);
+    analyser2.connect(ctx.destination);
+
+    audioElement.play();
+
+    function react(){
+        if(state!=="speaking")return;
+        const data=new Uint8Array(analyser2.frequencyBinCount);
+        analyser2.getByteFrequencyData(data);
+        let sum=0;
+        for(let i=0;i<data.length;i++)sum+=data[i];
+        let volume=sum/data.length;
+        targetIntensity=1 + volume/180;
+        requestAnimationFrame(react);
+    }
+    react();
+
+    audioElement.onended=()=>{
+        playOutro();
+        transitionTo(idleColor,0.3);
         state="idle";
     };
 }
