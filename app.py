@@ -124,7 +124,7 @@ activeColorAnim=requestAnimationFrame(step);
 
 animateColor([0,255,200]);
 
-// ================= AUDIO REACTIVE LOOP =================
+// ================= AUDIO REACTIVE =================
 
 function startAudioReactive(){
 
@@ -146,7 +146,7 @@ let v=(dataArray[i]-128)/128;
 sum+=v*v;
 }
 let volume=Math.sqrt(sum/dataArray.length);
-scale=1+volume*2.5; // strong mic reaction
+scale=1+volume*2.5;
 }
 
 if(state==="speaking"){
@@ -154,35 +154,34 @@ scale=1+Math.sin(Date.now()*0.004)*0.1;
 }
 
 halo.style.transform=`scale(${scale})`;
-
 animationFrame=requestAnimationFrame(loop);
 }
 
 loop();
 }
 
-// ================= NEW CLICK SOUND =================
+// ================= SLOW PREMIUM INTRO =================
 
 function playClick(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
 
-osc.type="triangle";
-osc.frequency.setValueAtTime(700,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(350,ctx.currentTime+0.18);
+osc.type="sine";
+osc.frequency.setValueAtTime(420,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(260,ctx.currentTime+0.6);
 
-gain.gain.setValueAtTime(0.3,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.2);
+gain.gain.setValueAtTime(0.25,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.8);
 
 osc.connect(gain);
 gain.connect(ctx.destination);
 
 osc.start();
-osc.stop(ctx.currentTime+0.2);
+osc.stop(ctx.currentTime+0.8);
 }
 
-// ================= GOLDEN OUTRO (UNCHANGED) =================
+// ================= SLOW GOLDEN OUTRO =================
 
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -190,17 +189,52 @@ const osc=ctx.createOscillator();
 const gain=ctx.createGain();
 
 osc.type="triangle";
-osc.frequency.setValueAtTime(900,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(400,ctx.currentTime+0.5);
+osc.frequency.setValueAtTime(1000,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(500,ctx.currentTime+0.9);
 
-gain.gain.setValueAtTime(0.2,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.7);
+gain.gain.setValueAtTime(0.25,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.1);
 
 osc.connect(gain);
 gain.connect(ctx.destination);
 
 osc.start();
-osc.stop(ctx.currentTime+0.7);
+osc.stop(ctx.currentTime+1.1);
+}
+
+// ================= PRODUCT LOGIC =================
+
+function chooseProduct(text){
+
+text=text.toLowerCase();
+
+let dry=/dry|frizz|brittle|rough|no moisture/.test(text);
+let damaged=/damaged|break|weak|heat|burn/.test(text);
+let tangly=/tangle|knot|matted/.test(text);
+let color=/color fade|dull|lost color/.test(text);
+let oily=/oily|greasy|oil buildup/.test(text);
+let flat=/flat|no bounce|lifeless/.test(text);
+let falling=/falling|shedding|thinning/.test(text);
+
+let issues=[dry,damaged,tangly,color,oily,flat,falling].filter(v=>v).length;
+
+if(issues>=2 || damaged || falling){
+return "Formula Exclusiva is an all in one natural professional salon hair treatment designed to restore strength, hydration balance, elasticity and scalp integrity across multiple hair concerns. Price: $65.";
+}
+
+if(color){
+return "Gotika is an all natural professional hair color treatment restoring vibrancy and protecting pigment longevity. Price: $54.";
+}
+
+if(oily){
+return "Gotero is an all natural professional hair gel that regulates excess oil and keeps the scalp balanced without dryness. Price: $42.";
+}
+
+if(dry||flat||tangly){
+return "Laciador is an all natural professional hair styler improving smoothness, manageability and bounce. Price: $48.";
+}
+
+return null;
 }
 
 // ================= SPEAK =================
@@ -285,12 +319,21 @@ speak("I can't hear you. Could you describe your hair concern?");
 // ================= PROCESS =================
 
 function processTranscript(text){
+
 if(!text || text.length<4){
 speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
 return;
 }
 
-speak("Thank you. I'm analyzing your hair concern.");
+let result=chooseProduct(text);
+
+if(!result){
+speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
+return;
+}
+
+responseBox.innerText=result;
+speak(result);
 }
 
 // ================= CLICK =================
