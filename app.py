@@ -4,63 +4,98 @@ import base64
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
+# =============================
+# CONFIG
+# =============================
+
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# =========================
+# =============================
+# HOME ROUTE (Prevents 404)
+# =============================
+
+@app.route("/", methods=["GET"])
+def home():
+    return """
+    <h1>AI Hair Advisor is Running</h1>
+    <p>Use POST /voice to send audio.</p>
+    """
+
+# =============================
 # CATEGORY NORMALIZATION
-# =========================
+# =============================
 
 def normalize_input(text):
+    print("Raw transcript:", text)
+
     text = text.lower()
 
+    # RESET EVERY REQUEST
     hair_problem = None
     race = None
-    age_group = None
+    age_group = "15-35"
     allergic = False
     season = None
     temperature = None
     continent = None
 
     # Hair Problems
-    if "dry" in text: hair_problem = "Dry"
-    if "damaged" in text: hair_problem = "Damaged"
-    if "tangly" in text: hair_problem = "Tangly"
-    if "lost of color" in text or "lost color" in text: hair_problem = "Lost of Color"
-    if "oily" in text: hair_problem = "Oily"
-    if "not bouncy" in text: hair_problem = "Not Bouncy"
-    if "falling out" in text: hair_problem = "Falling Out"
+    if "dry" in text:
+        hair_problem = "Dry"
+    elif "damaged" in text:
+        hair_problem = "Damaged"
+    elif "tangly" in text:
+        hair_problem = "Tangly"
+    elif "lost of color" in text or "lost color" in text:
+        hair_problem = "Lost of Color"
+    elif "oily" in text:
+        hair_problem = "Oily"
+    elif "not bouncy" in text:
+        hair_problem = "Not Bouncy"
+    elif "falling out" in text:
+        hair_problem = "Falling Out"
 
     # Race
-    if "hispanic" in text: race = "Hispanic"
-    if "caucasian" in text or "white" in text: race = "Caucasian"
-    if "african" in text or "black" in text: race = "African"
-    if "asian" in text: race = "Asian"
-    if "island pacific" in text or "pacific islander" in text: race = "Island Pacific"
-    if "american indian" in text or "alaska native" in text: race = "American Indian"
+    if "hispanic" in text:
+        race = "Hispanic"
+    elif "caucasian" in text or "white" in text:
+        race = "Caucasian"
+    elif "african" in text or "black" in text:
+        race = "African"
+    elif "asian" in text:
+        race = "Asian"
+    elif "island pacific" in text or "pacific islander" in text:
+        race = "Island Pacific"
+    elif "american indian" in text:
+        race = "American Indian"
 
     # Age
-    if "5" in text or "10" in text or "15" in text or "child" in text:
+    if any(word in text for word in ["5", "6", "7", "8", "9", "10", "child"]):
         age_group = "5-15"
-    elif "50" in text or "60" in text or "70" in text:
+    elif any(word in text for word in ["50", "60", "70"]):
         age_group = "50+"
-    elif "35" in text or "40" in text:
+    elif any(word in text for word in ["35", "40"]):
         age_group = "35-50"
-    else:
-        age_group = "15-35"
 
     # Allergy
-    if "allergic" in text and "fish" in text:
+    if "allergic" in text:
         allergic = True
 
-    return hair_problem, race, age_group, allergic, season, temperature, continent
+    print("Mapped Categories:")
+    print("Hair Problem:", hair_problem)
+    print("Race:", race)
+    print("Age Group:", age_group)
+    print("Allergic:", allergic)
+
+    return hair_problem, race, age_group, allergic
 
 
-# =========================
+# =============================
 # RULE ENGINE
-# =========================
+# =============================
 
 def choose_product(hair_problem, race, age_group, allergic):
 
@@ -69,8 +104,11 @@ def choose_product(hair_problem, race, age_group, allergic):
 
     under_16 = age_group == "5-15"
 
-    # ---- PRESET RULES ----
+    # Medical blocking
+    if under_16 and hair_problem == "Lost of Color":
+        return "Error / Go see medical"
 
+    # Preset matrix
     preset_rules = {
 
         ("Lost of Color","Hispanic"): "Gotika",
@@ -114,47 +152,41 @@ def choose_product(hair_problem, race, age_group, allergic):
         ("Falling Out","American Indian"): "Formula Exclusiva",
     }
 
-    # Under 16 medical blocks
-    if under_16 and hair_problem == "Lost of Color":
-        return "Error / Go see medical"
-
-    if under_16 and race in ["Asian","Pacific Islander","Hispanic"] and hair_problem == "Lost of Color":
-        return "Error / Go see medical"
-
-    # Preset exact match
     if (hair_problem, race) in preset_rules:
         return preset_rules[(hair_problem, race)]
 
-    # ---- AI FALLBACK ----
-    # Only if no preset matched
-
+    # AI fallback logic
     if hair_problem in ["Damaged","Falling Out"]:
         return "Formula Exclusiva"
-
     if hair_problem == "Oily":
         return "Gotero"
-
     if hair_problem in ["Dry","Tangly","Not Bouncy"]:
         return "Laciador"
-
     if hair_problem == "Lost of Color":
         return "Gotika"
 
     return "Formula Exclusiva"
 
 
-# =========================
-# ROUTES
-# =========================
+# =============================
+# VOICE ROUTE
+# =============================
 
 @app.route("/voice", methods=["POST"])
 def voice():
+
+    print("===== VOICE ROUTE HIT =====")
+
+    if "audio" not in request.files:
+        return jsonify({"error": "No audio file provided"}), 400
 
     file = request.files["audio"]
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         path = temp_audio.name
+
+    print("Saved audio at:", path)
 
     # Transcribe
     with open(path, "rb") as audio_file:
@@ -166,11 +198,13 @@ def voice():
 
     user_text = transcript.strip()
 
-    hair_problem, race, age_group, allergic, season, temperature, continent = normalize_input(user_text)
+    hair_problem, race, age_group, allergic = normalize_input(user_text)
 
     product = choose_product(hair_problem, race, age_group, allergic)
 
-    # Generate natural sounding voice output
+    print("Chosen Product:", product)
+
+    # Generate voice response
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
@@ -185,6 +219,10 @@ def voice():
         "audio": audio_base64
     })
 
+
+# =============================
+# START SERVER
+# =============================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
