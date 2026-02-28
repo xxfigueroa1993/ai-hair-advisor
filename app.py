@@ -21,7 +21,7 @@ justify-content:center;
 align-items:center;
 flex-direction:column;
 background:#05080a;
-font-family:Arial;
+font-family:Arial, sans-serif;
 color:white;
 overflow:hidden;
 }
@@ -49,10 +49,9 @@ text-align:center;
 font-size:18px;
 }
 
-/* Language Selector */
 #langBox{
 position:absolute;
-top:20px;
+top:18px;
 right:22px;
 }
 
@@ -90,94 +89,45 @@ cursor:pointer;
 
 <script>
 
-const halo=document.getElementById("halo");
-const responseBox=document.getElementById("response");
-const langSelect=document.getElementById("langSelect");
+const halo = document.getElementById("halo");
+const responseBox = document.getElementById("response");
+const langSelect = document.getElementById("langSelect");
 
-let selectedLang="en-US";
-let premiumEnglishVoice=null;
-let selectedVoice=null;
-
+let selectedLang = "en-US";
+let recognition;
 let state="idle";
-let recognition=null;
 let transcript="";
-let silenceTimer=null;
+let silenceTimer;
 
-let audioCtx=null;
-let analyser=null;
-let micStream=null;
-let dataArray=null;
+let audioCtx, analyser, micStream, dataArray;
 
-/* ================= VOICES ================= */
+let premiumVoice;
 
-function loadVoices(){
-return new Promise(resolve=>{
-let voices=speechSynthesis.getVoices();
-if(!voices.length){
-speechSynthesis.onvoiceschanged=()=>{
-resolve(speechSynthesis.getVoices());
-};
-}else{
-resolve(voices);
-}
-});
-}
-
-async function initVoices(){
-let voices=await loadVoices();
-
-premiumEnglishVoice =
-voices.find(v=>v.name.includes("Google US English")) ||
-voices.find(v=>v.name.includes("Jenny")) ||
-voices.find(v=>v.lang==="en-US");
-
-updateVoice();
-}
-
-function updateVoice(){
-let voices=speechSynthesis.getVoices();
-
-if(selectedLang==="en-US"){
-selectedVoice=premiumEnglishVoice;
-return;
-}
-
-selectedVoice=
-voices.find(v=>v.lang===selectedLang) ||
-voices.find(v=>v.lang.startsWith(selectedLang.split("-")[0])) ||
-premiumEnglishVoice;
-}
-
-langSelect.addEventListener("change",()=>{
-selectedLang=langSelect.value;
-updateVoice();
-});
-
-/* ================= COLOR FADE ================= */
+/* ================= INITIAL GLOW ================= */
 
 let currentColor=[0,255,200];
 
 function animateColor(target){
 let start=[...currentColor];
-let duration=900;
+let duration=1000;
 let startTime=performance.now();
 
 function frame(now){
-let progress=Math.min((now-startTime)/duration,1);
+let p=Math.min((now-startTime)/duration,1);
 
-let r=Math.floor(start[0]+(target[0]-start[0])*progress);
-let g=Math.floor(start[1]+(target[1]-start[1])*progress);
-let b=Math.floor(start[2]+(target[2]-start[2])*progress);
+let r=Math.floor(start[0]+(target[0]-start[0])*p);
+let g=Math.floor(start[1]+(target[1]-start[1])*p);
+let b=Math.floor(start[2]+(target[2]-start[2])*p);
+
+halo.style.background=
+`radial-gradient(circle, rgba(${r},${g},${b},0.75) 0%, rgba(${r},${g},${b},0.15) 70%)`;
 
 halo.style.boxShadow=
 `0 0 120px rgba(${r},${g},${b},0.9),
- 0 0 260px rgba(${r},${g},${b},0.6),
- 0 0 380px rgba(${r},${g},${b},0.4)`;
+ 0 0 240px rgba(${r},${g},${b},0.6),
+ 0 0 360px rgba(${r},${g},${b},0.4)`;
 
-halo.style.background=
-`radial-gradient(circle, rgba(${r},${g},${b},0.7) 0%, rgba(${r},${g},${b},0.15) 70%)`;
-
-if(progress<1) requestAnimationFrame(frame);
+if(p<1) requestAnimationFrame(frame);
 }
 
 currentColor=target;
@@ -199,8 +149,8 @@ if(state==="listening" && analyser){
 analyser.getByteTimeDomainData(dataArray);
 let sum=0;
 for(let i=0;i<dataArray.length;i++){
-let val=(dataArray[i]-128)/128;
-sum+=val*val;
+let v=(dataArray[i]-128)/128;
+sum+=v*v;
 }
 let rms=Math.sqrt(sum/dataArray.length);
 scale=1+Math.min(rms*4,0.35);
@@ -231,24 +181,14 @@ dataArray=new Uint8Array(analyser.fftSize);
 
 /* ================= SOUNDS ================= */
 
-/* Intro = 1.5x deeper */
-function playIntro(){
-playTone(250,150,1.4);
-}
-
-/* Outro = original tone */
-function playOutro(){
-playTone(300,180,1.4);
-}
-
-function playTone(startFreq,endFreq,duration){
+function playTone(start,end,duration){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
 const gain=ctx.createGain();
 
 osc.type="sine";
-osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(endFreq,ctx.currentTime+duration);
+osc.frequency.setValueAtTime(start,ctx.currentTime);
+osc.frequency.exponentialRampToValueAtTime(end,ctx.currentTime+duration);
 
 gain.gain.setValueAtTime(0,ctx.currentTime);
 gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+0.2);
@@ -261,6 +201,30 @@ osc.start();
 osc.stop(ctx.currentTime+duration);
 }
 
+/* intro deeper */
+function playIntro(){ playTone(250,150,1.4); }
+
+/* outro original */
+function playOutro(){ playTone(300,180,1.4); }
+
+/* ================= VOICE ================= */
+
+function loadVoice(){
+let voices=speechSynthesis.getVoices();
+
+premiumVoice =
+voices.find(v=>v.name.includes("Google US English")) ||
+voices.find(v=>v.lang==="en-US") ||
+voices[0];
+}
+
+speechSynthesis.onvoiceschanged=loadVoice;
+loadVoice();
+
+langSelect.addEventListener("change",()=>{
+selectedLang=langSelect.value;
+});
+
 /* ================= SPEAK ================= */
 
 function speak(text){
@@ -269,9 +233,8 @@ animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
-utter.voice=selectedVoice;
+utter.voice=premiumVoice;
 utter.rate=0.92;
-utter.pitch=1.02;
 
 speechSynthesis.cancel();
 speechSynthesis.speak(utter);
@@ -288,13 +251,13 @@ state="idle";
 function chooseProduct(text){
 text=text.toLowerCase();
 
-if(/all.?in.?one|everything|complete/.test(text))
+if(/all.?in.?one|complete|everything/.test(text))
 return "Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.";
 
 if(/damage|weak|break/.test(text))
 return "Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.";
 
-if(/color|brassy|fade/.test(text))
+if(/color|fade/.test(text))
 return "Gotika restores color vibrancy and tone. Price: $54.";
 
 if(/oily|greasy/.test(text))
@@ -316,13 +279,13 @@ animateColor([255,210,80]);
 state="listening";
 transcript="";
 
-const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-recognition=new SpeechRecognition();
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+recognition=new SR();
 recognition.lang=selectedLang;
 recognition.continuous=true;
 recognition.interimResults=true;
 
-recognition.onresult=function(event){
+recognition.onresult=(event)=>{
 transcript="";
 for(let i=0;i<event.results.length;i++){
 transcript+=event.results[i][0].transcript;
@@ -338,29 +301,22 @@ processTranscript(transcript);
 recognition.start();
 }
 
-/* ================= PROCESS ================= */
-
 function processTranscript(text){
 let result=chooseProduct(text);
 responseBox.innerText=result;
 speak(result);
 }
 
-/* ================= CLICK ================= */
-
 halo.addEventListener("click",()=>{
 if(state==="idle"){
 startListening();
 }else{
-if(recognition) recognition.stop();
+recognition?.stop();
 speechSynthesis.cancel();
 animateColor([0,255,200]);
 state="idle";
 }
 });
-
-/* INIT */
-initVoices();
 
 </script>
 </body>
