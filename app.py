@@ -10,7 +10,45 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# FRONTEND (FULL INLINE – NOTHING MISSING)
+# PRODUCT DATABASE (ONLY 4 PRODUCTS)
+# =====================================================
+
+PRODUCTS = {
+    "Laciador": 34.99,
+    "Gotero": 29.99,
+    "Volumizer": 39.99,
+    "Formula Exclusiva": 49.99
+}
+
+SYSTEM_PROMPT = """
+You are a luxury AI hair advisor.
+
+You ONLY recommend one of these 4 products:
+- Laciador
+- Gotero
+- Volumizer
+- Formula Exclusiva
+
+Rules:
+
+• Frizz / Dry / Damage → Laciador
+• Oily / Greasy → Gotero
+• Thin / Flat / Falling Out → Volumizer
+• Multiple problems OR All-in-one request → Formula Exclusiva
+
+IMPORTANT:
+- NEVER invent product names.
+- ALWAYS include the price in your answer.
+- ALWAYS respond in the SAME language the user speaks.
+- If unclear, guide them in their language:
+  Say something like:
+  "I didn’t quite understand. You can say things like Frizz, Dry, Oily, Falling Out, or ask for an all-in-one solution."
+- Keep tone premium and confident.
+"""
+
+
+# =====================================================
+# FRONTEND (Reactive + Cinematic + Audio Pulse)
 # =====================================================
 
 @app.route("/", methods=["GET"])
@@ -33,18 +71,17 @@ body{
     color:white;
 }
 .halo{
-    width:220px;
-    height:220px;
+    width:240px;
+    height:240px;
     border-radius:50%;
     cursor:pointer;
-    background:radial-gradient(circle at center,
-        rgba(0,255,200,0.35) 0%,
-        rgba(0,255,200,0.18) 50%,
-        rgba(0,255,200,0.08) 75%,
-        transparent 95%);
-    box-shadow:0 0 80px rgba(0,255,200,0.35);
     transform:scale(1);
-    transition:box-shadow 0.1s linear;
+    background:radial-gradient(circle at center,
+        rgba(0,255,200,0.4) 0%,
+        rgba(0,255,200,0.2) 50%,
+        rgba(0,255,200,0.1) 75%,
+        transparent 95%);
+    box-shadow:0 0 80px rgba(0,255,200,0.4);
 }
 #response{
     margin-top:40px;
@@ -62,12 +99,44 @@ body{
 <script>
 const halo=document.getElementById("halo");
 let state="idle";
+let analyser=null;
 let mediaRecorder=null;
 let stream=null;
-let analyser=null;
 let silenceTimer=null;
+
 const SILENCE_DELAY=2000;
 const SILENCE_THRESHOLD=6;
+
+const idleColor=[0,255,200];
+const gold=[255,200,0];
+const teal=[0,255,255];
+
+function setColor(rgb,intensity=0.4){
+    halo.style.background=`radial-gradient(circle at center,
+        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}) 0%,
+        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}) 50%,
+        rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.2}) 75%,
+        transparent 95%)`;
+    halo.style.boxShadow=`0 0 ${80+intensity*120}px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6)`;
+}
+
+function reactivePulse(analyserNode,color){
+    const data=new Uint8Array(analyserNode.frequencyBinCount);
+    analyserNode.getByteFrequencyData(data);
+
+    let sum=0;
+    for(let i=0;i<data.length;i++)sum+=data[i];
+    let volume=sum/data.length;
+    let intensity=Math.min(volume/100,1);
+    let scale=1+intensity*0.3;
+
+    halo.style.transform=`scale(${scale})`;
+    setColor(color,0.4+intensity*0.5);
+
+    if(state==="listening"||state==="speaking"){
+        requestAnimationFrame(()=>reactivePulse(analyserNode,color));
+    }
+}
 
 function idlePulse(){
     if(state!=="idle")return;
@@ -78,17 +147,19 @@ function idlePulse(){
 idlePulse();
 
 halo.addEventListener("click",()=>{
-    if(state!=="idle") return;
+    if(state!=="idle")return;
     startRecording();
 });
 
 async function startRecording(){
     state="listening";
+    setColor(gold,0.6);
+
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
-    const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    analyser=audioCtx.createAnalyser();
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    analyser=ctx.createAnalyser();
     analyser.fftSize=256;
-    const source=audioCtx.createMediaStreamSource(stream);
+    const source=ctx.createMediaStreamSource(stream);
     source.connect(analyser);
 
     mediaRecorder=new MediaRecorder(stream);
@@ -97,6 +168,8 @@ async function startRecording(){
 
     mediaRecorder.onstop=async()=>{
         state="thinking";
+        setColor(teal,0.8);
+
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
         form.append("audio",blob);
@@ -105,12 +178,11 @@ async function startRecording(){
         const data=await res.json();
         document.getElementById("response").innerText=data.text;
 
-        const audio=new Audio("data:audio/mp3;base64,"+data.audio);
-        audio.play();
-        audio.onended=()=>{state="idle"; idlePulse();}
+        speakAI(data.audio);
     };
 
     mediaRecorder.start();
+    reactivePulse(analyser,gold);
     detectSilence();
 }
 
@@ -133,7 +205,29 @@ function detectSilence(){
     }else{
         if(silenceTimer){clearTimeout(silenceTimer);silenceTimer=null;}
     }
+
     if(state==="listening")requestAnimationFrame(detectSilence);
+}
+
+function speakAI(base64Audio){
+    state="speaking";
+    const audio=new Audio("data:audio/mp3;base64,"+base64Audio);
+
+    const ctx=new(window.AudioContext||window.webkitAudioContext)();
+    const source=ctx.createMediaElementSource(audio);
+    const aiAnalyser=ctx.createAnalyser();
+    aiAnalyser.fftSize=256;
+    source.connect(aiAnalyser);
+    aiAnalyser.connect(ctx.destination);
+
+    audio.play();
+    reactivePulse(aiAnalyser,teal);
+
+    audio.onended=()=>{
+        state="idle";
+        setColor(idleColor,0.4);
+        idlePulse();
+    };
 }
 </script>
 </body>
@@ -142,55 +236,7 @@ function detectSilence(){
 
 
 # =====================================================
-# 4 PRODUCT DATABASE ONLY
-# =====================================================
-
-PRODUCTS = {
-    "Laciador": {
-        "price": 34.99,
-        "keywords": ["frizz","frizzy","dry","damaged","tangle","tangly","split","puffy"]
-    },
-    "Gotero": {
-        "price": 29.99,
-        "keywords": ["oily","greasy","itchy","oil","buildup"]
-    },
-    "Volumizer": {
-        "price": 39.99,
-        "keywords": ["flat","thin","no volume","falling","falling out","hair loss","not bouncy"]
-    },
-    "Formula Exclusiva": {
-        "price": 49.99,
-        "keywords": ["all in one","all-in-one","everything","complete care","full repair","all problems"]
-    }
-}
-
-def match_product(text):
-    text=text.lower()
-
-    # All-in-one first
-    for kw in PRODUCTS["Formula Exclusiva"]["keywords"]:
-        if kw in text:
-            return "Formula Exclusiva"
-
-    matches=[]
-    for product,data in PRODUCTS.items():
-        if product=="Formula Exclusiva":
-            continue
-        for kw in data["keywords"]:
-            if kw in text:
-                matches.append(product)
-
-    if len(set(matches))>1:
-        return "Formula Exclusiva"
-
-    if matches:
-        return matches[0]
-
-    return None
-
-
-# =====================================================
-# VOICE ENDPOINT
+# AI ENDPOINT (SMART MULTI-LANGUAGE BRAIN)
 # =====================================================
 
 @app.route("/voice",methods=["POST"])
@@ -208,24 +254,19 @@ def voice():
         )
 
     user_text=transcript.strip()
-    product=match_product(user_text)
 
-    if product:
-        price=PRODUCTS[product]["price"]
-        message=f"I recommend {product}. It is perfect for your concern. The price is ${price}."
-    else:
-        message=(
-            "I didn’t quite understand. "
-            "You can say things like Frizz, Dry, Oily, Falling Out, "
-            "or ask for an All-In-One solution."
-        )
+    completion=client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role":"system","content":SYSTEM_PROMPT},
+            {"role":"user","content":user_text}
+        ]
+    )
 
-    return speak(message)
+    ai_message=completion.choices[0].message.content
 
+    return speak(ai_message)
 
-# =====================================================
-# TEXT TO SPEECH
-# =====================================================
 
 def speak(message):
     speech=client.audio.speech.create(
@@ -237,10 +278,6 @@ def speak(message):
     audio_base64=base64.b64encode(audio_bytes).decode("utf-8")
     return jsonify({"text":message,"audio":audio_base64})
 
-
-# =====================================================
-# RUN SERVER
-# =====================================================
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT",10000))
