@@ -39,7 +39,7 @@ body{
     height:200px;
     border-radius:50%;
     cursor:pointer;
-    transition:all 0.8s ease;
+    transition:all 2s ease; /* MUCH slower fades */
     background:radial-gradient(circle at center,
         rgba(0,255,200,0.35) 0%,
         rgba(0,255,200,0.2) 50%,
@@ -64,25 +64,23 @@ body{
 <script>
 
 const halo = document.getElementById("halo");
+
 let state = "idle";
 let silenceTimer = null;
 let mediaRecorder = null;
 let stream = null;
 let audioElement = null;
+let thinkingInterval = null;
 
 const SILENCE_DELAY = 2300;
 const SILENCE_THRESHOLD = 6;
 
-let audioContext;
-let analyser;
-let dataArray;
-
-/* ================================
+/* ===============================
    COLOR STATES
-================================ */
+=================================*/
 
 function setIdle(){
-    state="idle";
+    clearThinking();
     halo.style.background=`radial-gradient(circle at center,
         rgba(0,255,200,0.35) 0%,
         rgba(0,255,200,0.2) 50%,
@@ -91,24 +89,43 @@ function setIdle(){
 }
 
 function setGold(){
+    clearThinking();
     halo.style.background=`radial-gradient(circle at center,
-        rgba(255,200,0,0.45) 0%,
+        rgba(255,210,0,0.5) 0%,
         rgba(255,170,0,0.3) 50%,
         rgba(255,140,0,0.1) 75%,
         transparent 95%)`;
 }
 
-function setThinking(){
-    halo.style.background=`radial-gradient(circle at center,
-        rgba(0,255,255,0.6) 0%,
-        rgba(0,220,255,0.4) 50%,
-        rgba(0,180,255,0.2) 75%,
-        transparent 95%)`;
+function startThinkingAnimation(){
+    clearThinking();
+    let intensity = 0;
+    let direction = 0.01;
+
+    thinkingInterval = setInterval(()=>{
+        intensity += direction;
+        if(intensity > 0.6 || intensity < 0.3){
+            direction *= -1;
+        }
+
+        halo.style.background=`radial-gradient(circle at center,
+            rgba(0,255,255,${intensity}) 0%,
+            rgba(0,220,255,${intensity * 0.6}) 50%,
+            rgba(0,180,255,${intensity * 0.3}) 75%,
+            transparent 95%)`;
+    },40);
 }
 
-/* ================================
-   CLICK SOUND (SLOW FADE IN)
-================================ */
+function clearThinking(){
+    if(thinkingInterval){
+        clearInterval(thinkingInterval);
+        thinkingInterval = null;
+    }
+}
+
+/* ===============================
+   CLICK SOUND (SLOWER FADE)
+=================================*/
 
 function playClick(){
     const ctx = new (window.AudioContext||window.webkitAudioContext)();
@@ -116,23 +133,46 @@ function playClick(){
     const gain = ctx.createGain();
 
     osc.type="sine";
-    osc.frequency.setValueAtTime(380,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(720,ctx.currentTime+0.4);
+    osc.frequency.setValueAtTime(320,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(620,ctx.currentTime+0.8);
 
     gain.gain.setValueAtTime(0.0001,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.3,ctx.currentTime+0.15);
-    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
+    gain.gain.linearRampToValueAtTime(0.3,ctx.currentTime+0.4);
+    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.2);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime+0.6);
+    osc.stop(ctx.currentTime+1.2);
 }
 
-/* ================================
-   FULL RESET
-================================ */
+/* ===============================
+   AI FINISH SOUND
+=================================*/
+
+function playEndTone(){
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type="sine";
+    osc.frequency.setValueAtTime(600,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(200,ctx.currentTime+1.8);
+
+    gain.gain.setValueAtTime(0.25,ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+1.8);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    osc.start();
+    osc.stop(ctx.currentTime+1.8);
+}
+
+/* ===============================
+   RESET
+=================================*/
 
 function resetAll(){
 
@@ -159,9 +199,9 @@ function resetAll(){
     setIdle();
 }
 
-/* ================================
+/* ===============================
    CLICK HANDLER
-================================ */
+=================================*/
 
 halo.addEventListener("click",()=>{
 
@@ -175,9 +215,9 @@ halo.addEventListener("click",()=>{
     startRecording();
 });
 
-/* ================================
+/* ===============================
    RECORD
-================================ */
+=================================*/
 
 async function startRecording(){
 
@@ -185,13 +225,13 @@ async function startRecording(){
     setGold();
 
     stream = await navigator.mediaDevices.getUserMedia({audio:true});
-    audioContext = new (window.AudioContext||window.webkitAudioContext)();
-    analyser = audioContext.createAnalyser();
+    const audioContext = new (window.AudioContext||window.webkitAudioContext)();
+    const analyser = audioContext.createAnalyser();
     analyser.fftSize=256;
 
     const source = audioContext.createMediaStreamSource(stream);
     source.connect(analyser);
-    dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
     mediaRecorder = new MediaRecorder(stream);
     let chunks=[];
@@ -201,7 +241,7 @@ async function startRecording(){
     mediaRecorder.onstop=async()=>{
 
         state="thinking";
-        setThinking();
+        startThinkingAnimation();
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
@@ -216,16 +256,14 @@ async function startRecording(){
     };
 
     mediaRecorder.start();
-    detectSilence();
+    detectSilence(analyser,dataArray);
 }
 
-/* ================================
+/* ===============================
    SILENCE DETECTION
-================================ */
+=================================*/
 
-function detectSilence(){
-
-    if(!analyser) return;
+function detectSilence(analyser,dataArray){
 
     analyser.getByteFrequencyData(dataArray);
 
@@ -249,25 +287,33 @@ function detectSilence(){
     }
 
     if(state==="listening")
-        requestAnimationFrame(detectSilence);
+        requestAnimationFrame(()=>detectSilence(analyser,dataArray));
 }
 
-/* ================================
+/* ===============================
    AI SPEAK
-================================ */
+=================================*/
 
 function speakAI(base64Audio){
 
     state="speaking";
+    clearThinking();
+
+    halo.style.background=`radial-gradient(circle at center,
+        rgba(0,255,255,0.6) 0%,
+        rgba(0,220,255,0.4) 50%,
+        rgba(0,180,255,0.2) 75%,
+        transparent 95%)`;
 
     audioElement=new Audio("data:audio/mp3;base64,"+base64Audio);
     audioElement.play();
 
     audioElement.onended=()=>{
+        playEndTone();
         setTimeout(()=>{
             setIdle();
             state="idle";
-        },600);
+        },2500);
     };
 }
 
@@ -279,7 +325,7 @@ setIdle();
 """
 
 # =====================================================
-# BACKEND
+# BACKEND (unchanged logic)
 # =====================================================
 
 PRODUCTS={
