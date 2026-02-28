@@ -35,13 +35,17 @@ body{
     align-items:center;
 }
 
-.halo{
+#halo{
     width:300px;
     height:300px;
     border-radius:50%;
     cursor:pointer;
-    backdrop-filter:blur(55px);
-    background:rgba(255,255,255,0.06); /* darker base glass */
+
+    backdrop-filter:blur(60px);
+
+    /* BASE VISIBILITY LAYER — never disappears */
+    background:rgba(0,255,200,0.22);
+
     transition:transform 1.2s ease;
 }
 
@@ -73,10 +77,10 @@ let currentColor=[0,255,200];
 let activeAnimation=null;
 let currentOsc=null;
 
-const FADE_DURATION=1750; // 1.3x faster
+const FADE_DURATION=1750;
 
 // ==========================
-// COLOR INTERPOLATION
+// COLOR FADE (NEVER VANISH)
 // ==========================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
@@ -89,6 +93,7 @@ function animateColor(targetColor,onComplete=null){
     const startTime=performance.now();
 
     function step(now){
+
         let progress=(now-startTime)/FADE_DURATION;
         if(progress>1) progress=1;
 
@@ -96,22 +101,20 @@ function animateColor(targetColor,onComplete=null){
         let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
         let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
 
-        // Outer atmospheric glow
+        // Thick transparent halo glow (outer)
         halo.style.boxShadow = `
-            0 0 90px rgba(${r},${g},${b},0.5),
-            0 0 180px rgba(${r},${g},${b},0.35),
-            0 0 280px rgba(${r},${g},${b},0.25)
+            0 0 100px rgba(${r},${g},${b},0.55),
+            0 0 220px rgba(${r},${g},${b},0.35),
+            0 0 320px rgba(${r},${g},${b},0.25)
         `;
 
-        /* INNER GLOW
-           3x darker than ultra transparent
-           but never near-black */
+        // Inner orb — NEVER fully transparent
         halo.style.background = `
             radial-gradient(circle at center,
-                rgba(${r},${g},${b},0.18) 0%,
-                rgba(${r},${g},${b},0.13) 45%,
-                rgba(${r},${g},${b},0.08) 75%,
-                rgba(255,255,255,0.05) 100%)
+                rgba(${r},${g},${b},0.32) 0%,
+                rgba(${r},${g},${b},0.22) 50%,
+                rgba(${r},${g},${b},0.15) 75%,
+                rgba(${r},${g},${b},0.10) 100%)
         `;
 
         currentColor=[r,g,b];
@@ -133,14 +136,14 @@ function animateColor(targetColor,onComplete=null){
 
 function pulse(){
     if(state==="idle"){
-        let scale=1+Math.sin(Date.now()*0.0012)*0.05;
+        let scale=1+Math.sin(Date.now()*0.0012)*0.04;
         halo.style.transform=`scale(${scale})`;
     }
     requestAnimationFrame(pulse);
 }
 
 // ==========================
-// SOUND CONTROL
+// SOUND
 // ==========================
 
 function playTone(startFreq,endFreq){
@@ -193,7 +196,6 @@ function resetToIdle(){
 
 halo.addEventListener("click",()=>{
 
-    // Second click → reset only
     if(state==="transition" || state==="thinking"){
         resetToIdle();
         return;
@@ -220,7 +222,7 @@ halo.addEventListener("click",()=>{
                 responseBox.innerText=
                 "I didn’t hear you. Can you please share your hair concerns for a recommendation?";
 
-                // Sound #2 (AI finish only)
+                // Sound #2 (only if AI finishes)
                 playTone(380,240);
 
                 setTimeout(()=>{
