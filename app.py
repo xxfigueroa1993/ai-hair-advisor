@@ -2,7 +2,6 @@ import os
 from flask import Flask, jsonify
 
 os.environ["PYTHONUNBUFFERED"] = "1"
-
 app = Flask(__name__)
 
 @app.route("/")
@@ -29,24 +28,21 @@ body{
 
 .wrapper{
     position:relative;
-    width:360px;
-    height:360px;
+    width:380px;
+    height:380px;
     display:flex;
     justify-content:center;
     align-items:center;
 }
 
-/* ONE SINGLE TRANSPARENT GLOWING ORB */
 .halo{
-    width:280px;
-    height:280px;
+    width:300px;
+    height:300px;
     border-radius:50%;
     cursor:pointer;
+    backdrop-filter:blur(40px);
     background:rgba(255,255,255,0.03);
-    backdrop-filter:blur(30px);
-    transition:
-        box-shadow 4s ease,
-        transform 2s ease;
+    transition:transform 2s ease;
 }
 
 #response{
@@ -73,44 +69,67 @@ const responseBox=document.getElementById("response");
 
 let state="idle";
 let locked=false;
-let timers=[];
+let animationFrame=null;
 
-// COLORS
-const idle=[0,255,200];
-const gold=[255,210,80];
-const teal=[0,255,255];
+// INITIAL COLOR (IDLE)
+let currentColor=[0,255,200];
 
-// ================================
-// APPLY SUPER SOFT HALO GLOW
-// ================================
+// ===============================
+// TRUE SMOOTH COLOR INTERPOLATION
+// ===============================
 
-function applyGlow(rgb,intensity=0.5){
+function lerp(a,b,t){ return a+(b-a)*t; }
 
-    halo.style.boxShadow=
-        `
-        0 0 60px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity}),
-        0 0 120px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}),
-        0 0 200px rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.3})
+function animateColor(targetColor,duration=8000,callback=null){
+
+    const startColor=[...currentColor];
+    const startTime=performance.now();
+
+    function step(now){
+        let progress=(now-startTime)/duration;
+        if(progress>1) progress=1;
+
+        let r=Math.floor(lerp(startColor[0],targetColor[0],progress));
+        let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
+        let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
+
+        halo.style.background=`
+            radial-gradient(circle at center,
+                rgba(${r},${g},${b},0.6) 0%,
+                rgba(${r},${g},${b},0.4) 40%,
+                rgba(${r},${g},${b},0.2) 65%,
+                transparent 85%)
         `;
+
+        currentColor=[r,g,b];
+
+        if(progress<1){
+            requestAnimationFrame(step);
+        }else{
+            if(callback) callback();
+        }
+    }
+
+    requestAnimationFrame(step);
 }
 
-// ================================
-// WHOLE ORB PULSE
-// ================================
+// ===============================
+// FULL ORB PULSE
+// ===============================
 
-function pulseLoop(){
+function pulse(){
     if(state==="idle"){
-        let scale=1+Math.sin(Date.now()*0.001)*0.05;
+        let scale=1+Math.sin(Date.now()*0.0009)*0.06;
         halo.style.transform=`scale(${scale})`;
     }
-    requestAnimationFrame(pulseLoop);
+    requestAnimationFrame(pulse);
 }
 
-// ================================
-// VERY SLOW SYNCHRONIZED SOUND
-// ================================
+// ===============================
+// ULTRA SLOW SYNCHRONIZED SOUND
+// ===============================
 
-function playSlowTone(targetFreq){
+function playUltraSlowTone(startFreq,endFreq,duration=6){
 
     const ctx=new (window.AudioContext||window.webkitAudioContext)();
     const osc=ctx.createOscillator();
@@ -118,75 +137,70 @@ function playSlowTone(targetFreq){
 
     osc.type="sine";
 
-    osc.frequency.setValueAtTime(targetFreq+100,ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(targetFreq,ctx.currentTime+2.5);
+    osc.frequency.setValueAtTime(startFreq,ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(endFreq,ctx.currentTime+duration);
 
     gain.gain.setValueAtTime(0.15,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+3);
+    gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+duration);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
 
     osc.start();
-    osc.stop(ctx.currentTime+3);
+    osc.stop(ctx.currentTime+duration);
 }
 
-// ================================
-// RESET TO WEBSITE OPEN STATE
-// ================================
+// ===============================
+// RESET TO TRUE WEBSITE STATE
+// ===============================
 
 function resetToIdle(){
 
-    timers.forEach(t=>clearTimeout(t));
-    timers=[];
+    state="resetting";
 
-    state="idle";
+    playUltraSlowTone(260,180,8);
 
-    // SUPER SLOW fade back
-    applyGlow(idle,0.6);
-    playSlowTone(200);
-
-    setTimeout(()=>{
-        locked=false; // unlock only AFTER fade completes
-    },4000);
-
-    responseBox.innerText="Tap and describe your hair concern.";
+    animateColor([0,255,200],8000,()=>{
+        state="idle";
+        locked=false;
+        responseBox.innerText="Tap and describe your hair concern.";
+    });
 }
 
-// ================================
+// ===============================
 // CLICK HANDLER
-// ================================
+// ===============================
 
 halo.addEventListener("click",()=>{
 
     if(locked) return;
-
     locked=true;
     state="transition";
 
-    // SLOW GOLD TRANSITION
-    applyGlow(gold,0.7);
-    playSlowTone(260);
+    responseBox.innerText="Listening...";
 
-    timers.push(setTimeout(()=>{
+    // GOLD VERY SLOW
+    playUltraSlowTone(200,260,8);
 
-        // SLOW TEAL TRANSITION
-        state="thinking";
-        applyGlow(teal,0.85);
-        playSlowTone(320);
+    animateColor([255,210,80],8000,()=>{
 
-        timers.push(setTimeout(()=>{
+        responseBox.innerText="Analyzing...";
+
+        // TEAL VERY SLOW
+        playUltraSlowTone(260,330,8);
+
+        animateColor([0,255,255],8000,()=>{
 
             resetToIdle();
 
-        },4500));
+        });
+    });
 
-    },4500));
 });
 
 // INIT
-applyGlow(idle,0.6);
-pulseLoop();
+animateColor([0,255,200],1);
+pulse();
 
 </script>
 
