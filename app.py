@@ -9,68 +9,62 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# =====================================
-# FRONTEND PAGE
-# =====================================
+# ======================================
+# FRONTEND
+# ======================================
 
 @app.route("/", methods=["GET"])
 def home():
     return """
     <!DOCTYPE html>
     <html>
-    <head>
-        <title>AI Hair Advisor</title>
-    </head>
+    <head><title>AI Hair Advisor</title></head>
     <body>
         <h1>AI Hair Advisor</h1>
-        <button onclick="startRecording()">🎤 Ask About Your Hair</button>
+        <button onclick="record()">🎤 Ask</button>
         <p id="response"></p>
 
         <script>
-        let mediaRecorder;
-        let audioChunks = [];
+        let recorder;
+        let chunks = [];
 
-        async function startRecording() {
+        async function record() {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
-            audioChunks = [];
+            recorder = new MediaRecorder(stream);
+            chunks = [];
 
-            mediaRecorder.ondataavailable = event => {
-                audioChunks.push(event.data);
-            };
+            recorder.ondataavailable = e => chunks.push(e.data);
 
-            mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                const formData = new FormData();
-                formData.append("audio", audioBlob);
+            recorder.onstop = async () => {
+                const blob = new Blob(chunks, { type: "audio/webm" });
+                const form = new FormData();
+                form.append("audio", blob);
 
-                const response = await fetch("/voice", {
+                const res = await fetch("/voice", {
                     method: "POST",
-                    body: formData
+                    body: form
                 });
 
-                const data = await response.json();
-
+                const data = await res.json();
                 document.getElementById("response").innerText = data.text;
 
-                const audio = new Audio("data:audio/mp3;base64," + data.audio);
-                audio.play();
+                if (data.audio) {
+                    const audio = new Audio("data:audio/mp3;base64," + data.audio);
+                    audio.play();
+                }
             };
 
-            mediaRecorder.start();
-
-            setTimeout(() => {
-                mediaRecorder.stop();
-            }, 4000);
+            recorder.start();
+            setTimeout(() => recorder.stop(), 4000);
         }
         </script>
     </body>
     </html>
     """
 
-# =====================================
-# SIMPLE RULE ENGINE
-# =====================================
+# ======================================
+# RULE ENGINE
+# ======================================
 
 def choose_product(text):
     text = text.lower()
@@ -84,14 +78,17 @@ def choose_product(text):
     if "color" in text:
         return "Gotika"
 
-    return "Formula Exclusiva"
+    return None  # important change
 
-# =====================================
+
+# ======================================
 # VOICE ROUTE
-# =====================================
+# ======================================
 
 @app.route("/voice", methods=["POST"])
 def voice():
+
+    print("VOICE ROUTE HIT")
 
     if "audio" not in request.files:
         return jsonify({"error": "No audio"}), 400
@@ -102,6 +99,7 @@ def voice():
         file.save(temp_audio.name)
         audio_path = temp_audio.name
 
+    # Transcribe
     with open(audio_path, "rb") as audio_file:
         transcript = client.audio.transcriptions.create(
             model="whisper-1",
@@ -111,25 +109,57 @@ def voice():
 
     user_text = transcript.strip()
 
+    print("Transcript:", user_text)
+
+    # ==============================
+    # SILENCE GUARD
+    # ==============================
+
+    if not user_text or len(user_text) < 3:
+        return speak("I didn't hear anything. Please try again.")
+
+    # Check for real hair keywords
+    hair_keywords = ["dry", "damaged", "oily", "color", "falling", "tangly"]
+
+    if not any(word in user_text.lower() for word in hair_keywords):
+        return speak("Please tell me your hair concern like dry, damaged, or oily.")
+
+    # ==============================
+    # PRODUCT SELECTION
+    # ==============================
+
     product = choose_product(user_text)
+
+    if product is None:
+        return speak("I couldn't determine your hair concern. Please try again.")
+
+    return speak(f"I recommend {product}.")
+
+
+# ======================================
+# SPEECH RESPONSE FUNCTION
+# ======================================
+
+def speak(message):
 
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
-        input=f"I recommend {product}."
+        input=message
     )
 
     audio_bytes = speech.read()
     audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
 
     return jsonify({
-        "text": f"I recommend {product}.",
+        "text": message,
         "audio": audio_base64
     })
 
-# =====================================
+
+# ======================================
 # RUN
-# =====================================
+# ======================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
