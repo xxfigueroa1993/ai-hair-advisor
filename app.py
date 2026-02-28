@@ -4,18 +4,18 @@ import base64
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
-# ===============================
+# =========================================
 # CONFIG
-# ===============================
+# =========================================
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# ===============================
+# =========================================
 # HOME ROUTE (Health Check)
-# ===============================
+# =========================================
 
 @app.route("/", methods=["GET"])
 def home():
@@ -24,22 +24,22 @@ def home():
     <p>Use POST /voice to send audio.</p>
     """
 
-# ===============================
+# =========================================
 # INPUT NORMALIZATION
-# ===============================
+# =========================================
 
 def normalize_input(text):
     print("Raw transcript:", text)
 
     text = text.lower()
 
-    # RESET EVERY REQUEST
+    # RESET EACH REQUEST
     hair_problem = None
     race = None
     age_group = "15-35"
     allergic = False
 
-    # ---------------- Hair Problems ----------------
+    # -------- Hair Problems --------
     if "dry" in text:
         hair_problem = "Dry"
     elif "damaged" in text:
@@ -55,7 +55,7 @@ def normalize_input(text):
     elif "falling out" in text:
         hair_problem = "Falling Out"
 
-    # ---------------- Race ----------------
+    # -------- Race --------
     if "hispanic" in text:
         race = "Hispanic"
     elif "caucasian" in text or "white" in text:
@@ -64,12 +64,12 @@ def normalize_input(text):
         race = "African"
     elif "asian" in text:
         race = "Asian"
-    elif "island pacific" in text or "pacific islander" in text:
+    elif "pacific islander" in text or "island pacific" in text:
         race = "Island Pacific"
     elif "american indian" in text:
         race = "American Indian"
 
-    # ---------------- Age ----------------
+    # -------- Age --------
     if any(word in text for word in ["5", "6", "7", "8", "9", "10", "child"]):
         age_group = "5-15"
     elif any(word in text for word in ["50", "60", "70"]):
@@ -77,22 +77,22 @@ def normalize_input(text):
     elif any(word in text for word in ["35", "40"]):
         age_group = "35-50"
 
-    # ---------------- Allergy ----------------
+    # -------- Allergy --------
     if "allergic" in text:
         allergic = True
 
     print("Mapped:")
-    print("Hair Problem:", hair_problem)
+    print("Hair:", hair_problem)
     print("Race:", race)
-    print("Age Group:", age_group)
+    print("Age:", age_group)
     print("Allergic:", allergic)
 
     return hair_problem, race, age_group, allergic
 
 
-# ===============================
-# RULE ENGINE
-# ===============================
+# =========================================
+# RULE ENGINE (DETERMINISTIC)
+# =========================================
 
 def choose_product(hair_problem, race, age_group, allergic):
 
@@ -102,11 +102,11 @@ def choose_product(hair_problem, race, age_group, allergic):
 
     under_16 = age_group == "5-15"
 
-    # Medical block
+    # Medical blocking
     if under_16 and hair_problem == "Lost of Color":
         return "Error / Go see medical"
 
-    # Preset deterministic matrix
+    # Deterministic preset matrix
     preset_rules = {
 
         ("Lost of Color","Hispanic"): "Gotika",
@@ -150,11 +150,11 @@ def choose_product(hair_problem, race, age_group, allergic):
         ("Falling Out","American Indian"): "Formula Exclusiva",
     }
 
-    # Deterministic match
+    # Exact match
     if (hair_problem, race) in preset_rules:
         return preset_rules[(hair_problem, race)]
 
-    # Controlled fallback logic
+    # Controlled fallback (still deterministic)
     if hair_problem in ["Damaged", "Falling Out"]:
         return "Formula Exclusiva"
     if hair_problem == "Oily":
@@ -167,9 +167,9 @@ def choose_product(hair_problem, race, age_group, allergic):
     return "Formula Exclusiva"
 
 
-# ===============================
+# =========================================
 # VOICE ROUTE
-# ===============================
+# =========================================
 
 @app.route("/voice", methods=["POST"])
 def voice():
@@ -185,7 +185,7 @@ def voice():
         file.save(temp_audio.name)
         audio_path = temp_audio.name
 
-    print("Audio saved at:", audio_path)
+    print("Audio saved:", audio_path)
 
     # Transcription
     with open(audio_path, "rb") as audio_file:
@@ -203,7 +203,7 @@ def voice():
 
     print("Final Product:", product)
 
-    # Voice Output
+    # Voice response
     speech = client.audio.speech.create(
         model="gpt-4o-mini-tts",
         voice="alloy",
@@ -219,9 +219,9 @@ def voice():
     })
 
 
-# ===============================
+# =========================================
 # RUN SERVER
-# ===============================
+# =========================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
