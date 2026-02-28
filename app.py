@@ -10,31 +10,33 @@ app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# PRODUCT SYSTEM (4 PRODUCTS ONLY)
+# SYSTEM PROMPT (IMPROVED LOGIC)
 # =====================================================
 
-SYSTEM_PROMPT = """
+def build_system_prompt(language):
+    return f"""
 You are a luxury AI hair advisor.
 
 You ONLY recommend one of these 4 products:
-- Laciador ($34.99)
-- Gotero ($29.99)
-- Volumizer ($39.99)
-- Formula Exclusiva ($49.99)
+- Laciador ($34.99)  → smoothing / styling / frizz / events / sleek look
+- Gotero ($29.99)    → oily / greasy scalp
+- Volumizer ($39.99) → thin / flat / falling out / no bounce
+- Formula Exclusiva ($49.99) → multiple problems or all-in-one request
+
+Important interpretation rules:
+
+• If user mentions:
+  event, party, wedding, date, special occasion, styling, sleek, polished look
+  → Recommend Laciador.
+
+• If multiple concerns → Formula Exclusiva.
 
 Rules:
-• Frizz / Dry / Damage → Laciador
-• Oily / Greasy → Gotero
-• Thin / Flat / Falling Out → Volumizer
-• Multiple problems OR All-in-one → Formula Exclusiva
-
-IMPORTANT:
 - NEVER invent product names.
-- ALWAYS include the price.
-- ALWAYS respond in the SAME language as the user.
-- If unclear, guide them politely in their language:
-  Suggest keywords like Frizz, Dry, Oily, Falling Out, or All-in-One.
-- Tone must feel premium and confident.
+- ALWAYS include price.
+- ALWAYS respond strictly in {language}.
+- If unclear, politely guide the user using example keywords in {language}.
+- Tone must feel premium, confident, luxury brand.
 """
 
 # =====================================================
@@ -60,12 +62,22 @@ body{
     font-family:Arial;
     color:white;
 }
+select{
+    position:absolute;
+    top:20px;
+    right:20px;
+    padding:8px;
+    background:#111;
+    color:white;
+    border:1px solid #444;
+}
 .halo{
     width:240px;
     height:240px;
     border-radius:50%;
     cursor:pointer;
     transform:scale(1);
+    transition:background 2s ease, box-shadow 2s ease;
     background:radial-gradient(circle at center,
         rgba(0,255,200,0.4) 0%,
         rgba(0,255,200,0.2) 50%,
@@ -83,11 +95,21 @@ body{
 </head>
 <body>
 
+<select id="language">
+<option value="English">English</option>
+<option value="Spanish">Spanish</option>
+<option value="French">French</option>
+<option value="Portuguese">Portuguese</option>
+<option value="Arabic">Arabic</option>
+<option value="German">German</option>
+</select>
+
 <div id="halo" class="halo"></div>
 <div id="response">Tap the ring and describe your hair concern.</div>
 
 <script>
 const halo=document.getElementById("halo");
+const languageSelect=document.getElementById("language");
 let state="idle";
 let analyser, mediaRecorder, stream;
 let silenceTimer;
@@ -105,7 +127,11 @@ function setColor(rgb,intensity=0.4){
         rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.5}) 50%,
         rgba(${rgb[0]},${rgb[1]},${rgb[2]},${intensity*0.2}) 75%,
         transparent 95%)`;
-    halo.style.boxShadow=`0 0 ${80+intensity*120}px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.6)`;
+    halo.style.boxShadow=`0 0 ${80+intensity*150}px rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.7)`;
+}
+
+function fadeToColor(color){
+    setColor(color,0.8);
 }
 
 function idlePulse(){
@@ -116,60 +142,14 @@ function idlePulse(){
 }
 idlePulse();
 
-/* =========================
-   PREMIUM CLICK SOUND
-========================= */
-function playClickSound(){
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-
-    osc.type="sine";
-    osc.frequency.setValueAtTime(520,ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(780,ctx.currentTime+0.6);
-
-    gain.gain.setValueAtTime(0.0001,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.3,ctx.currentTime+0.4);
-    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+1.2);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime+1.2);
-}
-
-/* =========================
-   PREMIUM OUTRO SOUND
-========================= */
-function playOutroSound(){
-    const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
-
-    osc.type="triangle";
-    osc.frequency.setValueAtTime(640,ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(320,ctx.currentTime+1.8);
-
-    gain.gain.setValueAtTime(0.25,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+2.2);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime+2.2);
-}
-
-/* ========================= */
-
 halo.addEventListener("click",()=>{
     if(state!=="idle")return;
-    playClickSound();
     startRecording();
 });
 
 async function startRecording(){
     state="listening";
-    setColor(gold,0.7);
+    fadeToColor(gold);
 
     stream=await navigator.mediaDevices.getUserMedia({audio:true});
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -184,11 +164,12 @@ async function startRecording(){
 
     mediaRecorder.onstop=async()=>{
         state="thinking";
-        setColor(teal,0.9);
+        fadeToColor(teal);
 
         const blob=new Blob(chunks,{type:"audio/webm"});
         const form=new FormData();
         form.append("audio",blob);
+        form.append("language",languageSelect.value);
 
         const res=await fetch("/voice",{method:"POST",body:form});
         const data=await res.json();
@@ -204,7 +185,6 @@ function detectSilence(){
     if(!analyser)return;
     const data=new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(data);
-
     let sum=0;
     for(let i=0;i<data.length;i++)sum+=data[i];
     let volume=sum/data.length;
@@ -228,11 +208,9 @@ function speakAI(base64Audio){
     state="speaking";
     const audio=new Audio("data:audio/mp3;base64,"+base64Audio);
     audio.play();
-
     audio.onended=()=>{
-        playOutroSound();
         state="idle";
-        setColor(idleColor,0.4);
+        fadeToColor(idleColor);
         idlePulse();
     };
 }
@@ -247,6 +225,8 @@ function speakAI(base64Audio){
 
 @app.route("/voice",methods=["POST"])
 def voice():
+    language=request.form.get("language","English")
+
     file=request.files["audio"]
     with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
         file.save(temp.name)
@@ -264,7 +244,7 @@ def voice():
     completion=client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role":"system","content":SYSTEM_PROMPT},
+            {"role":"system","content":build_system_prompt(language)},
             {"role":"user","content":user_text}
         ]
     )
