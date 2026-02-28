@@ -11,254 +11,235 @@ def home():
 <html>
 <head>
 <title>Luxury Hair AI</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <style>
 body{
     margin:0;
-    height:100vh;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    flex-direction:column;
     background:#05080a;
     font-family:Arial;
     color:white;
-    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    height:100vh;
+}
+
+#continentSelect{
+    position:absolute;
+    top:20px;
+    right:20px;
+    padding:8px;
+    font-size:14px;
 }
 
 .wrapper{
-    width:420px;
-    height:420px;
+    width:400px;
+    height:400px;
     display:flex;
     justify-content:center;
     align-items:center;
 }
 
 #halo{
-    width:300px;
-    height:300px;
+    width:280px;
+    height:280px;
     border-radius:50%;
-    cursor:pointer;
-    backdrop-filter:blur(60px);
     background:rgba(0,255,200,0.22);
+    backdrop-filter:blur(60px);
+    cursor:pointer;
     transition:transform 1.2s ease;
 }
 
 #response{
-    margin-top:40px;
-    width:70%;
+    margin-top:30px;
+    width:80%;
     text-align:center;
-    font-size:18px;
 }
 </style>
 </head>
 <body>
 
+<select id="continentSelect">
+<option>North America</option>
+<option>South America</option>
+<option>Europe</option>
+<option>Africa</option>
+<option>Asia</option>
+<option>Australia</option>
+<option>Antarctica</option>
+</select>
+
 <div class="wrapper">
-    <div id="halo"></div>
+<div id="halo"></div>
 </div>
 
 <div id="response">Tap and describe your hair concern.</div>
 
 <script>
 
-const halo = document.getElementById("halo");
-const responseBox = document.getElementById("response");
+const halo=document.getElementById("halo");
+const responseBox=document.getElementById("response");
 
+let recognition;
+let silenceTimer;
 let state="idle";
-let locked=false;
-let currentColor=[0,255,200];
-let recognition=null;
-let silenceTimer=null;
 
-const FADE_DURATION=1750;
+// ================= PRODUCT ENGINE =================
 
-// ================= COLOR =================
+function chooseProduct(text){
 
-function lerp(a,b,t){ return a+(b-a)*t; }
+text=text.toLowerCase();
 
-function animateColor(target,onComplete=null){
+let ageUnder16 = text.includes("under 16") || text.includes("15") || text.includes("14");
 
-    const start=[...currentColor];
-    const startTime=performance.now();
-
-    function step(now){
-        let progress=(now-startTime)/FADE_DURATION;
-        if(progress>1) progress=1;
-
-        let r=Math.floor(lerp(start[0],target[0],progress));
-        let g=Math.floor(lerp(start[1],target[1],progress));
-        let b=Math.floor(lerp(start[2],target[2],progress));
-
-        halo.style.boxShadow=`
-            0 0 100px rgba(${r},${g},${b},0.55),
-            0 0 220px rgba(${r},${g},${b},0.35),
-            0 0 320px rgba(${r},${g},${b},0.25)
-        `;
-
-        halo.style.background=`
-            radial-gradient(circle,
-                rgba(${r},${g},${b},0.32) 0%,
-                rgba(${r},${g},${b},0.22) 50%,
-                rgba(${r},${g},${b},0.15) 75%,
-                rgba(${r},${g},${b},0.10) 100%)
-        `;
-
-        currentColor=[r,g,b];
-
-        if(progress<1){
-            requestAnimationFrame(step);
-        }else if(onComplete){
-            onComplete();
-        }
-    }
-
-    requestAnimationFrame(step);
+if(ageUnder16 && text.includes("loss") && text.includes("color")){
+    return {
+        product:"Medical Advisory",
+        description:"For individuals under 16 experiencing sudden color loss, we recommend consulting a medical professional before using any treatment."
+    };
 }
 
-// ================= PULSE =================
+// ===== MAIN LOGIC =====
 
-function pulse(){
-    if(state==="idle"){
-        let scale=1+Math.sin(Date.now()*0.0012)*0.04;
-        halo.style.transform=`scale(${scale})`;
-    }
-    requestAnimationFrame(pulse);
+if(text.includes("dry"))
+    return productResponse("Laciador",
+    "Dry hair lacks moisture retention. Laciador replenishes hydration while smoothing the hair cuticle for long-lasting manageability.");
+
+if(text.includes("oily"))
+    return productResponse("Gotero",
+    "Excess oil production requires lightweight control. Gotero balances scalp oils without stripping essential hydration.");
+
+if(text.includes("damaged"))
+    return productResponse("Formula Exclusiva",
+    "Damage typically affects the protein structure of the hair shaft. Formula Exclusiva restores strength, elasticity, and shine.");
+
+if(text.includes("tangly"))
+    return productResponse("Laciador",
+    "Tangles are caused by raised cuticles and friction. Laciador smooths and detangles while improving comb-through efficiency.");
+
+if(text.includes("falling"))
+    return productResponse("Formula Exclusiva",
+    "Hair shedding concerns require strengthening and scalp stimulation. Formula Exclusiva supports healthier growth cycles.");
+
+if(text.includes("not bouncy"))
+    return productResponse("Gotero",
+    "Lack of bounce often indicates product buildup or imbalance. Gotero provides structure and lightweight lift.");
+
+if(text.includes("loss") || text.includes("color"))
+    return productResponse("Gotika",
+    "Color fading results from oxidation and cuticle wear. Gotika enhances vibrancy while protecting pigment longevity.");
+
+// ===== FALLBACK =====
+return productResponse("Formula Exclusiva",
+"Based on industry research from leading professional salons, your concern indicates a need for structural restoration and moisture balance.");
+
+}
+
+function productResponse(name,desc){
+return {
+    product:name,
+    description:desc
+};
 }
 
 // ================= SPEECH =================
 
-function setupRecognition(){
+function speak(text){
+const utter=new SpeechSynthesisUtterance(text);
+utter.rate=1;
+utter.pitch=1.1;
+utter.volume=1;
 
-    const SpeechRecognition =
-        window.SpeechRecognition || window.webkitSpeechRecognition;
+const voices=speechSynthesis.getVoices();
+const brightVoice=voices.find(v=>v.name.toLowerCase().includes("female"));
+if(brightVoice) utter.voice=brightVoice;
 
-    if(!SpeechRecognition){
-        alert("Speech recognition not supported in this browser.");
-        return;
-    }
+speechSynthesis.speak(utter);
 
-    recognition = new SpeechRecognition();
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = "en-US";
-
-    let finalTranscript="";
-
-    recognition.onresult = function(event){
-
-        let interim="";
-        for(let i=event.resultIndex;i<event.results.length;i++){
-            if(event.results[i].isFinal){
-                finalTranscript += event.results[i][0].transcript;
-            }else{
-                interim += event.results[i][0].transcript;
-            }
-        }
-
-        responseBox.innerText = finalTranscript + interim;
-
-        clearTimeout(silenceTimer);
-
-        silenceTimer = setTimeout(()=>{
-            recognition.stop();
-            processSpeech(finalTranscript.trim());
-        },2000); // 2 seconds silence detection
-    };
-
-    recognition.onerror = function(){
-        recognition.stop();
-        resetToIdle();
-    };
-
+utter.onend=function(){
+responseBox.innerHTML="<b>Recommendation:</b><br>"+text;
+state="idle";
+};
 }
 
-// ================= PROCESS SPEECH =================
+// ================= LISTENING =================
+
+function setupRecognition(){
+
+const SpeechRecognition =
+window.SpeechRecognition || window.webkitSpeechRecognition;
+
+recognition=new SpeechRecognition();
+recognition.continuous=true;
+recognition.interimResults=true;
+recognition.lang="en-US";
+
+let finalTranscript="";
+
+recognition.onresult=function(event){
+
+clearTimeout(silenceTimer);
+
+for(let i=event.resultIndex;i<event.results.length;i++){
+if(event.results[i].isFinal){
+finalTranscript+=event.results[i][0].transcript+" ";
+}
+}
+
+silenceTimer=setTimeout(()=>{
+recognition.stop();
+processSpeech(finalTranscript.trim());
+},2000);
+
+};
+
+recognition.onend=function(){
+if(!finalTranscript){
+processSpeech("");
+}
+};
+
+}
 
 function processSpeech(text){
 
-    if(!text){
-        speak("I didn’t hear you. Please tell me your hair concerns.");
-        return;
-    }
-
-    state="thinking";
-    responseBox.innerText="Analyzing...";
-    animateColor([0,255,255]);
-
-    setTimeout(()=>{
-        const reply = generateResponse(text);
-        responseBox.innerText = reply;
-        speak(reply);
-    },1000);
+if(!text){
+speak("I didn’t hear anything. Please describe your hair concern.");
+return;
 }
 
-function generateResponse(text){
+responseBox.innerText="Analyzing...";
 
-    text = text.toLowerCase();
-
-    if(text.includes("dry"))
-        return "It sounds like you're dealing with dryness. I recommend deep hydration treatments and sulfate-free products.";
-
-    if(text.includes("frizz"))
-        return "For frizz control, I suggest smoothing serums and humidity-protection styling products.";
-
-    if(text.includes("damage"))
-        return "Hair damage requires protein repair treatments and minimal heat styling.";
-
-    return "Thank you for sharing. Based on your concerns, I recommend a balanced strengthening and hydration routine.";
+setTimeout(()=>{
+const result=chooseProduct(text);
+if(result.product==="Medical Advisory"){
+speak(result.description);
+}else{
+speak(result.product + ". " + result.description);
 }
+},1000);
 
-// ================= VOICE OUTPUT =================
-
-function speak(text){
-
-    const utter=new SpeechSynthesisUtterance(text);
-    utter.rate=0.95;
-    utter.pitch=1;
-
-    speechSynthesis.cancel();
-    speechSynthesis.speak(utter);
-
-    utter.onend=function(){
-        setTimeout(()=>{
-            resetToIdle();
-        },400);
-    };
-}
-
-// ================= RESET =================
-
-function resetToIdle(){
-    state="idle";
-    locked=false;
-    responseBox.innerText="Tap and describe your hair concern.";
-    animateColor([0,255,200]);
 }
 
 // ================= CLICK =================
 
 halo.addEventListener("click",()=>{
 
-    if(state!=="idle"){
-        recognition?.stop();
-        resetToIdle();
-        return;
-    }
+if(state!=="idle"){
+recognition?.stop();
+state="idle";
+responseBox.innerText="Tap and describe your hair concern.";
+return;
+}
 
-    locked=true;
-    state="listening";
-    responseBox.innerText="Listening...";
+state="listening";
+responseBox.innerText="Listening...";
+setupRecognition();
+recognition.start();
 
-    animateColor([255,210,80],()=>{
-        setupRecognition();
-        recognition.start();
-    });
 });
-
-// INIT
-animateColor([0,255,200]);
-pulse();
 
 </script>
 </body>
