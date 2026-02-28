@@ -4,13 +4,11 @@ import base64
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
-os.environ["PYTHONUNBUFFERED"] = "1"
-
 app = Flask(__name__)
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 # =====================================================
-# PRODUCT LOCK (Bounce Removed From Volumizer)
+# STRICT PRODUCT ROUTING (NO BOUNCE -> VOLUMIZER)
 # =====================================================
 
 PRODUCTS = {
@@ -23,29 +21,37 @@ PRODUCTS = {
 def route_product(text):
     t = text.lower()
 
-    # Bounce now treated as styling → Laciador
+    # STYLING / BOUNCE / EVENT
     if any(x in t for x in [
-        "event","party","wedding","date","styler",
+        "event","party","wedding","date","style","styler",
         "sleek","smooth","frizz","bounce","bouncy"
     ]):
         return "Laciador"
 
+    # OILY
     if any(x in t for x in ["oily","greasy"]):
         return "Gotero"
 
-    if any(x in t for x in ["thin","falling","hair loss"]):
+    # THIN ONLY (VERY STRICT)
+    if any(x in t for x in [
+        "thin","thinning","falling out","hair loss","bald"
+    ]):
         return "Volumizer"
 
-    if any(x in t for x in ["all in one","everything","multiple"]):
+    # MULTIPLE
+    if any(x in t for x in [
+        "everything","all in one","multiple"
+    ]):
         return "Formula Exclusiva"
 
     return "Formula Exclusiva"
+
 
 def build_prompt(language):
     return f"""
 You are a luxury AI hair advisor.
 
-Only recommend:
+Only recommend one:
 - Laciador ($34.99)
 - Gotero ($29.99)
 - Volumizer ($39.99)
@@ -55,6 +61,7 @@ Always include price.
 Always respond in {language}.
 Premium supportive tone.
 """
+
 
 # =====================================================
 # FRONTEND
@@ -69,32 +76,28 @@ def home():
 <title>AI Hair Advisor</title>
 <style>
 body{
-margin:0;height:100vh;display:flex;justify-content:center;align-items:center;
-flex-direction:column;background:#000;font-family:Arial;color:white;
-overflow:hidden;
+margin:0;height:100vh;display:flex;
+justify-content:center;align-items:center;
+flex-direction:column;background:#000;
+font-family:Arial;color:white;
 }
+
 select{
-position:absolute;top:20px;right:20px;padding:8px;background:#111;color:white;border:1px solid #444;
+position:absolute;top:20px;right:20px;
+padding:8px;background:#111;color:white;
+border:none;
 }
-.wrapper{
-position:relative;
-width:260px;
-height:260px;
-}
-.outerRing{
-position:absolute;
-width:100%;
-height:100%;
+
+.halo{
+width:260px;height:260px;
 border-radius:50%;
-border:3px solid rgba(0,255,200,0.5);
+cursor:pointer;
 }
-.innerGlow{
-position:absolute;
-width:100%;
-height:100%;
-border-radius:50%;
+
+#response{
+margin-top:40px;width:70%;
+text-align:center;font-size:18px;
 }
-#response{margin-top:40px;width:70%;text-align:center;font-size:18px;}
 </style>
 </head>
 <body>
@@ -108,116 +111,143 @@ border-radius:50%;
 <option value="German">German</option>
 </select>
 
-<div class="wrapper">
-<div id="outer" class="outerRing"></div>
-<div id="inner" class="innerGlow"></div>
+<div id="halo" class="halo"></div>
+<div id="response">
+Tap the ring and describe your hair concern.
 </div>
-
-<div id="response">Tap the ring and describe your hair concern.</div>
 
 <script>
 
-const outer=document.getElementById("outer");
-const inner=document.getElementById("inner");
-const languageSelect=document.getElementById("language");
+const halo = document.getElementById("halo");
+const languageSelect = document.getElementById("language");
 
-let state="idle";
+let state = "idle";
 let analyser, mediaRecorder, stream, audioCtx;
 let silenceTimer;
+let audioElement;
 
-const SILENCE_DELAY=2200;
-const SILENCE_THRESHOLD=6;
+const SILENCE_DELAY = 2000;
+const SILENCE_THRESHOLD = 6;
 
-const idleColor=[0,255,200];
-const gold=[255,200,0];
-const teal=[0,255,255];
+const idleColor = [0,255,200];
+const gold = [255,200,0];
+const teal = [0,255,255];
 
-let color=[...idleColor];
-let targetColor=[...idleColor];
+let color = [...idleColor];
+let targetColor = [...idleColor];
+let intensity = 0.45;
+let targetIntensity = 0.45;
+let pulseScale = 1;
+let pulseTarget = 1;
 
-let intensity=0.4;
-let targetIntensity=0.4;
-
-let pulseScale=1;
-let pulseTarget=1;
+// ======================
+// ANIMATION ENGINE
+// ======================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
 function animate(){
-    intensity=lerp(intensity,targetIntensity,0.03);
+    intensity = lerp(intensity,targetIntensity,0.08);
+    pulseScale = lerp(pulseScale,pulseTarget,0.2);
 
     for(let i=0;i<3;i++){
-        color[i]=lerp(color[i],targetColor[i],0.03);
+        color[i]=lerp(color[i],targetColor[i],0.08);
     }
 
-    pulseScale=lerp(pulseScale,pulseTarget,0.15);
-
-    inner.style.background=
-        `radial-gradient(circle at center,
+    halo.style.background=
+    `radial-gradient(circle,
         rgba(${color[0]},${color[1]},${color[2]},${intensity}) 0%,
         rgba(${color[0]},${color[1]},${color[2]},${intensity*0.5}) 60%,
         transparent 100%)`;
 
-    inner.style.boxShadow=
-        `0 0 ${80+intensity*200}px rgba(${color[0]},${color[1]},${color[2]},0.7)`;
-
-    outer.style.transform=`scale(${pulseScale})`;
+    halo.style.transform=`scale(${pulseScale})`;
 
     requestAnimationFrame(animate);
 }
 animate();
 
-function transitionTo(c,i){
-    targetColor=[...c];
-    targetIntensity=i;
-}
+// ======================
+// RESET FUNCTION
+// ======================
 
-// Default breathing pulse (outer ring)
-function idlePulse(){
-    if(state==="idle"){
-        pulseTarget=1 + Math.sin(Date.now()*0.002)*0.03;
+function hardReset(){
+    if(mediaRecorder && mediaRecorder.state==="recording"){
+        mediaRecorder.stop();
     }
-    requestAnimationFrame(idlePulse);
-}
-idlePulse();
 
-function startRecording(){
+    if(stream){
+        stream.getTracks().forEach(t=>t.stop());
+    }
+
+    if(audioElement){
+        audioElement.pause();
+        audioElement=null;
+    }
+
+    state="idle";
+    targetColor=[...idleColor];
+    targetIntensity=0.45;
+    pulseTarget=1;
+}
+
+// ======================
+// CLICK
+// ======================
+
+halo.addEventListener("click",()=>{
+    hardReset();
+    startRecording();
+});
+
+// ======================
+// START RECORDING
+// ======================
+
+async function startRecording(){
+
     state="listening";
-    transitionTo(gold,1.0);
+    targetColor=[...gold];
+    targetIntensity=1.0;
 
     audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-    navigator.mediaDevices.getUserMedia({audio:true}).then(s=>{
-        stream=s;
-        analyser=audioCtx.createAnalyser();
-        analyser.fftSize=256;
-        audioCtx.createMediaStreamSource(stream).connect(analyser);
+    stream=await navigator.mediaDevices.getUserMedia({audio:true});
+    analyser=audioCtx.createAnalyser();
+    analyser.fftSize=256;
 
-        mediaRecorder=new MediaRecorder(stream);
-        let chunks=[];
-        mediaRecorder.ondataavailable=e=>chunks.push(e.data);
+    const source=audioCtx.createMediaStreamSource(stream);
+    source.connect(analyser);
 
-        mediaRecorder.onstop=async()=>{
-            stream.getTracks().forEach(t=>t.stop());
-            audioCtx.close();
+    mediaRecorder=new MediaRecorder(stream);
+    let chunks=[];
+    mediaRecorder.ondataavailable=e=>chunks.push(e.data);
 
-            state="thinking";
-            transitionTo(teal,1.1);
+    mediaRecorder.onstop=async()=>{
+        stream.getTracks().forEach(t=>t.stop());
+        audioCtx.close();
 
-            const blob=new Blob(chunks,{type:"audio/webm"});
-            const form=new FormData();
-            form.append("audio",blob);
-            form.append("language",languageSelect.value);
+        state="thinking";
+        targetColor=[...teal];
+        targetIntensity=1.1;
 
-            const res=await fetch("/voice",{method:"POST",body:form});
-            const data=await res.json();
-            document.getElementById("response").innerText=data.text;
-            speakAI(data.audio);
-        };
+        const blob=new Blob(chunks,{type:"audio/webm"});
+        const form=new FormData();
+        form.append("audio",blob);
+        form.append("language",languageSelect.value);
 
-        mediaRecorder.start();
-        detectVoice();
-    });
+        const res=await fetch("/voice",{method:"POST",body:form});
+        const data=await res.json();
+
+        document.getElementById("response").innerText=data.text;
+        speakAI(data.audio);
+    };
+
+    mediaRecorder.start();
+    detectVoice();
 }
+
+// ======================
+// VOICE REACTION
+// ======================
 
 function detectVoice(){
     if(state!=="listening") return;
@@ -228,33 +258,38 @@ function detectVoice(){
     for(let i=0;i<data.length;i++) sum+=data[i];
     let volume=sum/data.length;
 
-    pulseTarget=1 + volume/120; // DEEP pulse
+    pulseTarget=1 + volume/100; // deep pulse
 
-    if(volume<SILENCE_THRESHOLD){
+    if(volume < SILENCE_THRESHOLD){
         if(!silenceTimer){
             silenceTimer=setTimeout(()=>{
-                transitionTo(teal,1.1); // EXACT 2.2s gold->teal
+                targetColor=[...teal]; // GUARANTEED GOLD->TEAL
                 mediaRecorder.stop();
-            },SILENCE_DELAY);
+            }, SILENCE_DELAY);
         }
-    }else{
-        if(silenceTimer){clearTimeout(silenceTimer);silenceTimer=null;}
+    } else {
+        if(silenceTimer){ clearTimeout(silenceTimer); silenceTimer=null; }
     }
 
     requestAnimationFrame(detectVoice);
 }
 
+// ======================
+// AI SPEECH
+// ======================
+
 function speakAI(b64){
     state="speaking";
-    const audio=new Audio("data:audio/mp3;base64,"+b64);
+    audioElement=new Audio("data:audio/mp3;base64,"+b64);
+
     const ctx=new(window.AudioContext||window.webkitAudioContext)();
-    const src=ctx.createMediaElementSource(audio);
+    const src=ctx.createMediaElementSource(audioElement);
     const analyser2=ctx.createAnalyser();
     analyser2.fftSize=256;
     src.connect(analyser2);
     analyser2.connect(ctx.destination);
 
-    audio.play();
+    audioElement.play();
 
     function react(){
         if(state!=="speaking") return;
@@ -263,20 +298,18 @@ function speakAI(b64){
         let sum=0;
         for(let i=0;i<data.length;i++) sum+=data[i];
         let volume=sum/data.length;
-        pulseTarget=1 + volume/130; // deep AI pulse
+        pulseTarget=1 + volume/110;
         requestAnimationFrame(react);
     }
     react();
 
-    audio.onended=()=>{
-        transitionTo(idleColor,0.45); // NO DARK FADE
+    audioElement.onended=()=>{
         state="idle";
+        targetColor=[...idleColor]; // no dark fade
+        targetIntensity=0.45;
+        pulseTarget=1;
     };
 }
-
-document.querySelector(".wrapper").addEventListener("click",()=>{
-    if(state==="idle") startRecording();
-});
 
 </script>
 </body>
@@ -287,10 +320,10 @@ document.querySelector(".wrapper").addEventListener("click",()=>{
 # BACKEND
 # =====================================================
 
-@app.route("/voice",methods=["POST"])
+@app.route("/voice", methods=["POST"])
 def voice():
-    language=request.form.get("language","English")
-    file=request.files["audio"]
+    language = request.form.get("language","English")
+    file = request.files["audio"]
 
     with tempfile.NamedTemporaryFile(delete=False,suffix=".webm") as temp:
         file.save(temp.name)
@@ -309,15 +342,16 @@ def voice():
 
     completion=client.chat.completions.create(
         model="gpt-4o-mini",
-        temperature=0.3,
+        temperature=0.2,
         messages=[
             {"role":"system","content":build_prompt(language)},
-            {"role":"assistant","content":f"Recommend {product} ({price}) in a premium emotionally supportive tone."},
+            {"role":"assistant","content":f"Recommend {product} ({price}) in a premium supportive tone."},
             {"role":"user","content":text}
         ]
     )
 
     return speak(completion.choices[0].message.content)
+
 
 def speak(msg):
     speech=client.audio.speech.create(
@@ -330,6 +364,7 @@ def speak(msg):
         "text":msg,
         "audio":base64.b64encode(audio_bytes).decode("utf-8")
     })
+
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT",10000))
