@@ -1,8 +1,10 @@
 import os
 import tempfile
-from flask import Flask, request, jsonify, send_file
+import base64
+from flask import Flask, request, jsonify
 from openai import OpenAI
 
+# Ensure logs flush immediately (important for Render)
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
@@ -21,12 +23,11 @@ def home():
 </head>
 <body style="background:black;color:white;text-align:center;margin-top:60px;font-family:Arial;">
 
-<h1>AI Hair Advisor (Voice Enabled)</h1>
+<h1>AI Hair Advisor</h1>
 <button onclick="startRecording()">Start / Stop Recording</button>
 
 <p id="status">Idle</p>
-
-<audio id="audioPlayer" autoplay></audio>
+<audio id="audioPlayer" controls autoplay></audio>
 
 <script>
 
@@ -42,8 +43,7 @@ async function startRecording(){
             audio: {
                 echoCancellation: false,
                 noiseSuppression: false,
-                autoGainControl: true,
-                channelCount: 1
+                autoGainControl: true
             }
         });
 
@@ -62,10 +62,9 @@ async function startRecording(){
 
         mediaRecorder.onstop = async () => {
 
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-
             const formData = new FormData();
             formData.append("audio", audioBlob, "audio.webm");
 
@@ -80,9 +79,9 @@ async function startRecording(){
 
             document.getElementById("status").innerText = data.text;
 
-            if (data.audio_url){
+            if (data.audio){
                 const player = document.getElementById("audioPlayer");
-                player.src = data.audio_url + "?t=" + new Date().getTime();
+                player.src = "data:audio/mp3;base64," + data.audio;
                 player.play();
             }
         };
@@ -92,15 +91,12 @@ async function startRecording(){
         document.getElementById("status").innerText = "Recording... Click again to stop.";
 
     } else {
-
         mediaRecorder.stop();
         recording = false;
-        document.getElementById("status").innerText = "Stopped. Processing...";
     }
 }
 
 </script>
-
 </body>
 </html>
 """
@@ -116,15 +112,13 @@ def voice():
         return jsonify({"text": "No audio received"})
 
     file = request.files["audio"]
-    print("Audio file received", flush=True)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".webm") as temp_audio:
         file.save(temp_audio.name)
         temp_audio_path = temp_audio.name
 
-    print("Saved temp file:", temp_audio_path, flush=True)
-
     try:
+        # -------- TRANSCRIPTION --------
         print("Starting transcription...", flush=True)
 
         with open(temp_audio_path, "rb") as audio_file:
@@ -135,12 +129,12 @@ def voice():
             )
 
         user_text = transcript.strip()
-
         print("Transcript:", user_text, flush=True)
 
         if not user_text:
             return jsonify({"text": "I didn’t catch that clearly. Please try again."})
 
+        # -------- GPT RESPONSE --------
         print("Calling GPT...", flush=True)
 
         completion = client.chat.completions.create(
@@ -159,7 +153,7 @@ ONLY recommend products from this catalog:
 4. Scalp Balance Serum – For oily scalp
 5. Shine Boost Conditioner – For dull hair
 
-Be short and clear. Only recommend from this list.
+Be short, confident, and clear.
 """
                 },
                 {
@@ -170,36 +164,30 @@ Be short and clear. Only recommend from this list.
         )
 
         response_text = completion.choices[0].message.content.strip()
+        print("GPT Response:", response_text, flush=True)
 
-        print("GPT response:", response_text, flush=True)
+        # -------- TEXT TO SPEECH --------
+        print("Generating voice...", flush=True)
 
-        print("Generating voice response...", flush=True)
-
-        speech_file_path = os.path.join(tempfile.gettempdir(), "response.mp3")
-
-        with client.audio.speech.with_streaming_response.create(
+        speech = client.audio.speech.create(
             model="gpt-4o-mini-tts",
             voice="alloy",
             input=response_text
-        ) as response:
-            response.stream_to_file(speech_file_path)
+        )
 
-        print("Voice file saved:", speech_file_path, flush=True)
+        audio_bytes = speech.read()
+        audio_base64 = base64.b64encode(audio_bytes).decode("utf-8")
+
+        print("Voice generated successfully", flush=True)
 
         return jsonify({
             "text": response_text,
-            "audio_url": "/audio"
+            "audio": audio_base64
         })
 
     except Exception as e:
-        print("FULL ERROR:", str(e), flush=True)
+        print("ERROR:", str(e), flush=True)
         return jsonify({"text": "Server error: " + str(e)})
-
-
-@app.route("/audio")
-def serve_audio():
-    speech_file_path = os.path.join(tempfile.gettempdir(), "response.mp3")
-    return send_file(speech_file_path, mimetype="audio/mpeg")
 
 
 if __name__ == "__main__":
