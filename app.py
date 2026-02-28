@@ -1,5 +1,5 @@
 import os
-from flask import Flask, jsonify
+from flask import Flask
 
 os.environ["PYTHONUNBUFFERED"] = "1"
 app = Flask(__name__)
@@ -62,46 +62,42 @@ body{
 
 <script>
 
-const halo=document.getElementById("halo");
-const responseBox=document.getElementById("response");
+const halo = document.getElementById("halo");
+const responseBox = document.getElementById("response");
 
 let state="idle";
 let locked=false;
 let currentColor=[0,255,200];
-let activeAnimation=null;
-let currentOsc=null;
+let recognition=null;
+let silenceTimer=null;
 
 const FADE_DURATION=1750;
 
-// ==========================
-// COLOR FADE
-// ==========================
+// ================= COLOR =================
 
 function lerp(a,b,t){ return a+(b-a)*t; }
 
-function animateColor(targetColor,onComplete=null){
+function animateColor(target,onComplete=null){
 
-    if(activeAnimation) cancelAnimationFrame(activeAnimation);
-
-    const startColor=[...currentColor];
+    const start=[...currentColor];
     const startTime=performance.now();
 
     function step(now){
         let progress=(now-startTime)/FADE_DURATION;
         if(progress>1) progress=1;
 
-        let r=Math.floor(lerp(startColor[0],targetColor[0],progress));
-        let g=Math.floor(lerp(startColor[1],targetColor[1],progress));
-        let b=Math.floor(lerp(startColor[2],targetColor[2],progress));
+        let r=Math.floor(lerp(start[0],target[0],progress));
+        let g=Math.floor(lerp(start[1],target[1],progress));
+        let b=Math.floor(lerp(start[2],target[2],progress));
 
-        halo.style.boxShadow = `
+        halo.style.boxShadow=`
             0 0 100px rgba(${r},${g},${b},0.55),
             0 0 220px rgba(${r},${g},${b},0.35),
             0 0 320px rgba(${r},${g},${b},0.25)
         `;
 
-        halo.style.background = `
-            radial-gradient(circle at center,
+        halo.style.background=`
+            radial-gradient(circle,
                 rgba(${r},${g},${b},0.32) 0%,
                 rgba(${r},${g},${b},0.22) 50%,
                 rgba(${r},${g},${b},0.15) 75%,
@@ -111,19 +107,16 @@ function animateColor(targetColor,onComplete=null){
         currentColor=[r,g,b];
 
         if(progress<1){
-            activeAnimation=requestAnimationFrame(step);
-        }else{
-            activeAnimation=null;
-            if(onComplete) onComplete();
+            requestAnimationFrame(step);
+        }else if(onComplete){
+            onComplete();
         }
     }
 
-    activeAnimation=requestAnimationFrame(step);
+    requestAnimationFrame(step);
 }
 
-// ==========================
-// PULSE
-// ==========================
+// ================= PULSE =================
 
 function pulse(){
     if(state==="idle"){
@@ -133,137 +126,134 @@ function pulse(){
     requestAnimationFrame(pulse);
 }
 
-// ==========================
-// SOUNDS
-// ==========================
+// ================= SPEECH =================
 
-// Click sound (unchanged)
-function playClickSound(){
+function setupRecognition(){
 
-    if(currentOsc){
-        currentOsc.stop();
-        currentOsc=null;
+    const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if(!SpeechRecognition){
+        alert("Speech recognition not supported in this browser.");
+        return;
     }
 
-    const ctx=new (window.AudioContext||window.webkitAudioContext)();
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
 
-    osc.type="sine";
-    osc.frequency.setValueAtTime(220,ctx.currentTime);
-    osc.frequency.linearRampToValueAtTime(300,ctx.currentTime+1.75);
+    let finalTranscript="";
 
-    gain.gain.setValueAtTime(0.12,ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.001,ctx.currentTime+1.75);
+    recognition.onresult = function(event){
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+        let interim="";
+        for(let i=event.resultIndex;i<event.results.length;i++){
+            if(event.results[i].isFinal){
+                finalTranscript += event.results[i][0].transcript;
+            }else{
+                interim += event.results[i][0].transcript;
+            }
+        }
 
-    osc.start();
-    osc.stop(ctx.currentTime+1.75);
+        responseBox.innerText = finalTranscript + interim;
 
-    currentOsc=osc;
+        clearTimeout(silenceTimer);
+
+        silenceTimer = setTimeout(()=>{
+            recognition.stop();
+            processSpeech(finalTranscript.trim());
+        },2000); // 2 seconds silence detection
+    };
+
+    recognition.onerror = function(){
+        recognition.stop();
+        resetToIdle();
+    };
+
 }
 
-// Totally different AI completion sound
-function playCompletionSound(){
+// ================= PROCESS SPEECH =================
 
-    const ctx=new (window.AudioContext||window.webkitAudioContext)();
+function processSpeech(text){
 
-    const osc=ctx.createOscillator();
-    const gain=ctx.createGain();
+    if(!text){
+        speak("I didn’t hear you. Please tell me your hair concerns.");
+        return;
+    }
 
-    osc.type="triangle";   // different waveform
+    state="thinking";
+    responseBox.innerText="Analyzing...";
+    animateColor([0,255,255]);
 
-    osc.frequency.setValueAtTime(600,ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(1200,ctx.currentTime+0.4);
-
-    gain.gain.setValueAtTime(0.15,ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.6);
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.start();
-    osc.stop(ctx.currentTime+0.6);
+    setTimeout(()=>{
+        const reply = generateResponse(text);
+        responseBox.innerText = reply;
+        speak(reply);
+    },1000);
 }
 
-// ==========================
-// VOICE RESPONSE
-// ==========================
+function generateResponse(text){
+
+    text = text.toLowerCase();
+
+    if(text.includes("dry"))
+        return "It sounds like you're dealing with dryness. I recommend deep hydration treatments and sulfate-free products.";
+
+    if(text.includes("frizz"))
+        return "For frizz control, I suggest smoothing serums and humidity-protection styling products.";
+
+    if(text.includes("damage"))
+        return "Hair damage requires protein repair treatments and minimal heat styling.";
+
+    return "Thank you for sharing. Based on your concerns, I recommend a balanced strengthening and hydration routine.";
+}
+
+// ================= VOICE OUTPUT =================
 
 function speak(text){
 
-    const utterance=new SpeechSynthesisUtterance(text);
-    utterance.rate=0.95;
-    utterance.pitch=1.0;
-    utterance.volume=1.0;
+    const utter=new SpeechSynthesisUtterance(text);
+    utter.rate=0.95;
+    utter.pitch=1;
 
     speechSynthesis.cancel();
-    speechSynthesis.speak(utterance);
+    speechSynthesis.speak(utter);
 
-    utterance.onend=()=>{
-        playCompletionSound();
-        setTimeout(resetToIdle,400);
+    utter.onend=function(){
+        setTimeout(()=>{
+            resetToIdle();
+        },400);
     };
 }
 
-// ==========================
-// RESET
-// ==========================
+// ================= RESET =================
 
 function resetToIdle(){
-
-    state="resetting";
-    locked=true;
-
-    animateColor([0,255,200],()=>{
-        state="idle";
-        locked=false;
-        responseBox.innerText="Tap and describe your hair concern.";
-    });
+    state="idle";
+    locked=false;
+    responseBox.innerText="Tap and describe your hair concern.";
+    animateColor([0,255,200]);
 }
 
-// ==========================
-// CLICK
-// ==========================
+// ================= CLICK =================
 
 halo.addEventListener("click",()=>{
 
-    if(state==="transition" || state==="thinking"){
+    if(state!=="idle"){
+        recognition?.stop();
         resetToIdle();
         return;
     }
 
-    if(locked) return;
-
     locked=true;
-    state="transition";
+    state="listening";
     responseBox.innerText="Listening...";
 
-    playClickSound();
-
     animateColor([255,210,80],()=>{
-
-        // 3 second silence before analyzing
-        setTimeout(()=>{
-
-            state="thinking";
-            responseBox.innerText="Analyzing...";
-
-            animateColor([0,255,255],()=>{
-
-                const aiText="I didn’t hear you. Can you please share your hair concerns for a recommendation?";
-                responseBox.innerText=aiText;
-
-                speak(aiText);
-
-            });
-
-        },3000); // 3 second delay
-
+        setupRecognition();
+        recognition.start();
     });
-
 });
 
 // INIT
@@ -274,10 +264,6 @@ pulse();
 </body>
 </html>
 """
-
-@app.route("/voice",methods=["POST"])
-def voice():
-    return jsonify({"text":"Voice endpoint active.","audio":""})
 
 if __name__=="__main__":
     port=int(os.environ.get("PORT",10000))
