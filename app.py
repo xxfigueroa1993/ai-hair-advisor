@@ -3,7 +3,7 @@ import tempfile
 from flask import Flask, request, jsonify
 from openai import OpenAI
 
-# Force unbuffered logging
+# Force unbuffered logs
 os.environ["PYTHONUNBUFFERED"] = "1"
 
 app = Flask(__name__)
@@ -22,7 +22,7 @@ def home():
 </head>
 <body style="background:black;color:white;text-align:center;margin-top:60px;font-family:Arial;">
 
-<h1>AI Hair Advisor (CLICK TO START / STOP)</h1>
+<h1>AI Hair Advisor (Enhanced Audio Mode)</h1>
 <button onclick="startRecording()">Start / Stop Recording</button>
 
 <p id="status">Idle</p>
@@ -37,8 +37,20 @@ async function startRecording(){
 
     if (!recording){
 
-        const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-        mediaRecorder = new MediaRecorder(stream);
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: true,
+                channelCount: 1
+            }
+        });
+
+        mediaRecorder = new MediaRecorder(stream, {
+            mimeType: "audio/webm;codecs=opus",
+            audioBitsPerSecond: 128000
+        });
+
         audioChunks = [];
 
         mediaRecorder.ondataavailable = event => {
@@ -49,7 +61,12 @@ async function startRecording(){
 
         mediaRecorder.onstop = async () => {
 
+            // Ensure buffer fully flushes
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
             const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+
+            console.log("Blob size:", audioBlob.size);
 
             const formData = new FormData();
             formData.append("audio", audioBlob, "audio.webm");
@@ -67,7 +84,7 @@ async function startRecording(){
 
         mediaRecorder.start();
         recording = true;
-        document.getElementById("status").innerText = "Recording... Click again to stop.";
+        document.getElementById("status").innerText = "Recording... Wait 1 sec, speak, then click again to stop.";
 
     } else {
 
