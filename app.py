@@ -77,10 +77,9 @@ let micSource=null;
 
 let currentColor=[0,255,200];
 let colorAnim=null;
-
 const FADE_DURATION=1200;
 
-// ================= COLOR FADE =================
+// ================= COLOR =================
 
 function lerp(a,b,t){return a+(b-a)*t;}
 
@@ -121,7 +120,7 @@ colorAnim=requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-// ================= REACTIVE PULSE =================
+// ================= PULSE =================
 
 function pulseLoop(){
 let scale=1;
@@ -148,12 +147,11 @@ scale=1+Math.sin(Date.now()*0.004)*0.12;
 halo.style.transform=`scale(${scale})`;
 requestAnimationFrame(pulseLoop);
 }
-
 pulseLoop();
 
 // ================= SOUNDS =================
 
-// INTRO = 1.5x deeper than original
+// INTRO (1.5x deeper, slightly longer so it's clearly lower)
 function playIntro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
@@ -161,19 +159,19 @@ const gain=ctx.createGain();
 
 osc.type="sine";
 osc.frequency.setValueAtTime(320,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(160,ctx.currentTime+1.0);
+osc.frequency.exponentialRampToValueAtTime(160,ctx.currentTime+1.2);
 
-gain.gain.setValueAtTime(0.3,ctx.currentTime);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.1);
+gain.gain.setValueAtTime(0.35,ctx.currentTime);
+gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+1.3);
 
 osc.connect(gain);
 gain.connect(ctx.destination);
 
 osc.start();
-osc.stop(ctx.currentTime+1.1);
+osc.stop(ctx.currentTime+1.3);
 }
 
-// OUTRO = ORIGINAL intro sound (480 -> 240)
+// OUTRO (true original intro sound)
 function playOutro(){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
 const osc=ctx.createOscillator();
@@ -193,36 +191,35 @@ osc.start();
 osc.stop(ctx.currentTime+1.1);
 }
 
-// ================= PRODUCT LOGIC (UNCHANGED) =================
+// ================= PRODUCT LOGIC =================
 
 function chooseProduct(text){
-
 text=text.toLowerCase();
 
 let dry=/dry|frizz|brittle|rough|split|dehydrated/.test(text);
 let damaged=/damage|break|weak|burn|chemical|overprocessed/.test(text);
-let tangly=/tangle|knot|matted|hard to brush/.test(text);
-let color=/color fade|dull|lost color|brassy|fading/.test(text);
-let oily=/oily|greasy|oil buildup|too much oil/.test(text);
-let flat=/flat|lifeless|no bounce|no volume/.test(text);
-let falling=/falling|shedding|thinning|hair loss/.test(text);
+let tangly=/tangle|knot|matted/.test(text);
+let color=/color fade|dull|brassy|fading/.test(text);
+let oily=/oily|greasy/.test(text);
+let flat=/flat|lifeless|volume/.test(text);
+let falling=/falling|shedding|thinning/.test(text);
 
 let issues=[dry,damaged,tangly,color,oily,flat,falling].filter(Boolean).length;
 
 if(issues>=2 || damaged || falling){
-return "Based on what you're describing, Formula Exclusiva is the right solution. It is our all in one natural professional salon treatment that restores structural strength, hydration balance, elasticity and scalp integrity. Price: $65.";
+return "Formula Exclusiva is your ideal solution. It restores structure, hydration balance and long term strength. Price: $65.";
 }
 
 if(color){
-return "Gotika is your best option. It is an all natural professional hair color treatment that restores vibrancy and protects long term pigment depth. Price: $54.";
+return "Gotika restores color vibrancy and long term pigment depth. Price: $54.";
 }
 
 if(oily){
-return "Gotero is the ideal choice. It is our all natural professional hair gel that regulates excess oil while maintaining proper scalp balance. Price: $42.";
+return "Gotero balances oil while maintaining scalp health. Price: $42.";
 }
 
 if(dry || flat || tangly){
-return "Laciador fits your concern perfectly. It is our all natural professional hair styler designed to restore smoothness, manageability and healthy bounce. Price: $48.";
+return "Laciador restores smoothness and healthy bounce. Price: $48.";
 }
 
 return null;
@@ -233,20 +230,14 @@ return null;
 function getAmericanVoice(){
 let voices=speechSynthesis.getVoices();
 let preferred=["Google US English","Samantha","Microsoft Zira","Microsoft Jenny"];
-
 for(let name of preferred){
 let found=voices.find(v=>v.name.includes(name));
 if(found) return found;
 }
-
-let us=voices.find(v=>v.lang==="en-US");
-if(us) return us;
-
-return voices.find(v=>v.lang.startsWith("en"));
+return voices.find(v=>v.lang==="en-US");
 }
 
 function speak(text){
-
 speechSynthesis.cancel();
 
 const utter=new SpeechSynthesisUtterance(text);
@@ -293,7 +284,6 @@ recognition.interimResults=true;
 transcript="";
 
 recognition.onresult=function(event){
-
 clearTimeout(silenceTimer);
 clearTimeout(noSpeechTimer);
 
@@ -310,36 +300,26 @@ processTranscript(transcript.trim());
 };
 
 recognition.start();
-
-noSpeechTimer=setTimeout(()=>{
-if(transcript.trim().length<3){
-recognition.stop();
-speak("I can't hear you. Could you describe your hair concern?");
-}
-},3500);
 }
 
 // ================= PROCESS =================
 
 function processTranscript(text){
-
 if(!text || text.length<4){
-speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
+speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage or color loss?");
 return;
 }
 
 let result=chooseProduct(text);
 
 if(!result){
-speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage, tangling, color loss, volume issues or shedding?");
+speak("I didn't quite understand. Could you be more specific like dryness, oiliness, damage or color loss?");
 return;
 }
 
 responseBox.innerText=result;
 speak(result);
 }
-
-// ================= CLICK =================
 
 halo.addEventListener("click",()=>{
 if(state==="idle"){
