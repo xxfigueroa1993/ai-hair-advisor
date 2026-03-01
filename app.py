@@ -39,7 +39,7 @@ width:280px;
 height:280px;
 border-radius:50%;
 cursor:pointer;
-transition:transform 0.05s linear;
+transition:all 0.15s ease;
 }
 
 #response{
@@ -47,6 +47,7 @@ margin-top:30px;
 width:75%;
 text-align:center;
 font-size:18px;
+min-height:60px;
 }
 
 #langBox{
@@ -72,8 +73,8 @@ cursor:pointer;
 <select id="langSelect">
 <option value="en-US">English</option>
 <option value="es-ES">Español</option>
-<option value="pt-BR">Português</option>
 <option value="fr-FR">Français</option>
+<option value="pt-BR">Português</option>
 <option value="de-DE">Deutsch</option>
 <option value="ar-SA">العربية</option>
 <option value="zh-CN">中文</option>
@@ -97,7 +98,6 @@ let selectedLang="en-US";
 let state="idle";
 let transcript="";
 let recognition=null;
-
 let silenceTimer=null;
 let lastSpeechTime=0;
 const SILENCE_DELAY=2500;
@@ -105,11 +105,32 @@ const SILENCE_DELAY=2500;
 let premiumVoice=null;
 let voicesLoaded=false;
 
-/* ================= LANGUAGE RESPONSE SYSTEM ================= */
+/* ================= PREMIUM VOICE ================= */
 
-const responses = {
+function selectVoice(){
+const voices=speechSynthesis.getVoices();
+if(!voices.length) return;
+
+voicesLoaded=true;
+
+const matches=voices.filter(v=>v.lang===selectedLang);
+
+premiumVoice=
+matches.find(v=>v.name.includes("Google")) ||
+matches.find(v=>v.name.includes("Microsoft")) ||
+matches.find(v=>!v.localService) ||
+matches[0] ||
+voices[0];
+}
+
+speechSynthesis.onvoiceschanged=selectVoice;
+setTimeout(selectVoice,500);
+
+/* ================= LANGUAGE RESPONSES ================= */
+
+const responses={
 "en-US":{
-nothing:"I didn’t hear anything. Please describe dryness, oiliness, damage, or color concerns.",
+nothing:"I didn’t hear anything. Please describe dryness, oiliness, damage, or color.",
 allinone:"Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.",
 damage:"Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.",
 color:"Gotika restores color vibrancy and tone. Price: $54.",
@@ -123,80 +144,45 @@ damage:"Formula Exclusiva fortalece y repara el cabello. Precio: $65.",
 color:"Gotika restaura la vitalidad del color. Precio: $54.",
 oil:"Gotero equilibra la grasa del cabello. Precio: $42.",
 dry:"Laciador restaura suavidad y brillo. Precio: $48."
-},
-"fr-FR":{
-nothing:"Je n’ai rien entendu. Décrivez sécheresse, gras, dommages ou couleur.",
-allinone:"Formula Exclusiva est votre solution complète tout-en-un. Prix : 65 $.",
-damage:"Formula Exclusiva renforce et répare les cheveux. Prix : 65 $.",
-color:"Gotika restaure l’éclat de la couleur. Prix : 54 $.",
-oil:"Gotero équilibre l’excès de sébum. Prix : 42 $.",
-dry:"Laciador restaure douceur et souplesse. Prix : 48 $."
 }
 };
 
-/* ================= VOICE SELECTION ================= */
+/* ================= COLOR + PULSE SYSTEM ================= */
 
-function selectBestVoice(){
-const voices=speechSynthesis.getVoices();
-if(!voices.length) return;
+let baseColor=[0,255,200];
+let pulseSize=0;
+let pulseDirection=1;
 
-voicesLoaded=true;
-
-const langVoices=voices.filter(v=>v.lang===selectedLang);
-
-premiumVoice=
-langVoices.find(v=>v.name.includes("Google")) ||
-langVoices.find(v=>v.name.includes("Microsoft")) ||
-langVoices.find(v=>v.localService===false) ||
-langVoices[0] ||
-voices[0];
-}
-
-speechSynthesis.onvoiceschanged=selectBestVoice;
-setTimeout(selectBestVoice,500);
-
-/* ================= COLOR ================= */
-
-let currentColor=[0,255,200];
-
-function animateColor(target){
-let start=[...currentColor];
-let duration=800;
-let startTime=performance.now();
-
-function frame(now){
-let p=Math.min((now-startTime)/duration,1);
-let r=Math.floor(start[0]+(target[0]-start[0])*p);
-let g=Math.floor(start[1]+(target[1]-start[1])*p);
-let b=Math.floor(start[2]+(target[2]-start[2])*p);
-
+function drawSphere(r,g,b){
 halo.style.background=
-`radial-gradient(circle, rgba(${r},${g},${b},0.8) 0%, rgba(${r},${g},${b},0.15) 70%)`;
+`radial-gradient(circle,
+ rgba(${r},${g},${b},0.9) 0%,
+ rgba(${r},${g},${b},0.25) 60%,
+ rgba(${r},${g},${b},0.08) 100%)`;
 
 halo.style.boxShadow=
-`0 0 120px rgba(${r},${g},${b},0.9),
- 0 0 240px rgba(${r},${g},${b},0.6),
- 0 0 360px rgba(${r},${g},${b},0.4)`;
-
-if(p<1) requestAnimationFrame(frame);
+`0 0 ${120+pulseSize}px rgba(${r},${g},${b},0.9),
+ 0 0 ${240+pulseSize}px rgba(${r},${g},${b},0.6),
+ 0 0 ${360+pulseSize}px rgba(${r},${g},${b},0.3)`;
 }
 
-currentColor=target;
-requestAnimationFrame(frame);
+function ambientPulse(){
+if(state==="idle"){
+pulseSize+=0.5*pulseDirection;
+if(pulseSize>20||pulseSize<0) pulseDirection*=-1;
+drawSphere(...baseColor);
+}
+requestAnimationFrame(ambientPulse);
 }
 
-animateColor([0,255,200]);
+ambientPulse();
 
 /* ================= SPEAK ================= */
 
 function speak(text){
-if(!voicesLoaded){
-setTimeout(()=>speak(text),300);
-return;
-}
 
 state="speaking";
-animateColor([0,200,255]);
+baseColor=[0,200,255];
 
 let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
@@ -206,8 +192,13 @@ utter.rate=0.92;
 speechSynthesis.cancel();
 speechSynthesis.speak(utter);
 
+let speakPulse=setInterval(()=>{
+pulseSize=Math.random()*30;
+},80);
+
 utter.onend=()=>{
-animateColor([0,255,200]);
+clearInterval(speakPulse);
+baseColor=[0,255,200];
 state="idle";
 };
 }
@@ -216,26 +207,15 @@ state="idle";
 
 function chooseProduct(text){
 
-const langPack=responses[selectedLang] || responses["en-US"];
+const langPack=responses[selectedLang]||responses["en-US"];
 text=text.toLowerCase();
 
-if(!text || text.length<2)
-return langPack.nothing;
-
-if(/all|todo|tout|complete/.test(text))
-return langPack.allinone;
-
-if(/damage|daño|dommage/.test(text))
-return langPack.damage;
-
-if(/color|couleur|coloración/.test(text))
-return langPack.color;
-
-if(/oil|grasa|gras/.test(text))
-return langPack.oil;
-
-if(/dry|seco|sec/.test(text))
-return langPack.dry;
+if(!text||text.length<2) return langPack.nothing;
+if(/all|todo/.test(text)) return langPack.allinone;
+if(/damage|daño/.test(text)) return langPack.damage;
+if(/color/.test(text)) return langPack.color;
+if(/oil|grasa/.test(text)) return langPack.oil;
+if(/dry|seco/.test(text)) return langPack.dry;
 
 return langPack.nothing;
 }
@@ -246,9 +226,8 @@ function startListening(){
 
 transcript="";
 lastSpeechTime=Date.now();
-
-animateColor([255,210,80]);
 state="listening";
+baseColor=[255,210,80];
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SR();
@@ -264,6 +243,8 @@ transcript+=event.results[i][0].transcript;
 lastSpeechTime=Date.now();
 clearTimeout(silenceTimer);
 silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
+
+pulseSize=Math.random()*40; // reactive pulse while speaking
 };
 
 recognition.start();
@@ -290,15 +271,17 @@ halo.addEventListener("click",()=>{
 if(state==="idle") startListening();
 else{
 try{recognition.stop();}catch(e){}
-animateColor([0,255,200]);
 state="idle";
+baseColor=[0,255,200];
 }
 });
 
 langSelect.addEventListener("change",()=>{
 selectedLang=langSelect.value;
-selectBestVoice();
+selectVoice();
 });
+
+drawSphere(...baseColor);
 
 </script>
 </body>
@@ -306,5 +289,5 @@ selectBestVoice();
 """
 
 if __name__ == "__main__":
-    port=int(os.environ.get("PORT",10000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
