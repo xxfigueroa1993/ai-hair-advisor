@@ -95,17 +95,18 @@ const langSelect = document.getElementById("langSelect");
 
 let selectedLang="en-US";
 let recognition=null;
-let transcript="";
-let listening=false;
-let processing=false;
-let silenceTimer=null;
-let hardStopTimer=null;
 
 let state="idle";
+let transcript="";
+let silenceTimer=null;
+let hardStopTimer=null;
+let lastSpeechTime=0;
+
+const SILENCE_DELAY = 2500; // 2.5 seconds
 
 let currentColor=[0,255,200];
 
-/* ========== COLOR ========== */
+/* ================= COLOR ================= */
 
 function animateColor(target){
 let start=[...currentColor];
@@ -135,7 +136,7 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-/* ========== PULSE ========== */
+/* ================= PULSE ================= */
 
 function pulse(){
 let scale=1;
@@ -154,7 +155,7 @@ requestAnimationFrame(pulse);
 }
 pulse();
 
-/* ========== SOUNDS ========== */
+/* ================= SOUNDS ================= */
 
 function playTone(start,end,duration){
 const ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -174,7 +175,7 @@ osc.stop(ctx.currentTime+duration);
 function playIntro(){ playTone(250,150,1.4); }
 function playOutro(){ playTone(300,180,1.4); }
 
-/* ========== VOICE ========== */
+/* ================= SPEAK ================= */
 
 function speak(text){
 state="speaking";
@@ -191,11 +192,10 @@ utter.onend=()=>{
 playOutro();
 animateColor([0,255,200]);
 state="idle";
-processing=false;
 };
 }
 
-/* ========== PRODUCT LOGIC ========== */
+/* ================= PRODUCT ================= */
 
 function chooseProduct(text){
 text=text.toLowerCase();
@@ -221,40 +221,20 @@ return "Laciador restores smoothness and softness. Price: $48.";
 return "Please describe dryness, oiliness, damage, or color concerns.";
 }
 
-/* ========== CLEAN STOP ========== */
+/* ================= PROCESS ================= */
 
-function stopListening(){
-if(!listening) return;
-
-listening=false;
-
-clearTimeout(silenceTimer);
-clearTimeout(hardStopTimer);
-
-try{ recognition.stop(); }catch(e){}
-
-processTranscript(transcript);
-}
-
-/* ========== PROCESS ========== */
-
-function processTranscript(text){
-if(processing) return;
-processing=true;
-
-let result=chooseProduct(text);
+function processTranscript(){
+let result=chooseProduct(transcript);
 responseBox.innerText=result;
 speak(result);
 }
 
-/* ========== START LISTEN ========== */
+/* ================= LISTEN ================= */
 
 function startListening(){
 
-if(listening || processing) return;
-
 transcript="";
-listening=true;
+lastSpeechTime=Date.now();
 
 playIntro();
 animateColor([255,210,80]);
@@ -271,21 +251,35 @@ transcript="";
 for(let i=0;i<event.results.length;i++)
 transcript+=event.results[i][0].transcript;
 
-clearTimeout(silenceTimer);
-silenceTimer=setTimeout(stopListening,2000);
-};
+lastSpeechTime=Date.now();
 
-recognition.onerror=()=>{
-stopListening();
+clearTimeout(silenceTimer);
+silenceTimer=setTimeout(checkSilence, SILENCE_DELAY);
 };
 
 recognition.start();
 
-/* Hard fail-safe (absolute max 5 sec) */
-hardStopTimer=setTimeout(stopListening,5000);
+hardStopTimer=setTimeout(()=>{
+stopListening();
+},10000);
 }
 
-/* ========== CLICK ========== */
+function checkSilence(){
+if(Date.now()-lastSpeechTime>=SILENCE_DELAY){
+stopListening();
+}else{
+silenceTimer=setTimeout(checkSilence, SILENCE_DELAY);
+}
+}
+
+function stopListening(){
+clearTimeout(silenceTimer);
+clearTimeout(hardStopTimer);
+try{recognition.stop();}catch(e){}
+processTranscript();
+}
+
+/* ================= CLICK ================= */
 
 halo.addEventListener("click",()=>{
 if(state==="idle") startListening();
