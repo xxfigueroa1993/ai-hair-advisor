@@ -378,8 +378,8 @@ setColor(...IDLE);
 let breathPhase = 0, speakPhase = 0, smoothScale = 1, targetScale = 1;
 function animLoop() {
   if (appState === "idle") {
-    breathPhase += 0.00065;
-    targetScale = 1 + 0.052 * Math.sin(breathPhase);
+    breathPhase += 0.006;                              // ~6s per breath cycle at 60fps
+    targetScale = 1 + 0.06 * Math.sin(breathPhase);   // visible ±6% scale
   } else if (appState === "listening") {
     if (analyser && micData) {
       analyser.getByteFrequencyData(micData);
@@ -388,14 +388,14 @@ function animLoop() {
       vol /= (micData.length * 255);
       targetScale = 1 + vol * 0.55;
     } else {
-      breathPhase += 0.003;
-      targetScale = 1 + 0.04 * Math.sin(breathPhase);
+      breathPhase += 0.012;
+      targetScale = 1 + 0.06 * Math.sin(breathPhase);
     }
   } else if (appState === "speaking") {
     speakPhase += 0.038;
     targetScale = 1 + 0.075 + 0.065 * Math.abs(Math.sin(speakPhase));
   }
-  smoothScale += (targetScale - smoothScale) * 0.10;
+  smoothScale += (targetScale - smoothScale) * 0.06;  // gentle lerp
   halo.style.transform = `scale(${smoothScale.toFixed(4)})`;
   requestAnimationFrame(animLoop);
 }
