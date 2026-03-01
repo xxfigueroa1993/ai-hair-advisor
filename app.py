@@ -37,7 +37,8 @@ BACKGROUND RULES (when mentioned):
 - Caucasian/White hair + oily → Gotero
 - Any hair + severe damage/breakage/falling out → Formula Exclusiva (overrides everything)
 
-Respond ONLY with your product recommendation. No preamble. No "Sure!" or "Of course!"."""
+Respond ONLY with your product recommendation. No preamble. No "Sure!" or "Of course!".
+If the user's language is not English, respond entirely in that language. The language code will be provided."""
 
 
 @app.route("/")
@@ -464,9 +465,120 @@ async function getRecommendation(text) {
   }
 }
 
+// Translated fallback responses for when API key is not configured
+const LOCAL_RESPONSES = {
+  "en-US": {
+    damaged:  "Formula Exclusiva is exactly what your hair needs. This professional all-in-one treatment rebuilds strength, restores moisture, and revives scalp health. At $65, it's your most complete solution.",
+    color:    "Gotika is the answer for your color. It restores vibrancy, corrects tone, and protects your pigment long-term — all naturally. Price: $54.",
+    colorAf:  "Gotero is your best match — it restores natural sheen and tone while balancing your scalp. At $42, it works beautifully with your hair's natural texture.",
+    oily:     "Gotero is exactly right for oily hair — it regulates sebum production and keeps your scalp clear. Price: $42.",
+    oilyHi:  "Formula Exclusiva will balance your scalp's oil while deeply nourishing your hair. At $65, it handles both in one.",
+    dry:      "Laciador will transform dry hair — restoring softness, smoothness, and that healthy natural bounce. Price: $48.",
+    dryAs:   "Formula Exclusiva is ideal for your hair type — it penetrates deeply to restore elasticity and hydration. Price: $65.",
+    tangly:   "Formula Exclusiva addresses the root cause of tangles while strengthening every strand. Price: $65.",
+    tanglyHi: "Laciador is perfect — it smooths, detangles, and leaves your hair manageable with beautiful movement. Price: $48.",
+    flat:     "Laciador will give your hair the body and movement it's been missing — lightweight and natural. Price: $48.",
+    default:  "Formula Exclusiva is your best all-around choice. It covers moisture, strength, and scalp health in one professional treatment. Price: $65."
+  },
+  "es-ES": {
+    damaged:  "Formula Exclusiva es exactamente lo que tu cabello necesita. Este tratamiento profesional todo en uno reconstruye la fuerza y restaura la humedad. A $65, es tu solución más completa.",
+    color:    "Gotika es la respuesta para tu color. Restaura la vitalidad, corrige el tono y protege tu pigmento a largo plazo. Precio: $54.",
+    colorAf:  "Gotero es tu mejor opción — restaura el brillo natural y el tono mientras equilibra tu cuero cabelludo. A $42, funciona perfectamente.",
+    oily:     "Gotero es ideal para el cabello graso — regula la producción de sebo y mantiene tu cuero cabelludo limpio. Precio: $42.",
+    oilyHi:  "Formula Exclusiva equilibrará el aceite de tu cuero cabelludo mientras nutre profundamente tu cabello. A $65, lo maneja todo.",
+    dry:      "Laciador transformará tu cabello seco — restaurando suavidad, tersura y ese rebote natural saludable. Precio: $48.",
+    dryAs:   "Formula Exclusiva es ideal para tu tipo de cabello — penetra profundamente para restaurar elasticidad e hidratación. Precio: $65.",
+    tangly:   "Formula Exclusiva aborda la causa raíz de los enredos mientras fortalece cada hebra. Precio: $65.",
+    tanglyHi: "Laciador es perfecto — suaviza, desenreda y deja tu cabello manejable con un movimiento hermoso. Precio: $48.",
+    flat:     "Laciador le dará a tu cabello el cuerpo y movimiento que le falta — ligero y natural. Precio: $48.",
+    default:  "Formula Exclusiva es tu mejor opción general. Cubre humedad, fuerza y salud del cuero cabelludo en un tratamiento profesional. Precio: $65."
+  },
+  "fr-FR": {
+    damaged:  "Formula Exclusiva est exactement ce dont vos cheveux ont besoin. Ce traitement tout-en-un professionnel reconstruit la force et restaure l'hydratation. À 65$, c'est votre solution la plus complète.",
+    color:    "Gotika est la réponse pour votre couleur. Elle restaure l'éclat, corrige le ton et protège votre pigment durablement. Prix : 54$.",
+    colorAf:  "Gotero est votre meilleur choix — il restaure l'éclat naturel tout en équilibrant votre cuir chevelu. À 42$, il fonctionne parfaitement.",
+    oily:     "Gotero est idéal pour les cheveux gras — il régule la production de sébum et garde votre cuir chevelu propre. Prix : 42$.",
+    oilyHi:  "Formula Exclusiva équilibrera l'huile de votre cuir chevelu tout en nourrissant profondément vos cheveux. À 65$, il gère les deux.",
+    dry:      "Laciador transformera vos cheveux secs — restaurant la douceur, le lissé et ce rebond naturel sain. Prix : 48$.",
+    dryAs:   "Formula Exclusiva est idéale pour votre type de cheveux — elle pénètre profondément pour restaurer l'élasticité. Prix : 65$.",
+    tangly:   "Formula Exclusiva s'attaque à la cause des nœuds tout en renforçant chaque mèche. Prix : 65$.",
+    tanglyHi: "Laciador est parfait — il lisse, démêle et laisse vos cheveux soyeux avec un beau mouvement. Prix : 48$.",
+    flat:     "Laciador donnera à vos cheveux le volume et le mouvement qui lui manquent — léger et naturel. Prix : 48$.",
+    default:  "Formula Exclusiva est votre meilleur choix global. Il couvre l'hydratation, la force et la santé du cuir chevelu. Prix : 65$."
+  },
+  "pt-BR": {
+    damaged:  "Formula Exclusiva é exatamente o que seu cabelo precisa. Este tratamento profissional tudo-em-um reconstrói a força e restaura a hidratação. Por $65, é sua solução mais completa.",
+    color:    "Gotika é a resposta para sua cor. Ela restaura a vibração, corrige o tom e protege seu pigmento por muito tempo. Preço: $54.",
+    colorAf:  "Gotero é sua melhor opção — ele restaura o brilho natural enquanto equilibra seu couro cabeludo. Por $42, funciona perfeitamente.",
+    oily:     "Gotero é ideal para cabelos oleosos — regula a produção de sebo e mantém seu couro cabeludo limpo. Preço: $42.",
+    oilyHi:  "Formula Exclusiva equilibrará o óleo do seu couro cabeludo enquanto nutre profundamente seu cabelo. Por $65, resolve os dois.",
+    dry:      "Laciador vai transformar seu cabelo seco — restaurando suavidade, lisura e aquele bounce natural saudável. Preço: $48.",
+    dryAs:   "Formula Exclusiva é ideal para seu tipo de cabelo — penetra profundamente para restaurar elasticidade e hidratação. Preço: $65.",
+    tangly:   "Formula Exclusiva aborda a causa raiz dos nós enquanto fortalece cada fio. Preço: $65.",
+    tanglyHi: "Laciador é perfeito — alisa, desembaraça e deixa seu cabelo maleável com um belo movimento. Preço: $48.",
+    flat:     "Laciador dará ao seu cabelo o volume e movimento que faltam — leve e natural. Preço: $48.",
+    default:  "Formula Exclusiva é sua melhor escolha geral. Cobre hidratação, força e saúde do couro cabeludo em um tratamento profissional. Preço: $65."
+  },
+  "de-DE": {
+    damaged:  "Formula Exclusiva ist genau das, was Ihr Haar braucht. Diese professionelle All-in-one-Behandlung baut Stärke auf und stellt die Feuchtigkeit wieder her. Für $65 ist es Ihre vollständigste Lösung.",
+    color:    "Gotika ist die Antwort für Ihre Farbe. Sie stellt Lebendigkeit wieder her, korrigiert den Ton und schützt Ihr Pigment langfristig. Preis: $54.",
+    colorAf:  "Gotero ist Ihre beste Wahl — es stellt natürlichen Glanz und Ton wieder her. Für $42 funktioniert es perfekt.",
+    oily:     "Gotero ist ideal für fettiges Haar — es reguliert die Talgproduktion und hält Ihre Kopfhaut sauber. Preis: $42.",
+    oilyHi:  "Formula Exclusiva bringt das Öl Ihrer Kopfhaut ins Gleichgewicht und nährt Ihr Haar tief. Für $65 übernimmt es beides.",
+    dry:      "Laciador wird Ihr trockenes Haar transformieren — Weichheit, Glätte und natürliches Volumen zurückbringen. Preis: $48.",
+    dryAs:   "Formula Exclusiva ist ideal für Ihren Haartyp — dringt tief ein, um Elastizität wiederherzustellen. Preis: $65.",
+    tangly:   "Formula Exclusiva bekämpft die Ursache von Verfilzungen und stärkt jeden Strang. Preis: $65.",
+    tanglyHi: "Laciador ist perfekt — es glättet, entwirrt und lässt Ihr Haar pflegeleicht mit schöner Bewegung. Preis: $48.",
+    flat:     "Laciador gibt Ihrem Haar das Volumen und die Bewegung, die ihm fehlen — leicht und natürlich. Preis: $48.",
+    default:  "Formula Exclusiva ist Ihre beste Gesamtlösung. Es deckt Feuchtigkeitsversorgung, Stärke und Kopfhautgesundheit ab. Preis: $65."
+  },
+  "ar-SA": {
+    damaged:  "فورمولا إكسكلوسيفا هو بالضبط ما يحتاجه شعرك. هذا العلاج المهني الشامل يعيد بناء القوة ويستعيد الرطوبة. بسعر $65، إنه حلك الأكثر اكتمالاً.",
+    color:    "غوتيكا هي الإجابة لحماية لونك. تستعيد النضارة وتصحح اللون وتحمي الصبغة على المدى البعيد. السعر: $54.",
+    colorAf:  "غوتيرو هو خيارك الأفضل — يستعيد البريق الطبيعي ويوازن فروة الرأس. بسعر $42 يعمل بشكل رائع.",
+    oily:     "غوتيرو مثالي للشعر الدهني — ينظم إنتاج الزيت ويبقي فروة رأسك نظيفة. السعر: $42.",
+    oilyHi:  "فورمولا إكسكلوسيفا سيوازن زيت فروة رأسك مع تغذية شعرك. بسعر $65 يتولى الأمرين معاً.",
+    dry:      "لاسيادور سيحول شعرك الجاف — يستعيد النعومة والملمس والارتداد الطبيعي. السعر: $48.",
+    dryAs:   "فورمولا إكسكلوسيفا مثالي لنوع شعرك — يخترق بعمق لاستعادة المرونة والترطيب. السعر: $65.",
+    tangly:   "فورمولا إكسكلوسيفا يعالج سبب التشابك ويقوي كل خصلة. السعر: $65.",
+    tanglyHi: "لاسيادور مثالي — يملس ويفك التشابك ويجعل شعرك قابلاً للتصفيف مع حركة جميلة. السعر: $48.",
+    flat:     "لاسيادور سيمنح شعرك الحجم والحركة التي يفتقدها — خفيف وطبيعي. السعر: $48.",
+    default:  "فورمولا إكسكلوسيفا هو أفضل خيار شامل لك. يغطي الترطيب والقوة وصحة فروة الرأس. السعر: $65."
+  },
+  "zh-CN": {
+    damaged:  "Formula Exclusiva 正是您的头发所需要的。这款专业全效护理产品能重建发丝强度、恢复水分，全面修护头皮健康。售价 $65，是您最完整的解决方案。",
+    color:    "Gotika 是护色的最佳选择。它能恢复色彩活力、校正发色，并长效保护色素。售价 $54。",
+    colorAf:  "Gotero 是您的最佳选择——它能恢复自然光泽与发色，同时平衡头皮状态。售价 $42，效果出色。",
+    oily:     "Gotero 非常适合油性发质——它能调节皮脂分泌，保持头皮清爽而不过度干燥。售价 $42。",
+    oilyHi:  "Formula Exclusiva 能平衡头皮油脂，同时深层滋养发丝。售价 $65，一步到位。",
+    dry:      "Laciador 能彻底改善干燥发质——恢复柔软、顺滑和自然弹性。售价 $48。",
+    dryAs:   "Formula Exclusiva 最适合您的发质——深层渗透，恢复弹性与持久水分。售价 $65。",
+    tangly:   "Formula Exclusiva 从根本上解决打结问题，同时强化每根发丝。售价 $65。",
+    tanglyHi: "Laciador 是完美之选——顺滑、解结，让发丝易于打理且充满自然动感。售价 $48。",
+    flat:     "Laciador 能赋予发丝所缺失的蓬松感和动感——轻盈自然。售价 $48。",
+    default:  "Formula Exclusiva 是您最全面的选择，涵盖水分、强度与头皮健康，一款专业护理产品搞定一切。售价 $65。"
+  },
+  "hi-IN": {
+    damaged:  "Formula Exclusiva बिल्कुल वही है जो आपके बालों को चाहिए। यह पेशेवर ऑल-इन-वन उपचार बालों की मजबूती बहाल करता है और नमी देता है। $65 में यह आपका सबसे संपूर्ण समाधान है।",
+    color:    "Gotika आपके बालों के रंग के लिए सही उत्तर है। यह रंग की चमक बहाल करती है, टोन ठीक करती है और पिगमेंट को लंबे समय तक सुरक्षित रखती है। कीमत: $54।",
+    colorAf:  "Gotero आपके लिए सबसे अच्छा विकल्प है — यह प्राकृतिक चमक बहाल करता है और स्कैल्प को संतुलित रखता है। $42 में शानदार परिणाम।",
+    oily:     "Gotero तैलीय बालों के लिए आदर्श है — यह सीबम उत्पादन को नियंत्रित करता है और स्कैल्प को साफ रखता है। कीमत: $42।",
+    oilyHi:  "Formula Exclusiva आपके स्कैल्प के तेल को संतुलित करते हुए बालों को गहराई से पोषण देगा। $65 में दोनों काम एक साथ।",
+    dry:      "Laciador सूखे बालों को बदल देगा — मुलायमियत, चिकनाई और प्राकृतिक बाउंस वापस लाएगा। कीमत: $48।",
+    dryAs:   "Formula Exclusiva आपके बालों के प्रकार के लिए आदर्श है — गहराई से प्रवेश करके लोच और नमी बहाल करता है। कीमत: $65।",
+    tangly:   "Formula Exclusiva उलझन की मूल वजह को दूर करता है और हर बाल को मजबूत बनाता है। कीमत: $65।",
+    tanglyHi: "Laciador एकदम सही है — चिकना करता है, उलझन सुलझाता है और बालों को संभालने योग्य बनाता है। कीमत: $48।",
+    flat:     "Laciador आपके बालों को वो वॉल्यूम और मूवमेंट देगा जो उन्हें चाहिए — हल्का और प्राकृतिक। कीमत: $48।",
+    default:  "Formula Exclusiva आपकी सबसे अच्छी सर्वांगीण पसंद है। यह एक पेशेवर उपचार में नमी, मजबूती और स्कैल्प स्वास्थ्य को कवर करता है। कीमत: $65।"
+  }
+};
+
 function localRecommend(text) {
-  const t = text.toLowerCase();
-  const color   = /color|fade|brassy|pigment|dull|tint|vibrancy/.test(t);
+  const t   = text.toLowerCase();
+  const lang = langSelect.value;
+  const R   = LOCAL_RESPONSES[lang] || LOCAL_RESPONSES["en-US"];
+
+  const color   = /color|colour|fade|brassy|pigment|dull|tint|vibrancy|colou?r/.test(t);
   const oily    = /oil|greasy|grease|sebum|buildup/.test(t);
   const dry     = /dry|frizz|rough|brittle|moisture|parched/.test(t);
   const damaged = /damag|break|weak|burn|overprocess|chemical|perm/.test(t);
@@ -478,27 +590,13 @@ function localRecommend(text) {
   const hispanic  = /hispanic|latin/.test(t);
   const n = [color,oily,dry,damaged,tangly,flat,falling].filter(Boolean).length;
 
-  if (damaged || falling || n >= 3)
-    return "Formula Exclusiva is exactly what your hair needs. This professional all-in-one treatment rebuilds strength, restores moisture, and revives scalp health from the inside out. At $65, it's your most complete solution.";
-  if (color) {
-    if (african) return "Gotero is your best match here — it restores natural sheen and tone while balancing your scalp. At $42, it works beautifully with your hair's natural texture.";
-    return "Gotika is the answer for your color. It restores vibrancy, corrects tone, and protects your pigment long-term — all naturally. Price: $54.";
-  }
-  if (oily) {
-    if (hispanic) return "Formula Exclusiva will bring your scalp into balance while giving your hair deep nourishment it needs. At $65, it handles oil and care in one.";
-    return "Gotero is exactly right for oily hair — it regulates sebum production and keeps your scalp clear without stripping your natural hydration. Price: $42.";
-  }
-  if (dry) {
-    if (asian) return "Formula Exclusiva is the ideal choice for your hair type — it penetrates deeply to restore elasticity and long-term hydration. Price: $65.";
-    return "Laciador will transform dry hair — restoring softness, smoothness, and that healthy natural bounce. Price: $48.";
-  }
-  if (tangly) {
-    if (hispanic || african) return "Laciador is perfect for your hair — it smooths, detangles, and leaves your hair manageable with beautiful movement. Price: $48.";
-    return "Formula Exclusiva addresses the root cause of tangles while strengthening every strand. Price: $65.";
-  }
-  if (flat)
-    return "Laciador will give your hair the body and movement it's been missing — lightweight and natural. Price: $48.";
-  return "Formula Exclusiva is your best all-around choice. It covers moisture, strength, and scalp health in one professional treatment. Price: $65.";
+  if (damaged || falling || n >= 3) return R.damaged;
+  if (color)   return african ? R.colorAf  : R.color;
+  if (oily)    return hispanic ? R.oilyHi  : R.oily;
+  if (dry)     return asian    ? R.dryAs   : R.dry;
+  if (tangly)  return (hispanic || african) ? R.tanglyHi : R.tangly;
+  if (flat)    return R.flat;
+  return R.default;
 }
 
 /* ── PROCESS ── */
@@ -621,13 +719,34 @@ setTimeout(() => speechSynthesis.getVoices(), 300);
 langSelect.addEventListener("change", () => speechSynthesis.getVoices());
 
 /* ── FAQ / CONTACT ── */
+const FAQ_MSGS = {
+  "en-US": "All four products are 100% natural, organic, and salon-professional grade — Caribbean formulated. Formula Exclusiva $65 all-in-one treatment. Laciador $48 hair styler. Gotero $42 hair gel. Gotika $54 color treatment.",
+  "es-ES": "Los cuatro productos son 100% naturales, orgánicos y de grado profesional — formulados en el Caribe. Formula Exclusiva $65 tratamiento todo en uno. Laciador $48 estilizador. Gotero $42 gel. Gotika $54 tratamiento de color.",
+  "fr-FR": "Les quatre produits sont 100% naturels, biologiques et de qualité salon — formulés aux Caraïbes. Formula Exclusiva $65 soin tout-en-un. Laciador $48 stylisant. Gotero $42 gel. Gotika $54 traitement couleur.",
+  "pt-BR": "Os quatro produtos são 100% naturais, orgânicos e de grau profissional — formulados no Caribe. Formula Exclusiva $65 tratamento completo. Laciador $48 finalizador. Gotero $42 gel. Gotika $54 tratamento de cor.",
+  "de-DE": "Alle vier Produkte sind 100% natürlich, biologisch und salonprofessionell — karibisch formuliert. Formula Exclusiva $65 All-in-one. Laciador $48 Styler. Gotero $42 Gel. Gotika $54 Farbbehandlung.",
+  "ar-SA": "المنتجات الأربعة طبيعية 100%، عضوية ومستوى صالون احترافي — مُصاغة في الكاريبي. فورمولا إكسكلوسيفا $65 علاج شامل. لاسيادور $48 مُصفف. غوتيرو $42 جل. غوتيكا $54 علاج للون.",
+  "zh-CN": "四款产品均为100%天然有机、沙龙专业级，源自加勒比配方。Formula Exclusiva $65全效护理，Laciador $48造型产品，Gotero $42发胶，Gotika $54护色产品。",
+  "hi-IN": "चारों उत्पाद 100% प्राकृतिक, जैविक और सैलून-पेशेवर स्तर के हैं — कैरेबियन फॉर्मूला। Formula Exclusiva $65 ऑल-इन-वन। Laciador $48 स्टाइलर। Gotero $42 जेल। Gotika $54 रंग उपचार।"
+};
+const CONTACT_MSGS = {
+  "en-US": "To speak with one of our professional hair consultants, please email us at support at hairexpert dot com. We'd love to find your perfect product together.",
+  "es-ES": "Para hablar con uno de nuestros consultores, escríbenos a support arroba hairexpert punto com. Nos encantaría encontrar tu producto perfecto juntos.",
+  "fr-FR": "Pour parler à l'un de nos consultants, envoyez-nous un email à support chez hairexpert point com. Nous aimerions trouver votre produit parfait ensemble.",
+  "pt-BR": "Para falar com um de nossos consultores, envie um e-mail para support em hairexpert ponto com. Adoraríamos encontrar seu produto perfeito juntos.",
+  "de-DE": "Um mit einem unserer Haarberater zu sprechen, schreiben Sie uns an support bei hairexpert Punkt com. Wir helfen Ihnen gerne, das perfekte Produkt zu finden.",
+  "ar-SA": "للتحدث مع أحد مستشارينا، راسلنا على support في hairexpert نقطة com. يسعدنا مساعدتك في إيجاد منتجك المثالي.",
+  "zh-CN": "如需与我们的专业发型顾问交流，请发邮件至 support@hairexpert.com，我们很乐意为您找到最合适的产品。",
+  "hi-IN": "हमारे पेशेवर बाल सलाहकारों से बात करने के लिए, support@hairexpert.com पर ईमेल करें। हम आपके लिए सही उत्पाद खोजने में मदद करेंगे।"
+};
+
 document.getElementById("faqBtn").addEventListener("click", () => {
-  const msg = "All four of our products are 100% natural, organic, and salon-professional grade — formulated with Caribbean heritage. Formula Exclusiva at $65 is our all-in-one treatment. Laciador at $48 is our hair styler. Gotero at $42 is our hair gel. And Gotika at $54 is our color treatment.";
+  const msg = FAQ_MSGS[langSelect.value] || FAQ_MSGS["en-US"];
   responseBox.textContent = msg;
   speak(msg);
 });
 document.getElementById("contactBtn").addEventListener("click", () => {
-  const msg = "To speak with one of our professional hair consultants, please email us at support at hairexpert dot com. We'd love to find your perfect product together.";
+  const msg = CONTACT_MSGS[langSelect.value] || CONTACT_MSGS["en-US"];
   responseBox.textContent = msg;
   speak(msg);
 });
@@ -640,6 +759,15 @@ document.getElementById("contactBtn").addEventListener("click", () => {
 def recommend():
     data      = request.get_json()
     user_text = data.get("text", "")
+    lang      = data.get("lang", "en-US")
+
+    lang_names = {
+        "en-US": "English", "es-ES": "Spanish", "fr-FR": "French",
+        "pt-BR": "Portuguese", "de-DE": "German", "ar-SA": "Arabic",
+        "zh-CN": "Mandarin Chinese", "hi-IN": "Hindi"
+    }
+    lang_name = lang_names.get(lang, "English")
+    lang_instruction = f"\n\nIMPORTANT: Your ENTIRE response must be written in {lang_name}. Do not use English."
 
     if not ANTHROPIC_API_KEY:
         return jsonify({"recommendation": None, "error": "No API key configured"}), 500
@@ -649,7 +777,7 @@ def recommend():
         payload = json.dumps({
             "model": "claude-sonnet-4-20250514",
             "max_tokens": 200,
-            "system": SYSTEM_PROMPT,
+            "system": SYSTEM_PROMPT + lang_instruction,
             "messages": [{"role": "user", "content": user_text}]
         }).encode("utf-8")
 
