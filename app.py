@@ -26,12 +26,82 @@ color:white;
 overflow:hidden;
 }
 
+/* ===== BASE SPHERE ===== */
+
 #sphere{
 width:280px;
 height:280px;
 border-radius:50%;
 cursor:pointer;
-will-change: transform, box-shadow;
+background:radial-gradient(circle,
+rgba(0,255,200,0.95) 0%,
+rgba(0,255,200,0.25) 60%,
+rgba(0,255,200,0.08) 100%);
+box-shadow:
+0 0 120px rgba(0,255,200,0.9),
+0 0 240px rgba(0,255,200,0.6),
+0 0 360px rgba(0,255,200,0.3);
+
+/* DEFAULT BREATHING */
+animation: breathe 3.5s ease-in-out infinite;
+}
+
+/* ===== BREATHING ANIMATION ===== */
+
+@keyframes breathe{
+0%{
+transform:scale(1);
+box-shadow:
+0 0 110px rgba(0,255,200,0.9),
+0 0 220px rgba(0,255,200,0.6),
+0 0 330px rgba(0,255,200,0.3);
+}
+50%{
+transform:scale(1.08);
+box-shadow:
+0 0 160px rgba(0,255,200,0.9),
+0 0 300px rgba(0,255,200,0.6),
+0 0 420px rgba(0,255,200,0.3);
+}
+100%{
+transform:scale(1);
+box-shadow:
+0 0 110px rgba(0,255,200,0.9),
+0 0 220px rgba(0,255,200,0.6),
+0 0 330px rgba(0,255,200,0.3);
+}
+}
+
+/* ===== LISTENING STATE ===== */
+
+.listening{
+background:radial-gradient(circle,
+rgba(255,200,60,0.95) 0%,
+rgba(255,200,60,0.25) 60%,
+rgba(255,200,60,0.08) 100%);
+animation: listenPulse 0.6s ease-in-out infinite;
+}
+
+@keyframes listenPulse{
+0%{transform:scale(1);}
+50%{transform:scale(1.12);}
+100%{transform:scale(1);}
+}
+
+/* ===== SPEAKING STATE ===== */
+
+.speaking{
+background:radial-gradient(circle,
+rgba(0,200,255,0.95) 0%,
+rgba(0,200,255,0.25) 60%,
+rgba(0,200,255,0.08) 100%);
+animation: speakPulse 0.5s ease-in-out infinite;
+}
+
+@keyframes speakPulse{
+0%{transform:scale(1);}
+50%{transform:scale(1.15);}
+100%{transform:scale(1);}
 }
 
 #response{
@@ -53,92 +123,24 @@ min-height:60px;
 const sphere = document.getElementById("sphere");
 const responseBox = document.getElementById("response");
 
-let state="idle";
+let recognition;
 let transcript="";
-let recognition=null;
-let silenceTimer=null;
+let silenceTimer;
 let lastSpeechTime=0;
 const SILENCE_DELAY=2500;
 
-/* ================= VISUAL ENGINE ================= */
-
-let baseColor=[0,255,200];
-let pulse=0;
-let direction=1;
-
-function render(){
-
-sphere.style.background=
-`radial-gradient(circle,
-rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.95) 0%,
-rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.25) 60%,
-rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.08) 100%)`;
-
-sphere.style.boxShadow=
-`0 0 ${120+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9),
- 0 0 ${240+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.6),
- 0 0 ${360+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.3)`;
-
-sphere.style.transform = `scale(${1 + pulse/200})`;
-}
-
-function animate(){
-
-// IDLE BREATHING
-if(state==="idle"){
-pulse += 0.35*direction;
-if(pulse>18||pulse<0) direction*=-1;
-}
-
-// LISTENING REACTIVE
-if(state==="listening"){
-pulse = 10 + Math.random()*25;
-}
-
-// AI SPEAKING STRONGER
-if(state==="speaking"){
-pulse = 25 + Math.random()*35;
-}
-
-render();
-requestAnimationFrame(animate);
-}
-
-requestAnimationFrame(animate); // FORCE LOOP START
-
-/* ================= SPEAK ================= */
-
-function speak(text){
-
-state="speaking";
-baseColor=[0,200,255];
-
-let utter=new SpeechSynthesisUtterance(text);
-utter.rate=0.92;
-
-speechSynthesis.cancel();
-speechSynthesis.speak(utter);
-
-utter.onend=()=>{
-state="idle";
-baseColor=[0,255,200];
-};
-}
-
-/* ================= LISTEN ================= */
+/* ===== LISTEN ===== */
 
 function startListening(){
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-
 if(!SR){
 responseBox.innerText="Speech recognition not supported.";
 return;
 }
 
 transcript="";
-state="listening";
-baseColor=[255,200,60];
+sphere.className="listening";
 lastSpeechTime=Date.now();
 
 recognition=new SR();
@@ -176,21 +178,26 @@ responseBox.innerText=result;
 speak(result);
 }
 
-/* ================= CLICK ================= */
+/* ===== SPEAK ===== */
+
+function speak(text){
+
+sphere.className="speaking";
+
+let utter=new SpeechSynthesisUtterance(text);
+speechSynthesis.cancel();
+speechSynthesis.speak(utter);
+
+utter.onend=()=>{
+sphere.className="";
+};
+}
+
+/* ===== CLICK ===== */
 
 sphere.addEventListener("click",()=>{
-if(state==="idle"){
 startListening();
-}else if(state==="listening"){
-recognition.stop();
-state="idle";
-baseColor=[0,255,200];
-}
 });
-
-/* ================= INITIAL FORCE RENDER ================= */
-
-render(); // ensure first paint
 
 </script>
 </body>
