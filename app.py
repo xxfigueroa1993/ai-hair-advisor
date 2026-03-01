@@ -349,7 +349,7 @@ function playAmbient(type) {
   } catch(e) { console.warn("Audio:", e); }
 }
 
-/* ── MICROPHONE — returns a real Promise ── */
+/* ── MICROPHONE — tries Web Audio, gracefully degrades ── */
 function initMic() {
   if (analyser) return Promise.resolve();
   const ctx = getCtx();
@@ -357,11 +357,14 @@ function initMic() {
     .then(stream => {
       const src = ctx.createMediaStreamSource(stream);
       analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 512;
+      analyser.smoothingTimeConstant = 0.6;
       src.connect(analyser);
       micData = new Uint8Array(analyser.frequencyBinCount);
     })
-    .catch(e => console.warn("Mic:", e));
+    .catch(e => {
+      console.warn("Web Audio mic unavailable (iframe restriction), using recognition-based pulse:", e);
+    });
 }
 
 /* ── COLOR ── */
@@ -402,24 +405,34 @@ function setState(s) {
 }
 
 /* ── MIC-REACTIVE LOOP ──
-   Runs ONLY during "listening". Drives transform via mic volume.
-   CSS animation:none on .listening means no conflict. ── */
+   Mode A (Web Audio available): reads real mic amplitude every frame.
+   Mode B (iframe/blocked): uses recognition activity signal to pulse.
+   CSS animation:none on .listening — no conflict. ── */
+let voiceActivityLevel = 0;   // set by onresult when speech detected
+let listenPhase = 0;          // fallback breathe phase
+
 function micReactiveLoop() {
-  if (appState !== "listening") {
-    // Exit — setState("idle"/"speaking") already cleared inline transform
-    return;
-  }
+  if (appState !== "listening") return;
+
+  let scale;
   if (analyser && micData) {
+    // Mode A — real mic data
     analyser.getByteFrequencyData(micData);
     let sum = 0;
     for (let i = 0; i < micData.length; i++) sum += micData[i];
-    const vol = sum / (micData.length * 255); // 0.0–1.0
-    const scale = 1.05 + vol * 0.60;          // 1.05 quiet → 1.65 loud
-    halo.style.transform = `scale(${scale.toFixed(3)})`;
+    const vol = sum / (micData.length * 255);
+    scale = 1.05 + vol * 0.65;
   } else {
-    // Mic not ready yet — soft fallback pulse
-    halo.style.transform = `scale(1.08)`;
+    // Mode B — recognition-activity driven
+    // voiceActivityLevel decays each frame; spiked to 1.0 by onresult
+    voiceActivityLevel *= 0.92;
+    listenPhase += 0.04;
+    // Base slow breathe + spike when speech detected
+    const breathe = 0.03 * Math.sin(listenPhase);
+    scale = 1.05 + breathe + voiceActivityLevel * 0.45;
   }
+
+  halo.style.transform = `scale(${Math.max(1.0, scale).toFixed(3)})`;
   requestAnimationFrame(micReactiveLoop);
 }
 
@@ -684,11 +697,10 @@ function startListening() {
   stateLabel.textContent  = "Listening…";
   responseBox.textContent = "Listening…";
 
-  // Start mic — .then() guaranteed because initMic returns a real Promise
-  initMic().then(() => {
-    // Only start loop if still listening (user might have cancelled)
-    if (appState === "listening") requestAnimationFrame(micReactiveLoop);
-  });
+  // Start the visual loop immediately — works even without mic access
+  requestAnimationFrame(micReactiveLoop);
+  // Try to get real mic data in background (may be blocked in iframes)
+  initMic();
 
   // Module-level noSpeechTimer — can be cleared from onresult
   noSpeechTimer = setTimeout(() => {
@@ -705,6 +717,7 @@ function startListening() {
   recognition.onresult = (event) => {
     clearTimeout(silenceTimer);
     clearTimeout(noSpeechTimer);  // speech detected — cancel "didn't hear"
+    voiceActivityLevel = 1.0;     // spike the visual pulse immediately
     let interim = "";
     finalText = "";
     for (let i = 0; i < event.results.length; i++) {
