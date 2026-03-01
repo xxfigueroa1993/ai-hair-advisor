@@ -102,10 +102,37 @@ let silenceTimer=null;
 let lastSpeechTime=0;
 const SILENCE_DELAY=2500;
 
-let currentColor=[0,255,200];
 let premiumVoice=null;
+let voicesLoaded=false;
+
+/* ================= LOAD PREMIUM VOICE ================= */
+
+function selectBestVoice() {
+const voices = speechSynthesis.getVoices();
+if (!voices.length) return;
+
+voicesLoaded = true;
+
+const langVoices = voices.filter(v => v.lang === selectedLang);
+
+premiumVoice =
+langVoices.find(v => v.name.includes("Google")) ||
+langVoices.find(v => v.name.includes("Microsoft")) ||
+langVoices.find(v => v.name.toLowerCase().includes("neural")) ||
+langVoices.find(v => v.localService === false) ||
+langVoices[0] ||
+voices[0];
+}
+
+speechSynthesis.onvoiceschanged = () => {
+selectBestVoice();
+};
+
+setTimeout(selectBestVoice, 500);
 
 /* ================= COLOR ================= */
+
+let currentColor=[0,255,200];
 
 function animateColor(target){
 let start=[...currentColor];
@@ -135,48 +162,6 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-/* ================= PULSE ================= */
-
-function pulse(){
-let scale=1;
-
-if(state==="idle")
-scale=1+Math.sin(Date.now()*0.002)*0.05;
-
-if(state==="listening")
-scale=1+Math.sin(Date.now()*0.004)*0.1;
-
-if(state==="speaking")
-scale=1+Math.sin(Date.now()*0.003)*0.08;
-
-halo.style.transform=`scale(${scale})`;
-requestAnimationFrame(pulse);
-}
-pulse();
-
-/* ================= PREMIUM VOICE SYSTEM ================= */
-
-function loadPremiumVoice(){
-const voices=speechSynthesis.getVoices();
-
-if(!voices.length) return;
-
-premiumVoice =
-voices.find(v=>v.lang===selectedLang && v.name.toLowerCase().includes("google")) ||
-voices.find(v=>v.lang===selectedLang && v.name.toLowerCase().includes("microsoft")) ||
-voices.find(v=>v.lang===selectedLang && v.localService===false) ||
-voices.find(v=>v.lang===selectedLang) ||
-voices[0];
-}
-
-speechSynthesis.onvoiceschanged=loadPremiumVoice;
-loadPremiumVoice();
-
-langSelect.addEventListener("change",()=>{
-selectedLang=langSelect.value;
-loadPremiumVoice();
-});
-
 /* ================= SOUNDS ================= */
 
 function playTone(start,end,duration){
@@ -200,6 +185,12 @@ function playOutro(){ playTone(300,180,1.4); }
 /* ================= SPEAK ================= */
 
 function speak(text){
+
+if(!voicesLoaded){
+setTimeout(()=>speak(text),300);
+return;
+}
+
 state="speaking";
 animateColor([0,200,255]);
 
@@ -298,6 +289,11 @@ try{recognition.stop();}catch(e){}
 animateColor([0,255,200]);
 state="idle";
 }
+});
+
+langSelect.addEventListener("change",()=>{
+selectedLang=langSelect.value;
+selectBestVoice();
 });
 
 </script>
