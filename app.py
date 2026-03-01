@@ -95,22 +95,21 @@ const langSelect = document.getElementById("langSelect");
 
 let selectedLang="en-US";
 let recognition=null;
-
-let state="idle";
 let transcript="";
-let silenceTimer=null;
-let hardStopTimer=null;
-let lastSpeechTime=0;
+let state="idle";
 
-const SILENCE_DELAY = 2500; // 2.5 seconds
+let silenceTimer=null;
+let lastSpeechTime=0;
+const SILENCE_DELAY=2500;
 
 let currentColor=[0,255,200];
+let premiumVoice=null;
 
 /* ================= COLOR ================= */
 
 function animateColor(target){
 let start=[...currentColor];
-let duration=700;
+let duration=800;
 let startTime=performance.now();
 
 function frame(now){
@@ -155,6 +154,29 @@ requestAnimationFrame(pulse);
 }
 pulse();
 
+/* ================= PREMIUM VOICE SYSTEM ================= */
+
+function loadPremiumVoice(){
+const voices=speechSynthesis.getVoices();
+
+if(!voices.length) return;
+
+premiumVoice =
+voices.find(v=>v.lang===selectedLang && v.name.toLowerCase().includes("google")) ||
+voices.find(v=>v.lang===selectedLang && v.name.toLowerCase().includes("microsoft")) ||
+voices.find(v=>v.lang===selectedLang && v.localService===false) ||
+voices.find(v=>v.lang===selectedLang) ||
+voices[0];
+}
+
+speechSynthesis.onvoiceschanged=loadPremiumVoice;
+loadPremiumVoice();
+
+langSelect.addEventListener("change",()=>{
+selectedLang=langSelect.value;
+loadPremiumVoice();
+});
+
 /* ================= SOUNDS ================= */
 
 function playTone(start,end,duration){
@@ -183,7 +205,9 @@ animateColor([0,200,255]);
 
 let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
+utter.voice=premiumVoice;
 utter.rate=0.92;
+utter.pitch=1;
 
 speechSynthesis.cancel();
 speechSynthesis.speak(utter);
@@ -221,18 +245,9 @@ return "Laciador restores smoothness and softness. Price: $48.";
 return "Please describe dryness, oiliness, damage, or color concerns.";
 }
 
-/* ================= PROCESS ================= */
-
-function processTranscript(){
-let result=chooseProduct(transcript);
-responseBox.innerText=result;
-speak(result);
-}
-
 /* ================= LISTEN ================= */
 
 function startListening(){
-
 transcript="";
 lastSpeechTime=Date.now();
 
@@ -252,38 +267,37 @@ for(let i=0;i<event.results.length;i++)
 transcript+=event.results[i][0].transcript;
 
 lastSpeechTime=Date.now();
-
 clearTimeout(silenceTimer);
-silenceTimer=setTimeout(checkSilence, SILENCE_DELAY);
+silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
 };
 
 recognition.start();
-
-hardStopTimer=setTimeout(()=>{
-stopListening();
-},10000);
 }
 
 function checkSilence(){
 if(Date.now()-lastSpeechTime>=SILENCE_DELAY){
-stopListening();
+recognition.stop();
+processTranscript();
 }else{
-silenceTimer=setTimeout(checkSilence, SILENCE_DELAY);
+silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
 }
 }
 
-function stopListening(){
-clearTimeout(silenceTimer);
-clearTimeout(hardStopTimer);
-try{recognition.stop();}catch(e){}
-processTranscript();
+function processTranscript(){
+let result=chooseProduct(transcript);
+responseBox.innerText=result;
+speak(result);
 }
 
 /* ================= CLICK ================= */
 
 halo.addEventListener("click",()=>{
 if(state==="idle") startListening();
-else stopListening();
+else{
+try{recognition.stop();}catch(e){}
+animateColor([0,255,200]);
+state="idle";
+}
 });
 
 </script>
