@@ -39,7 +39,7 @@ width:280px;
 height:280px;
 border-radius:50%;
 cursor:pointer;
-transition:all 0.15s ease;
+transition:background 0.3s ease, box-shadow 0.3s ease;
 }
 
 #response{
@@ -90,6 +90,8 @@ cursor:pointer;
 
 <script>
 
+/* ================= SETUP ================= */
+
 const sphere = document.getElementById("sphere");
 const responseBox = document.getElementById("response");
 const langSelect = document.getElementById("langSelect");
@@ -97,78 +99,75 @@ const langSelect = document.getElementById("langSelect");
 let state = "idle";
 let selectedLang = "en-US";
 let transcript = "";
-let recognition;
-let silenceTimer;
+let recognition = null;
+let silenceTimer = null;
 let lastSpeechTime = 0;
 const SILENCE_DELAY = 2500;
 
-let voice;
-let voicesLoaded=false;
+let premiumVoice = null;
 
-/* ================= PREMIUM VOICE ================= */
+/* ================= VOICE SELECTION ================= */
 
-function loadVoice(){
-const voices=speechSynthesis.getVoices();
-if(!voices.length) return;
+function selectVoice(){
+    const voices = speechSynthesis.getVoices();
+    if(!voices.length) return;
 
-voicesLoaded=true;
+    const matches = voices.filter(v => v.lang === selectedLang);
 
-const matches=voices.filter(v=>v.lang===selectedLang);
-
-voice=
-matches.find(v=>v.name.includes("Google")) ||
-matches.find(v=>v.name.includes("Microsoft")) ||
-matches.find(v=>!v.localService) ||
-matches[0] ||
-voices[0];
+    premiumVoice =
+        matches.find(v => v.name.includes("Google")) ||
+        matches.find(v => v.name.includes("Microsoft")) ||
+        matches.find(v => !v.localService) ||
+        matches[0] ||
+        voices[0];
 }
 
-speechSynthesis.onvoiceschanged=loadVoice;
-setTimeout(loadVoice,500);
+speechSynthesis.onvoiceschanged = selectVoice;
+setTimeout(selectVoice, 500);
 
-/* ================= COLOR + PULSE ================= */
+/* ================= SPHERE VISUAL SYSTEM ================= */
 
-let baseColor=[0,255,200];
-let pulse=0;
-let direction=1;
+let baseColor = [0,255,200];
+let pulse = 0;
+let direction = 1;
 
 function renderSphere(){
-sphere.style.background=
-`radial-gradient(circle,
- rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9) 0%,
- rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.2) 65%,
- rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.05) 100%)`;
+    sphere.style.background =
+    `radial-gradient(circle,
+     rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.95) 0%,
+     rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.25) 60%,
+     rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.08) 100%)`;
 
-sphere.style.boxShadow=
-`0 0 ${120+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9),
- 0 0 ${240+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.6),
- 0 0 ${360+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.3)`;
+    sphere.style.boxShadow =
+    `0 0 ${120+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9),
+     0 0 ${240+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.6),
+     0 0 ${360+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.3)`;
 }
 
-function ambientPulse(){
-if(state==="idle"){
-pulse += 0.4*direction;
-if(pulse>18||pulse<0) direction*=-1;
-renderSphere();
+function animate(){
+    if(state === "idle"){
+        pulse += 0.4 * direction;
+        if(pulse > 18 || pulse < 0) direction *= -1;
+    }
+    renderSphere();
+    requestAnimationFrame(animate);
 }
-requestAnimationFrame(ambientPulse);
-}
-ambientPulse();
+animate();
 
 /* ================= RESPONSES ================= */
 
-const responses={
+const responses = {
 "en-US":{
 nothing:"I didn’t hear anything. Please describe dryness, oiliness, damage, or color.",
-allinone:"Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.",
+allinone:"Formula Exclusiva is your complete restoration solution. Price: $65.",
 damage:"Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.",
 color:"Gotika restores color vibrancy and tone. Price: $54.",
-oil:"Gotero balances excess oil while keeping hydration. Price: $42.",
-dry:"Laciador restores smoothness and softness. Price: $48."
+oil:"Gotero balances excess oil while maintaining hydration. Price: $42.",
+dry:"Laciador restores softness and smoothness. Price: $48."
 },
 "es-ES":{
 nothing:"No escuché nada. Describe sequedad, grasa, daño o color.",
-allinone:"Formula Exclusiva es tu solución completa todo-en-uno. Precio: $65.",
+allinone:"Formula Exclusiva es tu solución completa. Precio: $65.",
 damage:"Formula Exclusiva fortalece y repara el cabello. Precio: $65.",
 color:"Gotika restaura la vitalidad del color. Precio: $54.",
 oil:"Gotero equilibra la grasa del cabello. Precio: $42.",
@@ -177,96 +176,113 @@ dry:"Laciador restaura suavidad y brillo. Precio: $48."
 };
 
 function chooseProduct(text){
-const pack=responses[selectedLang]||responses["en-US"];
-text=text.toLowerCase();
+    const pack = responses[selectedLang] || responses["en-US"];
+    text = text.toLowerCase();
 
-if(!text||text.length<2) return pack.nothing;
-if(/all|todo/.test(text)) return pack.allinone;
-if(/damage|daño/.test(text)) return pack.damage;
-if(/color/.test(text)) return pack.color;
-if(/oil|grasa/.test(text)) return pack.oil;
-if(/dry|seco/.test(text)) return pack.dry;
+    if(!text || text.length < 2) return pack.nothing;
+    if(/all|todo/.test(text)) return pack.allinone;
+    if(/damage|daño/.test(text)) return pack.damage;
+    if(/color/.test(text)) return pack.color;
+    if(/oil|grasa/.test(text)) return pack.oil;
+    if(/dry|seco/.test(text)) return pack.dry;
 
-return pack.nothing;
+    return pack.nothing;
 }
 
 /* ================= SPEAK ================= */
 
 function speak(text){
-state="speaking";
-baseColor=[0,200,255];
+    state = "speaking";
+    baseColor = [0,200,255];
 
-let utter=new SpeechSynthesisUtterance(text);
-utter.lang=selectedLang;
-utter.voice=voice;
-utter.rate=0.92;
+    let utter = new SpeechSynthesisUtterance(text);
+    utter.lang = selectedLang;
+    utter.voice = premiumVoice;
+    utter.rate = 0.92;
 
-speechSynthesis.cancel();
-speechSynthesis.speak(utter);
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utter);
 
-let speakPulse=setInterval(()=>{ pulse=Math.random()*35; renderSphere(); },70);
+    let speakPulse = setInterval(()=>{
+        pulse = Math.random() * 35;
+    },70);
 
-utter.onend=()=>{
-clearInterval(speakPulse);
-state="idle";
-baseColor=[0,255,200];
-};
+    utter.onend = ()=>{
+        clearInterval(speakPulse);
+        state = "idle";
+        baseColor = [0,255,200];
+    };
 }
 
 /* ================= LISTEN ================= */
 
 function startListening(){
-transcript="";
-state="listening";
-baseColor=[255,200,60];
-lastSpeechTime=Date.now();
 
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-recognition=new SR();
-recognition.lang=selectedLang;
-recognition.continuous=true;
-recognition.interimResults=true;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-recognition.onresult=(e)=>{
-transcript="";
-for(let i=0;i<e.results.length;i++)
-transcript+=e.results[i][0].transcript;
+    if(!SR){
+        responseBox.innerText = "Speech recognition not supported in this browser.";
+        return;
+    }
 
-lastSpeechTime=Date.now();
-clearTimeout(silenceTimer);
-silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
+    transcript = "";
+    state = "listening";
+    baseColor = [255,200,60];
+    lastSpeechTime = Date.now();
 
-pulse=Math.random()*45;
-renderSphere();
-};
+    recognition = new SR();
+    recognition.lang = selectedLang;
+    recognition.continuous = true;
+    recognition.interimResults = true;
 
-recognition.start();
+    recognition.onresult = (event)=>{
+        transcript = "";
+        for(let i=0;i<event.results.length;i++){
+            transcript += event.results[i][0].transcript;
+        }
+
+        lastSpeechTime = Date.now();
+        clearTimeout(silenceTimer);
+        silenceTimer = setTimeout(checkSilence, SILENCE_DELAY);
+
+        pulse = Math.random()*45;
+    };
+
+    recognition.start();
 }
 
 function checkSilence(){
-if(Date.now()-lastSpeechTime>=SILENCE_DELAY){
-recognition.stop();
-process();
-}else{
-silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
-}
+    if(Date.now() - lastSpeechTime >= SILENCE_DELAY){
+        recognition.stop();
+        processTranscript();
+    } else {
+        silenceTimer = setTimeout(checkSilence, SILENCE_DELAY);
+    }
 }
 
-function process(){
-let result=chooseProduct(transcript);
-responseBox.innerText=result;
-speak(result);
+function processTranscript(){
+    let result = chooseProduct(transcript);
+    responseBox.innerText = result;
+    speak(result);
 }
 
 /* ================= CLICK ================= */
 
-sphere.addEventListener("click",()=>{
-if(state==="idle") startListening();
+sphere.addEventListener("click", ()=>{
+    if(state === "idle"){
+        startListening();
+    } else if(state === "listening"){
+        recognition.stop();
+        state = "idle";
+        baseColor = [0,255,200];
+    }
 });
 
-langSelect.addEventListener("change",()=>{
-selectedLang=langSelect.value;
-loadVoice();
+/* ================= LANGUAGE SWITCH ================= */
+
+langSelect.addEventListener("change", ()=>{
+    selectedLang = langSelect.value;
+    selectVoice();
 });
 
 renderSphere();
