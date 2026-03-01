@@ -94,9 +94,9 @@ const responseBox = document.getElementById("response");
 const langSelect = document.getElementById("langSelect");
 
 let selectedLang="en-US";
-let recognition=null;
-let transcript="";
 let state="idle";
+let transcript="";
+let recognition=null;
 
 let silenceTimer=null;
 let lastSpeechTime=0;
@@ -105,31 +105,57 @@ const SILENCE_DELAY=2500;
 let premiumVoice=null;
 let voicesLoaded=false;
 
-let audioCtx, analyser, micSource, dataArray;
+/* ================= LANGUAGE RESPONSE SYSTEM ================= */
+
+const responses = {
+"en-US":{
+nothing:"I didn’t hear anything. Please describe dryness, oiliness, damage, or color concerns.",
+allinone:"Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.",
+damage:"Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.",
+color:"Gotika restores color vibrancy and tone. Price: $54.",
+oil:"Gotero balances excess oil while keeping hydration. Price: $42.",
+dry:"Laciador restores smoothness and softness. Price: $48."
+},
+"es-ES":{
+nothing:"No escuché nada. Describe sequedad, grasa, daño o color.",
+allinone:"Formula Exclusiva es tu solución completa todo-en-uno. Precio: $65.",
+damage:"Formula Exclusiva fortalece y repara el cabello. Precio: $65.",
+color:"Gotika restaura la vitalidad del color. Precio: $54.",
+oil:"Gotero equilibra la grasa del cabello. Precio: $42.",
+dry:"Laciador restaura suavidad y brillo. Precio: $48."
+},
+"fr-FR":{
+nothing:"Je n’ai rien entendu. Décrivez sécheresse, gras, dommages ou couleur.",
+allinone:"Formula Exclusiva est votre solution complète tout-en-un. Prix : 65 $.",
+damage:"Formula Exclusiva renforce et répare les cheveux. Prix : 65 $.",
+color:"Gotika restaure l’éclat de la couleur. Prix : 54 $.",
+oil:"Gotero équilibre l’excès de sébum. Prix : 42 $.",
+dry:"Laciador restaure douceur et souplesse. Prix : 48 $."
+}
+};
 
 /* ================= VOICE SELECTION ================= */
 
-function selectBestVoice() {
-const voices = speechSynthesis.getVoices();
-if (!voices.length) return;
+function selectBestVoice(){
+const voices=speechSynthesis.getVoices();
+if(!voices.length) return;
 
-voicesLoaded = true;
+voicesLoaded=true;
 
-const langVoices = voices.filter(v => v.lang === selectedLang);
+const langVoices=voices.filter(v=>v.lang===selectedLang);
 
-premiumVoice =
-langVoices.find(v => v.name.includes("Google")) ||
-langVoices.find(v => v.name.includes("Microsoft")) ||
-langVoices.find(v => v.name.toLowerCase().includes("neural")) ||
-langVoices.find(v => v.localService === false) ||
+premiumVoice=
+langVoices.find(v=>v.name.includes("Google")) ||
+langVoices.find(v=>v.name.includes("Microsoft")) ||
+langVoices.find(v=>v.localService===false) ||
 langVoices[0] ||
 voices[0];
 }
 
-speechSynthesis.onvoiceschanged = selectBestVoice;
+speechSynthesis.onvoiceschanged=selectBestVoice;
 setTimeout(selectBestVoice,500);
 
-/* ================= COLOR SYSTEM ================= */
+/* ================= COLOR ================= */
 
 let currentColor=[0,255,200];
 
@@ -161,82 +187,9 @@ requestAnimationFrame(frame);
 
 animateColor([0,255,200]);
 
-/* ================= MIC INIT ================= */
-
-async function initMic(){
-if(audioCtx) return;
-
-audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-const stream=await navigator.mediaDevices.getUserMedia({audio:true});
-micSource=audioCtx.createMediaStreamSource(stream);
-analyser=audioCtx.createAnalyser();
-analyser.fftSize=1024;
-micSource.connect(analyser);
-dataArray=new Uint8Array(analyser.fftSize);
-}
-
-/* ================= PULSE ENGINE ================= */
-
-function updateMicLevel(){
-if(!analyser || state!=="listening") return 0;
-
-analyser.getByteTimeDomainData(dataArray);
-let sum=0;
-for(let i=0;i<dataArray.length;i++){
-let v=(dataArray[i]-128)/128;
-sum+=v*v;
-}
-return Math.sqrt(sum/dataArray.length);
-}
-
-function pulse(){
-
-let scale=1;
-
-if(state==="idle"){
-scale=1+Math.sin(Date.now()*0.002)*0.05;
-}
-
-if(state==="listening"){
-let micLevel=updateMicLevel();
-let boost=Math.min(micLevel*5,0.35);
-scale=1.05+boost;
-}
-
-if(state==="speaking"){
-scale=1.08+Math.sin(Date.now()*0.0035)*0.07;
-}
-
-halo.style.transform=`scale(${scale})`;
-
-requestAnimationFrame(pulse);
-}
-pulse();
-
-/* ================= SOUNDS ================= */
-
-function playTone(start,end,duration){
-const ctx=new (window.AudioContext||window.webkitAudioContext)();
-const osc=ctx.createOscillator();
-const gain=ctx.createGain();
-osc.frequency.setValueAtTime(start,ctx.currentTime);
-osc.frequency.exponentialRampToValueAtTime(end,ctx.currentTime+duration);
-gain.gain.setValueAtTime(0,ctx.currentTime);
-gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+0.2);
-gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+duration);
-osc.connect(gain);
-gain.connect(ctx.destination);
-osc.start();
-osc.stop(ctx.currentTime+duration);
-}
-
-function playIntro(){ playTone(250,150,1.4); }
-function playOutro(){ playTone(300,180,1.4); }
-
 /* ================= SPEAK ================= */
 
 function speak(text){
-
 if(!voicesLoaded){
 setTimeout(()=>speak(text),300);
 return;
@@ -249,13 +202,11 @@ let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
 utter.voice=premiumVoice;
 utter.rate=0.92;
-utter.pitch=1;
 
 speechSynthesis.cancel();
 speechSynthesis.speak(utter);
 
 utter.onend=()=>{
-playOutro();
 animateColor([0,255,200]);
 state="idle";
 };
@@ -264,39 +215,38 @@ state="idle";
 /* ================= PRODUCT LOGIC ================= */
 
 function chooseProduct(text){
+
+const langPack=responses[selectedLang] || responses["en-US"];
 text=text.toLowerCase();
 
 if(!text || text.length<2)
-return "I didn’t hear anything. Please describe dryness, oiliness, damage, or color concerns.";
+return langPack.nothing;
 
-if(/all.?in.?one|complete|everything/.test(text))
-return "Formula Exclusiva is your complete all-in-one restoration solution. Price: $65.";
+if(/all|todo|tout|complete/.test(text))
+return langPack.allinone;
 
-if(/damage|weak|break/.test(text))
-return "Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.";
+if(/damage|daño|dommage/.test(text))
+return langPack.damage;
 
-if(/color|fade/.test(text))
-return "Gotika restores color vibrancy and tone. Price: $54.";
+if(/color|couleur|coloración/.test(text))
+return langPack.color;
 
-if(/oily|greasy/.test(text))
-return "Gotero balances excess oil while keeping hydration. Price: $42.";
+if(/oil|grasa|gras/.test(text))
+return langPack.oil;
 
-if(/dry|frizz|brittle/.test(text))
-return "Laciador restores smoothness and softness. Price: $48.";
+if(/dry|seco|sec/.test(text))
+return langPack.dry;
 
-return "Please describe dryness, oiliness, damage, or color concerns.";
+return langPack.nothing;
 }
 
 /* ================= LISTEN ================= */
 
-async function startListening(){
-
-await initMic();
+function startListening(){
 
 transcript="";
 lastSpeechTime=Date.now();
 
-playIntro();
 animateColor([255,210,80]);
 state="listening";
 
