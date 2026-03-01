@@ -21,17 +21,9 @@ justify-content:center;
 align-items:center;
 flex-direction:column;
 background:#05080a;
-font-family:Arial, sans-serif;
+font-family:Arial,sans-serif;
 color:white;
 overflow:hidden;
-}
-
-.wrapper{
-width:380px;
-height:380px;
-display:flex;
-justify-content:center;
-align-items:center;
 }
 
 #sphere{
@@ -39,7 +31,7 @@ width:280px;
 height:280px;
 border-radius:50%;
 cursor:pointer;
-transition:background 0.3s ease, box-shadow 0.3s ease;
+transition:background 0.25s ease, box-shadow 0.25s ease;
 }
 
 #response{
@@ -73,225 +65,222 @@ cursor:pointer;
 <select id="langSelect">
 <option value="en-US">English</option>
 <option value="es-ES">Español</option>
-<option value="fr-FR">Français</option>
-<option value="pt-BR">Português</option>
-<option value="de-DE">Deutsch</option>
-<option value="ar-SA">العربية</option>
-<option value="zh-CN">中文</option>
-<option value="hi-IN">हिन्दी</option>
 </select>
 </div>
 
-<div class="wrapper">
 <div id="sphere"></div>
-</div>
-
 <div id="response">Tap the sphere and describe your hair concern.</div>
 
 <script>
 
-/* ================= SETUP ================= */
+/* ========= SETUP ========= */
 
 const sphere = document.getElementById("sphere");
 const responseBox = document.getElementById("response");
 const langSelect = document.getElementById("langSelect");
 
-let state = "idle";
-let selectedLang = "en-US";
-let transcript = "";
-let recognition = null;
-let silenceTimer = null;
-let lastSpeechTime = 0;
-const SILENCE_DELAY = 2500;
+let state="idle";
+let selectedLang="en-US";
+let transcript="";
+let recognition=null;
+let silenceTimer=null;
+let lastSpeechTime=0;
+const SILENCE_DELAY=2500;
 
-let premiumVoice = null;
+let premiumVoice=null;
 
-/* ================= VOICE SELECTION ================= */
+/* ========= VOICE ========= */
 
 function selectVoice(){
-    const voices = speechSynthesis.getVoices();
-    if(!voices.length) return;
+const voices=speechSynthesis.getVoices();
+if(!voices.length) return;
 
-    const matches = voices.filter(v => v.lang === selectedLang);
+const matches=voices.filter(v=>v.lang===selectedLang);
 
-    premiumVoice =
-        matches.find(v => v.name.includes("Google")) ||
-        matches.find(v => v.name.includes("Microsoft")) ||
-        matches.find(v => !v.localService) ||
-        matches[0] ||
-        voices[0];
+premiumVoice=
+matches.find(v=>v.name.includes("Google")) ||
+matches.find(v=>v.name.includes("Microsoft")) ||
+matches[0] ||
+voices[0];
 }
 
-speechSynthesis.onvoiceschanged = selectVoice;
-setTimeout(selectVoice, 500);
+speechSynthesis.onvoiceschanged=selectVoice;
+setTimeout(selectVoice,500);
 
-/* ================= SPHERE VISUAL SYSTEM ================= */
+/* ========= VISUAL ENGINE ========= */
 
-let baseColor = [0,255,200];
-let pulse = 0;
-let direction = 1;
+let baseColor=[0,255,200];
+let pulse=0;
+let direction=1;
+let intensity=0;
 
-function renderSphere(){
-    sphere.style.background =
-    `radial-gradient(circle,
-     rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.95) 0%,
-     rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.25) 60%,
-     rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.08) 100%)`;
+function draw(){
+sphere.style.background=
+`radial-gradient(circle,
+rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.95) 0%,
+rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.25) 60%,
+rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.08) 100%)`;
 
-    sphere.style.boxShadow =
-    `0 0 ${120+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9),
-     0 0 ${240+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.6),
-     0 0 ${360+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.3)`;
+sphere.style.boxShadow=
+`0 0 ${120+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9),
+ 0 0 ${240+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.6),
+ 0 0 ${360+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.3)`;
 }
 
 function animate(){
-    if(state === "idle"){
-        pulse += 0.4 * direction;
-        if(pulse > 18 || pulse < 0) direction *= -1;
-    }
-    renderSphere();
-    requestAnimationFrame(animate);
+
+// Ambient breathing
+if(state==="idle"){
+pulse += 0.4*direction;
+if(pulse>18||pulse<0) direction*=-1;
 }
+
+// User speaking reactive pulse
+if(state==="listening"){
+pulse = 15 + Math.random()*intensity;
+}
+
+// AI speaking stronger pulse
+if(state==="speaking"){
+pulse = 25 + Math.random()*35;
+}
+
+draw();
+requestAnimationFrame(animate);
+}
+
 animate();
 
-/* ================= RESPONSES ================= */
+/* ========= RESPONSES ========= */
 
-const responses = {
+const responses={
 "en-US":{
-nothing:"I didn’t hear anything. Please describe dryness, oiliness, damage, or color.",
+nothing:"I didn’t hear anything.",
 allinone:"Formula Exclusiva is your complete restoration solution. Price: $65.",
 damage:"Formula Exclusiva strengthens and rebuilds hair integrity. Price: $65.",
-color:"Gotika restores color vibrancy and tone. Price: $54.",
-oil:"Gotero balances excess oil while maintaining hydration. Price: $42.",
+color:"Gotika restores color vibrancy. Price: $54.",
+oil:"Gotero balances excess oil. Price: $42.",
 dry:"Laciador restores softness and smoothness. Price: $48."
 },
 "es-ES":{
-nothing:"No escuché nada. Describe sequedad, grasa, daño o color.",
+nothing:"No escuché nada.",
 allinone:"Formula Exclusiva es tu solución completa. Precio: $65.",
 damage:"Formula Exclusiva fortalece y repara el cabello. Precio: $65.",
 color:"Gotika restaura la vitalidad del color. Precio: $54.",
-oil:"Gotero equilibra la grasa del cabello. Precio: $42.",
+oil:"Gotero equilibra la grasa. Precio: $42.",
 dry:"Laciador restaura suavidad y brillo. Precio: $48."
 }
 };
 
 function chooseProduct(text){
-    const pack = responses[selectedLang] || responses["en-US"];
-    text = text.toLowerCase();
+const pack=responses[selectedLang]||responses["en-US"];
+text=text.toLowerCase();
 
-    if(!text || text.length < 2) return pack.nothing;
-    if(/all|todo/.test(text)) return pack.allinone;
-    if(/damage|daño/.test(text)) return pack.damage;
-    if(/color/.test(text)) return pack.color;
-    if(/oil|grasa/.test(text)) return pack.oil;
-    if(/dry|seco/.test(text)) return pack.dry;
+if(!text||text.length<2) return pack.nothing;
+if(/all|todo/.test(text)) return pack.allinone;
+if(/damage|daño/.test(text)) return pack.damage;
+if(/color/.test(text)) return pack.color;
+if(/oil|grasa/.test(text)) return pack.oil;
+if(/dry|seco/.test(text)) return pack.dry;
 
-    return pack.nothing;
+return pack.nothing;
 }
 
-/* ================= SPEAK ================= */
+/* ========= SPEAK ========= */
 
 function speak(text){
-    state = "speaking";
-    baseColor = [0,200,255];
+state="speaking";
+baseColor=[0,200,255];
 
-    let utter = new SpeechSynthesisUtterance(text);
-    utter.lang = selectedLang;
-    utter.voice = premiumVoice;
-    utter.rate = 0.92;
+let utter=new SpeechSynthesisUtterance(text);
+utter.lang=selectedLang;
+utter.voice=premiumVoice;
+utter.rate=0.92;
 
-    speechSynthesis.cancel();
-    speechSynthesis.speak(utter);
+speechSynthesis.cancel();
+speechSynthesis.speak(utter);
 
-    let speakPulse = setInterval(()=>{
-        pulse = Math.random() * 35;
-    },70);
-
-    utter.onend = ()=>{
-        clearInterval(speakPulse);
-        state = "idle";
-        baseColor = [0,255,200];
-    };
+utter.onend=()=>{
+state="idle";
+baseColor=[0,255,200];
+};
 }
 
-/* ================= LISTEN ================= */
+/* ========= LISTEN ========= */
 
 function startListening(){
 
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+if(!SR){
+responseBox.innerText="Speech recognition not supported.";
+return;
+}
 
-    if(!SR){
-        responseBox.innerText = "Speech recognition not supported in this browser.";
-        return;
-    }
+transcript="";
+state="listening";
+baseColor=[255,200,60];
+intensity=10;
+lastSpeechTime=Date.now();
 
-    transcript = "";
-    state = "listening";
-    baseColor = [255,200,60];
-    lastSpeechTime = Date.now();
+recognition=new SR();
+recognition.lang=selectedLang;
+recognition.continuous=true;
+recognition.interimResults=true;
 
-    recognition = new SR();
-    recognition.lang = selectedLang;
-    recognition.continuous = true;
-    recognition.interimResults = true;
+recognition.onresult=(e)=>{
+transcript="";
+for(let i=0;i<e.results.length;i++){
+transcript+=e.results[i][0].transcript;
+}
 
-    recognition.onresult = (event)=>{
-        transcript = "";
-        for(let i=0;i<event.results.length;i++){
-            transcript += event.results[i][0].transcript;
-        }
+intensity=Math.min(transcript.length*2,40);
+lastSpeechTime=Date.now();
+clearTimeout(silenceTimer);
+silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
+};
 
-        lastSpeechTime = Date.now();
-        clearTimeout(silenceTimer);
-        silenceTimer = setTimeout(checkSilence, SILENCE_DELAY);
-
-        pulse = Math.random()*45;
-    };
-
-    recognition.start();
+recognition.start();
 }
 
 function checkSilence(){
-    if(Date.now() - lastSpeechTime >= SILENCE_DELAY){
-        recognition.stop();
-        processTranscript();
-    } else {
-        silenceTimer = setTimeout(checkSilence, SILENCE_DELAY);
-    }
+if(Date.now()-lastSpeechTime>=SILENCE_DELAY){
+recognition.stop();
+process();
+}else{
+silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
+}
 }
 
-function processTranscript(){
-    let result = chooseProduct(transcript);
-    responseBox.innerText = result;
-    speak(result);
+function process(){
+let result=chooseProduct(transcript);
+responseBox.innerText=result;
+speak(result);
 }
 
-/* ================= CLICK ================= */
+/* ========= CLICK ========= */
 
-sphere.addEventListener("click", ()=>{
-    if(state === "idle"){
-        startListening();
-    } else if(state === "listening"){
-        recognition.stop();
-        state = "idle";
-        baseColor = [0,255,200];
-    }
+sphere.addEventListener("click",()=>{
+if(state==="idle"){
+startListening();
+}else if(state==="listening"){
+recognition.stop();
+state="idle";
+baseColor=[0,255,200];
+}
 });
 
-/* ================= LANGUAGE SWITCH ================= */
-
-langSelect.addEventListener("change", ()=>{
-    selectedLang = langSelect.value;
-    selectVoice();
+langSelect.addEventListener("change",()=>{
+selectedLang=langSelect.value;
+selectVoice();
 });
 
-renderSphere();
+draw();
 
 </script>
 </body>
 </html>
 """
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+if __name__=="__main__":
+    port=int(os.environ.get("PORT",10000))
+    app.run(host="0.0.0.0",port=port)
