@@ -105,7 +105,9 @@ const SILENCE_DELAY=2500;
 let premiumVoice=null;
 let voicesLoaded=false;
 
-/* ================= LOAD PREMIUM VOICE ================= */
+let audioCtx, analyser, micSource, dataArray;
+
+/* ================= VOICE SELECTION ================= */
 
 function selectBestVoice() {
 const voices = speechSynthesis.getVoices();
@@ -124,13 +126,10 @@ langVoices[0] ||
 voices[0];
 }
 
-speechSynthesis.onvoiceschanged = () => {
-selectBestVoice();
-};
+speechSynthesis.onvoiceschanged = selectBestVoice;
+setTimeout(selectBestVoice,500);
 
-setTimeout(selectBestVoice, 500);
-
-/* ================= COLOR ================= */
+/* ================= COLOR SYSTEM ================= */
 
 let currentColor=[0,255,200];
 
@@ -161,6 +160,58 @@ requestAnimationFrame(frame);
 }
 
 animateColor([0,255,200]);
+
+/* ================= MIC INIT ================= */
+
+async function initMic(){
+if(audioCtx) return;
+
+audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+micSource=audioCtx.createMediaStreamSource(stream);
+analyser=audioCtx.createAnalyser();
+analyser.fftSize=1024;
+micSource.connect(analyser);
+dataArray=new Uint8Array(analyser.fftSize);
+}
+
+/* ================= PULSE ENGINE ================= */
+
+function updateMicLevel(){
+if(!analyser || state!=="listening") return 0;
+
+analyser.getByteTimeDomainData(dataArray);
+let sum=0;
+for(let i=0;i<dataArray.length;i++){
+let v=(dataArray[i]-128)/128;
+sum+=v*v;
+}
+return Math.sqrt(sum/dataArray.length);
+}
+
+function pulse(){
+
+let scale=1;
+
+if(state==="idle"){
+scale=1+Math.sin(Date.now()*0.002)*0.05;
+}
+
+if(state==="listening"){
+let micLevel=updateMicLevel();
+let boost=Math.min(micLevel*5,0.35);
+scale=1.05+boost;
+}
+
+if(state==="speaking"){
+scale=1.08+Math.sin(Date.now()*0.0035)*0.07;
+}
+
+halo.style.transform=`scale(${scale})`;
+
+requestAnimationFrame(pulse);
+}
+pulse();
 
 /* ================= SOUNDS ================= */
 
@@ -210,7 +261,7 @@ state="idle";
 };
 }
 
-/* ================= PRODUCT ================= */
+/* ================= PRODUCT LOGIC ================= */
 
 function chooseProduct(text){
 text=text.toLowerCase();
@@ -238,7 +289,10 @@ return "Please describe dryness, oiliness, damage, or color concerns.";
 
 /* ================= LISTEN ================= */
 
-function startListening(){
+async function startListening(){
+
+await initMic();
+
 transcript="";
 lastSpeechTime=Date.now();
 
