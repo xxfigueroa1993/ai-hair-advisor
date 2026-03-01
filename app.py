@@ -4,55 +4,108 @@ from flask import Flask
 app = Flask(__name__)
 
 @app.route("/")
-def home():
+def index():
     return """
 <!DOCTYPE html>
 <html>
 <head>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta charset="UTF-8">
 <title>Hair Expert Advisor</title>
 
 <style>
 body{
 margin:0;
-background:#05080a;
+background:black;
+font-family:Arial,Helvetica,sans-serif;
 color:white;
-font-family:Arial,sans-serif;
-text-align:center;
+display:flex;
+flex-direction:column;
+align-items:center;
+justify-content:center;
+height:100vh;
 overflow:hidden;
 }
 
-#languageSelect{
-margin-top:20px;
+select{
+position:absolute;
+top:20px;
+right:20px;
 padding:8px;
-border-radius:6px;
-border:none;
+background:black;
+color:white;
+border:1px solid #444;
+}
+
+#modeToggle{
+position:absolute;
+top:20px;
+left:20px;
+padding:8px 14px;
+background:black;
+color:white;
+border:1px solid #444;
+cursor:pointer;
 }
 
 .wrapper{
-height:60vh;
+position:relative;
+width:280px;
+height:280px;
 display:flex;
-justify-content:center;
 align-items:center;
+justify-content:center;
 }
 
 #halo{
-width:280px;
-height:280px;
+width:220px;
+height:220px;
 border-radius:50%;
-transition:background 1.4s ease, box-shadow 1.4s ease, transform 0.3s ease;
+background:radial-gradient(circle at center,
+rgba(0,255,200,0.35) 0%,
+rgba(0,255,200,0.20) 50%,
+rgba(0,255,200,0.10) 75%,
+rgba(0,255,200,0.05) 100%);
+box-shadow:
+0 0 120px rgba(0,255,200,0.55),
+0 0 240px rgba(0,255,200,0.35),
+0 0 360px rgba(0,255,200,0.25);
+transition:box-shadow 1.2s ease, background 1.2s ease;
 cursor:pointer;
 }
 
 #response{
-margin-top:20px;
-padding:20px;
-min-height:80px;
+position:absolute;
+bottom:50px;
+width:70%;
+text-align:center;
+font-size:18px;
+opacity:0.9;
 }
 
+#manualBox{
+display:none;
+position:absolute;
+bottom:120px;
+width:60%;
+text-align:center;
+}
+input{
+width:80%;
+padding:10px;
+border:none;
+outline:none;
+}
+button{
+padding:8px 12px;
+margin-top:10px;
+cursor:pointer;
+}
 </style>
 </head>
+
 <body>
+
+<button id="modeToggle">Switch to Manual</button>
 
 <select id="languageSelect">
 <option value="en-US">English</option>
@@ -68,10 +121,16 @@ min-height:80px;
 <div id="halo"></div>
 </div>
 
-<div id="response">Tap and describe your hair concern.</div>
+<div id="manualBox">
+<input id="manualInput" placeholder="Describe your hair concern"/>
+<br>
+<button onclick="processManual()">Analyze</button>
+</div>
 
-<audio id="introSound" src="intro.mp3"></audio>
-<audio id="outroSound" src="outro.mp3"></audio>
+<div id="response">Tap the halo and describe your hair concern.</div>
+
+<audio id="introSound" src="https://assets.mixkit.co/sfx/preview/mixkit-interface-click-1126.mp3"></audio>
+<audio id="outroSound" src="https://assets.mixkit.co/sfx/preview/mixkit-software-interface-start-2574.mp3"></audio>
 
 <script>
 
@@ -83,91 +142,96 @@ const outroSound=document.getElementById("outroSound");
 
 let state="idle";
 let recognition=null;
-let transcript="";
 let silenceTimer=null;
-let noSpeechTimer=null;
+let audioContext, analyser, micStream;
 
-/* ================= COLOR ENGINE ================= */
+// ======================
+// COLOR ENGINE
+// ======================
 
 function setGlow(r,g,b){
-halo.style.boxShadow=`
-0 0 100px rgba(${r},${g},${b},0.55),
-0 0 220px rgba(${r},${g},${b},0.35),
-0 0 320px rgba(${r},${g},${b},0.25)
-`;
+halo.style.boxShadow=
+`0 0 120px rgba(${r},${g},${b},0.6),
+0 0 240px rgba(${r},${g},${b},0.4),
+0 0 360px rgba(${r},${g},${b},0.3)`;
 
-halo.style.background=`
-radial-gradient(circle at center,
+halo.style.background=
+`radial-gradient(circle at center,
 rgba(${r},${g},${b},0.35) 0%,
-rgba(${r},${g},${b},0.20) 60%,
-rgba(${r},${g},${b},0.10) 100%)
-`;
+rgba(${r},${g},${b},0.20) 50%,
+rgba(${r},${g},${b},0.10) 75%,
+rgba(${r},${g},${b},0.05) 100%)`;
 }
 
-setGlow(0,255,200);
+// ======================
+// DEFAULT BREATHING
+// ======================
 
-/* ================= PULSE ================= */
+function breathe(){
+let intensity=0.03;
+if(state==="listening") intensity=0.07;
+if(state==="speaking") intensity=0.09;
 
-function pulse(){
-let intensity=0.04;
-if(state==="listening") intensity=0.08;
-if(state==="speaking") intensity=0.10;
-
-let scale=1+Math.sin(Date.now()*0.002)*intensity;
+let scale=1+Math.sin(Date.now()*0.0015)*intensity;
 halo.style.transform=`scale(${scale})`;
-requestAnimationFrame(pulse);
+requestAnimationFrame(breathe);
 }
-pulse();
+breathe();
 
-/* ================= PRODUCT ENGINE ================= */
+// ======================
+// MIC REACTIVE PULSE
+// ======================
+
+async function startMic(){
+audioContext=new(window.AudioContext||window.webkitAudioContext)();
+micStream=await navigator.mediaDevices.getUserMedia({audio:true});
+const source=audioContext.createMediaStreamSource(micStream);
+analyser=audioContext.createAnalyser();
+analyser.fftSize=256;
+source.connect(analyser);
+reactToSound();
+}
+
+function reactToSound(){
+if(!analyser) return;
+
+let data=new Uint8Array(analyser.frequencyBinCount);
+analyser.getByteFrequencyData(data);
+let volume=data.reduce((a,b)=>a+b)/data.length;
+
+if(state==="listening"){
+let scale=1+volume/600;
+halo.style.transform=`scale(${scale})`;
+}
+
+requestAnimationFrame(reactToSound);
+}
+
+// ======================
+// PRODUCT LOGIC
+// ======================
 
 function chooseProduct(text){
-
 text=text.toLowerCase();
 
-let dry=/dry|frizz|rough|brittle/.test(text);
-let damaged=/damage|break|weak/.test(text);
-let tangly=/tangle|knot|matted/.test(text);
-let color=/color|fade|brassy/.test(text);
-let oily=/oily|greasy/.test(text);
-let flat=/flat|no bounce/.test(text);
-let falling=/falling|thinning|shedding/.test(text);
+if(/color|fade|brassy/.test(text))
+return "Gotika restores vibrancy and protects natural pigment. Price: $54.";
 
-let problems=[dry,damaged,tangly,color,oily,flat,falling].filter(Boolean).length;
+if(/oil|greasy/.test(text))
+return "Gotero regulates excess oil without stripping hydration. Price: $42.";
 
-if(problems===0) return null;
+if(/dry|frizz|rough/.test(text))
+return "Laciador restores softness and smooth movement. Price: $48.";
 
-if(damaged || falling || problems>=3)
-return "Formula Exclusiva restores structural strength, elasticity, moisture balance, and long-term scalp integrity. Price: $65.";
-
-if(color)
-return "Gotika restores vibrancy, corrects tone, and protects pigment longevity. Price: $54.";
-
-if(oily && problems>=2)
-return "Formula Exclusiva balances oil while repairing structural stress. Price: $65.";
-
-if(oily)
-return "Gotero regulates excess oil and supports scalp clarity. Price: $42.";
-
-if(tangly && problems>=2)
-return "Gotero smooths texture and reinforces resilience. Price: $42.";
-
-if(tangly)
-return "Laciador improves smoothness and manageability while restoring bounce. Price: $48.";
-
-if(dry && problems>=2)
-return "Formula Exclusiva deeply rehydrates and rebuilds dry multi-concern hair. Price: $65.";
-
-if(dry)
-return "Laciador restores moisture, softness, and natural movement. Price: $48.";
-
-if(flat)
-return "Laciador enhances body and natural volume. Price: $48.";
+if(/damage|break|weak|loss|thin/.test(text))
+return "Formula Exclusiva rebuilds strength and moisture balance. Price: $65.";
 
 return null;
 }
 
-/* ================= SPEAK ================= */
+// ======================
+// SPEAK ENGINE
+// ======================
 
 function speak(text){
 
@@ -175,86 +239,34 @@ speechSynthesis.cancel();
 
 const utter=new SpeechSynthesisUtterance(text);
 utter.lang=languageSelect.value;
-utter.rate=0.95;
-utter.pitch=1.02;
+utter.rate=0.92;
+utter.pitch=1;
 
 state="speaking";
-setGlow(0,200,255);
+setGlow(0,255,220);
 
-introSound.play();
-
-setTimeout(()=>{
 speechSynthesis.speak(utter);
-},400);
 
 utter.onend=()=>{
 outroSound.play();
-setGlow(0,255,200);
 state="idle";
+setGlow(0,255,200);
 };
 }
 
-/* ================= LISTEN ================= */
+// ======================
+// PROCESS
+// ======================
 
-function startListening(){
-
-const SpeechRecognition=
-window.SpeechRecognition||window.webkitSpeechRecognition;
-
-recognition=new SpeechRecognition();
-recognition.lang=languageSelect.value;
-recognition.continuous=true;
-recognition.interimResults=true;
-
-transcript="";
-state="listening";
-setGlow(255,210,80);
-
-recognition.onresult=function(event){
-
-clearTimeout(silenceTimer);
-clearTimeout(noSpeechTimer);
-
-for(let i=event.resultIndex;i<event.results.length;i++){
-if(event.results[i].isFinal){
-transcript+=event.results[i][0].transcript+" ";
-}
-}
-
-silenceTimer=setTimeout(()=>{
-recognition.stop();
-processTranscript(transcript.trim());
-},2500);
-};
-
-recognition.start();
-
-noSpeechTimer=setTimeout(()=>{
-if(transcript.trim().length<5){
-recognition.stop();
-speak("I didn’t hear anything. Please describe your hair concern.");
-}
-},3500);
-
-}
-
-/* ================= PROCESS ================= */
-
-function processTranscript(text){
-
-if(!text || text.length<5){
-speak("Please describe dryness, oiliness, damage, tangling, color loss, volume issues, or shedding.");
-return;
-}
+function processText(text){
 
 responseBox.innerText="Analyzing...";
-
 setTimeout(()=>{
 
 let result=chooseProduct(text);
 
 if(!result){
-speak("I couldn’t detect a clear concern. Please be more specific.");
+speak("Please describe dryness, oiliness, damage, color fading, or thinning.");
 return;
 }
 
@@ -262,14 +274,78 @@ responseBox.innerText=result;
 
 setTimeout(()=>{
 speak(result);
-},2500); // 2.5 second silence before speaking
+},2500); // 2.5 second silence before AI talks
 
 },1200);
 }
 
-/* ================= CLICK ================= */
+// ======================
+// VOICE LISTENING
+// ======================
+
+function startListening(){
+
+introSound.play();
+
+const SpeechRecognition =
+window.SpeechRecognition||window.webkitSpeechRecognition;
+
+recognition=new SpeechRecognition();
+recognition.lang=languageSelect.value;
+recognition.continuous=true;
+recognition.interimResults=false;
+
+let finalTranscript="";
+
+state="listening";
+setGlow(255,210,80);
+
+recognition.onresult=function(event){
+
+clearTimeout(silenceTimer);
+
+for(let i=event.resultIndex;i<event.results.length;i++){
+if(event.results[i].isFinal){
+finalTranscript+=event.results[i][0].transcript+" ";
+}
+}
+
+silenceTimer=setTimeout(()=>{
+recognition.stop();
+processText(finalTranscript.trim());
+},2500);
+
+};
+
+recognition.start();
+startMic();
+}
+
+// ======================
+// MANUAL MODE
+// ======================
+
+let manual=false;
+document.getElementById("modeToggle").onclick=function(){
+manual=!manual;
+document.getElementById("manualBox").style.display=
+manual?"block":"none";
+this.innerText=manual?"Switch to Voice":"Switch to Manual";
+};
+
+function processManual(){
+let text=document.getElementById("manualInput").value;
+if(text.length<5) return;
+processText(text);
+}
+
+// ======================
+// CLICK CONTROL
+// ======================
 
 halo.addEventListener("click",()=>{
+
+if(manual) return;
 
 if(state==="listening"){
 recognition.stop();
@@ -293,6 +369,6 @@ startListening();
 </html>
 """
 
-if __name__=="__main__":
+if __name__ == "__main__":
     port=int(os.environ.get("PORT",10000))
     app.run(host="0.0.0.0",port=port)
