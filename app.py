@@ -34,7 +34,7 @@ justify-content:center;
 align-items:center;
 }
 
-#halo{
+#sphere{
 width:280px;
 height:280px;
 border-radius:50%;
@@ -52,8 +52,8 @@ min-height:60px;
 
 #langBox{
 position:absolute;
-top:18px;
-right:22px;
+top:20px;
+right:25px;
 }
 
 #langSelect{
@@ -83,31 +83,31 @@ cursor:pointer;
 </div>
 
 <div class="wrapper">
-<div id="halo"></div>
+<div id="sphere"></div>
 </div>
 
-<div id="response">Tap and describe your hair concern.</div>
+<div id="response">Tap the sphere and describe your hair concern.</div>
 
 <script>
 
-const halo = document.getElementById("halo");
+const sphere = document.getElementById("sphere");
 const responseBox = document.getElementById("response");
 const langSelect = document.getElementById("langSelect");
 
-let selectedLang="en-US";
-let state="idle";
-let transcript="";
-let recognition=null;
-let silenceTimer=null;
-let lastSpeechTime=0;
-const SILENCE_DELAY=2500;
+let state = "idle";
+let selectedLang = "en-US";
+let transcript = "";
+let recognition;
+let silenceTimer;
+let lastSpeechTime = 0;
+const SILENCE_DELAY = 2500;
 
-let premiumVoice=null;
+let voice;
 let voicesLoaded=false;
 
 /* ================= PREMIUM VOICE ================= */
 
-function selectVoice(){
+function loadVoice(){
 const voices=speechSynthesis.getVoices();
 if(!voices.length) return;
 
@@ -115,7 +115,7 @@ voicesLoaded=true;
 
 const matches=voices.filter(v=>v.lang===selectedLang);
 
-premiumVoice=
+voice=
 matches.find(v=>v.name.includes("Google")) ||
 matches.find(v=>v.name.includes("Microsoft")) ||
 matches.find(v=>!v.localService) ||
@@ -123,10 +123,39 @@ matches[0] ||
 voices[0];
 }
 
-speechSynthesis.onvoiceschanged=selectVoice;
-setTimeout(selectVoice,500);
+speechSynthesis.onvoiceschanged=loadVoice;
+setTimeout(loadVoice,500);
 
-/* ================= LANGUAGE RESPONSES ================= */
+/* ================= COLOR + PULSE ================= */
+
+let baseColor=[0,255,200];
+let pulse=0;
+let direction=1;
+
+function renderSphere(){
+sphere.style.background=
+`radial-gradient(circle,
+ rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9) 0%,
+ rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.2) 65%,
+ rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.05) 100%)`;
+
+sphere.style.boxShadow=
+`0 0 ${120+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.9),
+ 0 0 ${240+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.6),
+ 0 0 ${360+pulse}px rgba(${baseColor[0]},${baseColor[1]},${baseColor[2]},0.3)`;
+}
+
+function ambientPulse(){
+if(state==="idle"){
+pulse += 0.4*direction;
+if(pulse>18||pulse<0) direction*=-1;
+renderSphere();
+}
+requestAnimationFrame(ambientPulse);
+}
+ambientPulse();
+
+/* ================= RESPONSES ================= */
 
 const responses={
 "en-US":{
@@ -147,87 +176,50 @@ dry:"Laciador restaura suavidad y brillo. Precio: $48."
 }
 };
 
-/* ================= COLOR + PULSE SYSTEM ================= */
+function chooseProduct(text){
+const pack=responses[selectedLang]||responses["en-US"];
+text=text.toLowerCase();
 
-let baseColor=[0,255,200];
-let pulseSize=0;
-let pulseDirection=1;
+if(!text||text.length<2) return pack.nothing;
+if(/all|todo/.test(text)) return pack.allinone;
+if(/damage|daño/.test(text)) return pack.damage;
+if(/color/.test(text)) return pack.color;
+if(/oil|grasa/.test(text)) return pack.oil;
+if(/dry|seco/.test(text)) return pack.dry;
 
-function drawSphere(r,g,b){
-halo.style.background=
-`radial-gradient(circle,
- rgba(${r},${g},${b},0.9) 0%,
- rgba(${r},${g},${b},0.25) 60%,
- rgba(${r},${g},${b},0.08) 100%)`;
-
-halo.style.boxShadow=
-`0 0 ${120+pulseSize}px rgba(${r},${g},${b},0.9),
- 0 0 ${240+pulseSize}px rgba(${r},${g},${b},0.6),
- 0 0 ${360+pulseSize}px rgba(${r},${g},${b},0.3)`;
+return pack.nothing;
 }
-
-function ambientPulse(){
-if(state==="idle"){
-pulseSize+=0.5*pulseDirection;
-if(pulseSize>20||pulseSize<0) pulseDirection*=-1;
-drawSphere(...baseColor);
-}
-requestAnimationFrame(ambientPulse);
-}
-
-ambientPulse();
 
 /* ================= SPEAK ================= */
 
 function speak(text){
-
 state="speaking";
 baseColor=[0,200,255];
 
 let utter=new SpeechSynthesisUtterance(text);
 utter.lang=selectedLang;
-utter.voice=premiumVoice;
+utter.voice=voice;
 utter.rate=0.92;
 
 speechSynthesis.cancel();
 speechSynthesis.speak(utter);
 
-let speakPulse=setInterval(()=>{
-pulseSize=Math.random()*30;
-},80);
+let speakPulse=setInterval(()=>{ pulse=Math.random()*35; renderSphere(); },70);
 
 utter.onend=()=>{
 clearInterval(speakPulse);
-baseColor=[0,255,200];
 state="idle";
+baseColor=[0,255,200];
 };
-}
-
-/* ================= PRODUCT LOGIC ================= */
-
-function chooseProduct(text){
-
-const langPack=responses[selectedLang]||responses["en-US"];
-text=text.toLowerCase();
-
-if(!text||text.length<2) return langPack.nothing;
-if(/all|todo/.test(text)) return langPack.allinone;
-if(/damage|daño/.test(text)) return langPack.damage;
-if(/color/.test(text)) return langPack.color;
-if(/oil|grasa/.test(text)) return langPack.oil;
-if(/dry|seco/.test(text)) return langPack.dry;
-
-return langPack.nothing;
 }
 
 /* ================= LISTEN ================= */
 
 function startListening(){
-
 transcript="";
-lastSpeechTime=Date.now();
 state="listening";
-baseColor=[255,210,80];
+baseColor=[255,200,60];
+lastSpeechTime=Date.now();
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 recognition=new SR();
@@ -235,16 +227,17 @@ recognition.lang=selectedLang;
 recognition.continuous=true;
 recognition.interimResults=true;
 
-recognition.onresult=(event)=>{
+recognition.onresult=(e)=>{
 transcript="";
-for(let i=0;i<event.results.length;i++)
-transcript+=event.results[i][0].transcript;
+for(let i=0;i<e.results.length;i++)
+transcript+=e.results[i][0].transcript;
 
 lastSpeechTime=Date.now();
 clearTimeout(silenceTimer);
 silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
 
-pulseSize=Math.random()*40; // reactive pulse while speaking
+pulse=Math.random()*45;
+renderSphere();
 };
 
 recognition.start();
@@ -253,13 +246,13 @@ recognition.start();
 function checkSilence(){
 if(Date.now()-lastSpeechTime>=SILENCE_DELAY){
 recognition.stop();
-processTranscript();
+process();
 }else{
 silenceTimer=setTimeout(checkSilence,SILENCE_DELAY);
 }
 }
 
-function processTranscript(){
+function process(){
 let result=chooseProduct(transcript);
 responseBox.innerText=result;
 speak(result);
@@ -267,21 +260,16 @@ speak(result);
 
 /* ================= CLICK ================= */
 
-halo.addEventListener("click",()=>{
+sphere.addEventListener("click",()=>{
 if(state==="idle") startListening();
-else{
-try{recognition.stop();}catch(e){}
-state="idle";
-baseColor=[0,255,200];
-}
 });
 
 langSelect.addEventListener("change",()=>{
 selectedLang=langSelect.value;
-selectVoice();
+loadVoice();
 });
 
-drawSphere(...baseColor);
+renderSphere();
 
 </script>
 </body>
