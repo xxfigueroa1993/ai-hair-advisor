@@ -406,6 +406,34 @@ function setState(s) {
   if (s === "speaking")  halo.classList.add("speaking");
 }
 
+/* ── MIC-REACTIVE PULSE (runs only during listening) ── */
+// CSS handles idle + speaking animations.
+// JS takes over transform ONLY during listening to react to mic volume.
+let micLoopRunning = false;
+function micReactiveLoop() {
+  if (appState !== "listening") {
+    // Hand transform back to CSS by clearing inline style
+    halo.style.transform = "";
+    micLoopRunning = false;
+    return;
+  }
+  if (analyser && micData) {
+    analyser.getByteFrequencyData(micData);
+    let sum = 0;
+    for (let i = 0; i < micData.length; i++) sum += micData[i];
+    const vol = sum / (micData.length * 255);  // 0.0 – 1.0
+    const scale = 1.0 + 0.05 + (vol * 0.55);  // min 1.05, max ~1.60 at full volume
+    halo.style.transform = `scale(${scale.toFixed(3)})`;
+  }
+  requestAnimationFrame(micReactiveLoop);
+}
+function startMicLoop() {
+  if (!micLoopRunning) {
+    micLoopRunning = true;
+    requestAnimationFrame(micReactiveLoop);
+  }
+}
+
 /* ── VOICE SELECTION ── */
 function getBestVoice(lang) {
   const voices = speechSynthesis.getVoices();
@@ -680,7 +708,7 @@ function startListening() {
   }
 
   playAmbient("intro");
-  initMic();
+  initMic().then(() => startMicLoop());  // start reactive loop once mic is ready
   finalText = "";
   setState("listening");
   setColor(...LISTEN);
@@ -716,6 +744,7 @@ function startListening() {
 
   recognition.onresult = (event) => {
     clearTimeout(silenceTimer);
+    clearTimeout(noSpeechTimer);  // CRITICAL: stop "didn't hear" firing when speech detected
     let interim = "";
     finalText = "";
     for (let i = 0; i < event.results.length; i++) {
