@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
-SYSTEM_PROMPT = """You are a luxury hair care expert advisor for a professional salon brand. 
+SYSTEM_PROMPT = """You are a luxury hair care expert advisor for a professional salon brand.
 You recommend exactly ONE of these four products based on the customer's hair concerns:
 
 PRODUCTS:
@@ -22,12 +22,12 @@ RULES:
 - State the product name, its price, and WHY it's perfect for their specific concern
 - If the concern is color-related in someone under 16, recommend seeing a professional first
 - If multiple concerns, pick the one product that addresses the PRIMARY issue
-- Never say "I recommend" — say something more natural like "For your [concern], [Product] is exactly what you need." or "Based on what you've described, [Product] at $X will [benefit]."
+- Never say "I recommend" — say something more natural like "For your [concern], [Product] is exactly what you need."
 - Sound like a knowledgeable friend, not a chatbot
 
 BACKGROUND RULES (when mentioned):
 - African/Black hair + dry → Laciador
-- African/Black hair + oily → Gotero  
+- African/Black hair + oily → Gotero
 - African/Black hair + damaged → Formula Exclusiva
 - Asian hair + dry → Formula Exclusiva
 - Asian hair + oily → Gotero
@@ -50,7 +50,6 @@ def index():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Hair Expert Advisor</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
-
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -141,7 +140,7 @@ body {
   transition:
     background 2.4s cubic-bezier(0.4,0,0.2,1),
     box-shadow  2.4s cubic-bezier(0.4,0,0.2,1);
-  /* default idle breathing via CSS — cannot be throttled */
+  /* Idle breathing — CSS keyframe, always runs unless JS overrides transform */
   animation: idlePulse 3.2s ease-in-out infinite;
 }
 
@@ -151,22 +150,19 @@ body {
   100% { transform: scale(1.00); }
 }
 
-#halo.listening {
-  animation: listenPulse 1.4s ease-in-out infinite;
-}
-@keyframes listenPulse {
-  0%   { transform: scale(1.00); }
-  50%  { transform: scale(1.14); }
-  100% { transform: scale(1.00); }
-}
-
+/* Speaking pulse — CSS keyframe, no mic data needed */
 #halo.speaking {
-  animation: speakPulse 1.0s ease-in-out infinite;
+  animation: speakPulse 0.9s ease-in-out infinite;
 }
 @keyframes speakPulse {
   0%   { transform: scale(1.05); }
-  50%  { transform: scale(1.18); }
+  50%  { transform: scale(1.20); }
   100% { transform: scale(1.05); }
+}
+
+/* Listening — NO animation class. JS drives transform via mic volume directly. */
+#halo.listening {
+  animation: none;
 }
 
 #stateLabel {
@@ -191,7 +187,6 @@ body {
   color: rgba(255,255,255,0.78);
   min-height: 72px;
   font-style: italic;
-  transition: opacity 0.7s ease;
 }
 
 #manualBox {
@@ -294,12 +289,15 @@ const manualBox    = document.getElementById("manualBox");
 const manualInput  = document.getElementById("manualInput");
 const manualSubmit = document.getElementById("manualSubmit");
 
+/* ── APP STATE ── */
 let appState     = "idle";
 let recognition  = null;
 let silenceTimer = null;
+let noSpeechTimer = null;   // module-level so all handlers can clearTimeout it
 let finalText    = "";
 let isManual     = false;
 
+/* ── AUDIO CONTEXT ── */
 let audioCtx = null;
 let analyser = null;
 let micData  = null;
@@ -316,66 +314,54 @@ function playAmbient(type) {
     const master = ctx.createGain();
     master.connect(ctx.destination);
     const now = ctx.currentTime;
-
     if (type === "intro") {
-      // Soft rising pad chord — wide, spread, slow
-      [[220, 0], [330, 0.20], [440, 0.40], [660, 0.65]].forEach(([freq, delay]) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.connect(g); g.connect(master);
-        o.type = "sine";
-        o.frequency.setValueAtTime(freq, now + delay);
-        g.gain.setValueAtTime(0, now + delay);
-        g.gain.linearRampToValueAtTime(0.06, now + delay + 0.5);
-        g.gain.exponentialRampToValueAtTime(0.001, now + delay + 3.5);
-        o.start(now + delay);
-        o.stop(now + delay + 4.0);
+      [[220,0],[330,0.20],[440,0.40],[660,0.65]].forEach(([freq,delay]) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(master); o.type = "sine";
+        o.frequency.setValueAtTime(freq, now+delay);
+        g.gain.setValueAtTime(0, now+delay);
+        g.gain.linearRampToValueAtTime(0.06, now+delay+0.5);
+        g.gain.exponentialRampToValueAtTime(0.001, now+delay+3.5);
+        o.start(now+delay); o.stop(now+delay+4.0);
       });
-      // Shimmer high tone
-      const s = ctx.createOscillator();
-      const sg = ctx.createGain();
-      s.connect(sg); sg.connect(master);
-      s.type = "sine";
-      s.frequency.setValueAtTime(1320, now + 0.8);
-      s.frequency.exponentialRampToValueAtTime(880, now + 2.5);
-      sg.gain.setValueAtTime(0, now + 0.8);
-      sg.gain.linearRampToValueAtTime(0.022, now + 1.1);
-      sg.gain.exponentialRampToValueAtTime(0.001, now + 3.8);
-      s.start(now + 0.8); s.stop(now + 4.0);
+      const s = ctx.createOscillator(), sg = ctx.createGain();
+      s.connect(sg); sg.connect(master); s.type = "sine";
+      s.frequency.setValueAtTime(1320, now+0.8);
+      s.frequency.exponentialRampToValueAtTime(880, now+2.5);
+      sg.gain.setValueAtTime(0, now+0.8);
+      sg.gain.linearRampToValueAtTime(0.022, now+1.1);
+      sg.gain.exponentialRampToValueAtTime(0.001, now+3.8);
+      s.start(now+0.8); s.stop(now+4.0);
       master.gain.setValueAtTime(1, now);
-
     } else if (type === "outro") {
-      // Descending resolution — calming, wide
-      [[660, 0], [440, 0.25], [330, 0.50], [220, 0.75]].forEach(([freq, delay]) => {
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.connect(g); g.connect(master);
-        o.type = "sine";
-        o.frequency.setValueAtTime(freq, now + delay);
-        o.frequency.exponentialRampToValueAtTime(freq * 0.90, now + delay + 2.5);
-        g.gain.setValueAtTime(0, now + delay);
-        g.gain.linearRampToValueAtTime(0.050, now + delay + 0.35);
-        g.gain.exponentialRampToValueAtTime(0.001, now + delay + 3.2);
-        o.start(now + delay);
-        o.stop(now + delay + 3.5);
+      [[660,0],[440,0.25],[330,0.50],[220,0.75]].forEach(([freq,delay]) => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(master); o.type = "sine";
+        o.frequency.setValueAtTime(freq, now+delay);
+        o.frequency.exponentialRampToValueAtTime(freq*0.90, now+delay+2.5);
+        g.gain.setValueAtTime(0, now+delay);
+        g.gain.linearRampToValueAtTime(0.050, now+delay+0.35);
+        g.gain.exponentialRampToValueAtTime(0.001, now+delay+3.2);
+        o.start(now+delay); o.stop(now+delay+3.5);
       });
       master.gain.setValueAtTime(1, now);
     }
-  } catch(e) { console.warn("Audio error:", e); }
+  } catch(e) { console.warn("Audio:", e); }
 }
 
-/* ── MICROPHONE ── */
-async function initMic() {
-  if (analyser) return;
-  try {
-    const ctx = getCtx();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const src = ctx.createMediaStreamSource(stream);
-    analyser = ctx.createAnalyser();
-    analyser.fftSize = 256;
-    src.connect(analyser);
-    micData = new Uint8Array(analyser.frequencyBinCount);
-  } catch(e) { console.warn("Mic unavailable:", e); }
+/* ── MICROPHONE — returns a real Promise ── */
+function initMic() {
+  if (analyser) return Promise.resolve();
+  const ctx = getCtx();
+  return navigator.mediaDevices.getUserMedia({ audio: true })
+    .then(stream => {
+      const src = ctx.createMediaStreamSource(stream);
+      analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      micData = new Uint8Array(analyser.frequencyBinCount);
+    })
+    .catch(e => console.warn("Mic:", e));
 }
 
 /* ── COLOR ── */
@@ -392,54 +378,55 @@ function setColor(r, g, b) {
     0 0 290px rgba(${r},${g},${b},0.16),
     0 0 440px rgba(${r},${g},${b},0.08)`;
 }
-
 const IDLE   = [0, 255, 200];
 const LISTEN = [255, 200, 60];
 const SPEAK  = [0, 220, 255];
 setColor(...IDLE);
 
-/* ── STATE SETTER — swaps CSS animation class ── */
+/* ── STATE SETTER ── */
 function setState(s) {
   appState = s;
   halo.classList.remove("listening", "speaking");
-  if (s === "listening") halo.classList.add("listening");
-  if (s === "speaking")  halo.classList.add("speaking");
+  if (s === "listening") {
+    halo.classList.add("listening");
+    // Clear any inline transform left from previous session
+    // JS mic loop will take over immediately
+  }
+  if (s === "speaking") {
+    halo.classList.add("speaking");
+    halo.style.transform = ""; // let CSS keyframe drive it
+  }
+  if (s === "idle") {
+    halo.style.transform = ""; // let CSS idlePulse drive it
+  }
 }
 
-/* ── MIC-REACTIVE PULSE (runs only during listening) ── */
-// CSS handles idle + speaking animations.
-// JS takes over transform ONLY during listening to react to mic volume.
-let micLoopRunning = false;
+/* ── MIC-REACTIVE LOOP ──
+   Runs ONLY during "listening". Drives transform via mic volume.
+   CSS animation:none on .listening means no conflict. ── */
 function micReactiveLoop() {
   if (appState !== "listening") {
-    // Hand transform back to CSS by clearing inline style
-    halo.style.transform = "";
-    micLoopRunning = false;
+    // Exit — setState("idle"/"speaking") already cleared inline transform
     return;
   }
   if (analyser && micData) {
     analyser.getByteFrequencyData(micData);
     let sum = 0;
     for (let i = 0; i < micData.length; i++) sum += micData[i];
-    const vol = sum / (micData.length * 255);  // 0.0 – 1.0
-    const scale = 1.0 + 0.05 + (vol * 0.55);  // min 1.05, max ~1.60 at full volume
+    const vol = sum / (micData.length * 255); // 0.0–1.0
+    const scale = 1.05 + vol * 0.60;          // 1.05 quiet → 1.65 loud
     halo.style.transform = `scale(${scale.toFixed(3)})`;
+  } else {
+    // Mic not ready yet — soft fallback pulse
+    halo.style.transform = `scale(1.08)`;
   }
   requestAnimationFrame(micReactiveLoop);
-}
-function startMicLoop() {
-  if (!micLoopRunning) {
-    micLoopRunning = true;
-    requestAnimationFrame(micReactiveLoop);
-  }
 }
 
 /* ── VOICE SELECTION ── */
 function getBestVoice(lang) {
   const voices = speechSynthesis.getVoices();
   if (!voices.length) return null;
-
-  // Only use English-named preferred list when English is actually selected
   if (lang === "en-US" || lang === "en-GB") {
     const preferred = [
       "Google US English", "Google UK English Female", "Google UK English Male",
@@ -453,16 +440,14 @@ function getBestVoice(lang) {
       if (v) return v;
     }
   }
-
-  // For all languages: pick best voice matching the exact lang code
   const byLang = voices.filter(v => v.lang === lang);
   return (
-    byLang.find(v => /Google/.test(v.name))        ||
+    byLang.find(v => /Google/.test(v.name))         ||
     byLang.find(v => /Natural|Online/.test(v.name)) ||
     byLang.find(v => /Microsoft/.test(v.name))      ||
     byLang.find(v => !v.localService)               ||
     byLang[0]                                        ||
-    voices.find(v => v.lang.startsWith(lang.split('-')[0])) ||
+    voices.find(v => v.lang.startsWith(lang.split("-")[0])) ||
     voices[0]
   );
 }
@@ -489,32 +474,7 @@ function speak(text) {
   }, 80);
 }
 
-/* ── AI RECOMMENDATION ── */
-async function getRecommendation(text) {
-  try {
-    // 5 second timeout — if fetch hangs (cross-origin iframe), fall back immediately
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
-    const resp = await fetch("https://ai-hair-advisor.onrender.com/api/recommend", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, lang: langSelect.value }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-
-    if (!resp.ok) throw new Error("API unavailable");
-    const data = await resp.json();
-    if (data.recommendation) return data.recommendation;
-    throw new Error("No recommendation");
-  } catch(e) {
-    // Always fall back to local logic — never returns null
-    return localRecommend(text);
-  }
-}
-
-// Translated fallback responses for when API key is not configured
+/* ── LOCAL RESPONSES ── */
 const LOCAL_RESPONSES = {
   "en-US": {
     damaged:  "Formula Exclusiva is exactly what your hair needs. This professional all-in-one treatment rebuilds strength, restores moisture, and revives scalp health. At $65, it's your most complete solution.",
@@ -531,94 +491,94 @@ const LOCAL_RESPONSES = {
   },
   "es-ES": {
     damaged:  "Formula Exclusiva es exactamente lo que tu cabello necesita. Este tratamiento profesional todo en uno reconstruye la fuerza y restaura la humedad. A $65, es tu solución más completa.",
-    color:    "Gotika es la respuesta para tu color. Restaura la vitalidad, corrige el tono y protege tu pigmento a largo plazo. Precio: $54.",
-    colorAf:  "Gotero es tu mejor opción — restaura el brillo natural y el tono mientras equilibra tu cuero cabelludo. A $42, funciona perfectamente.",
-    oily:     "Gotero es ideal para el cabello graso — regula la producción de sebo y mantiene tu cuero cabelludo limpio. Precio: $42.",
-    oilyHi:  "Formula Exclusiva equilibrará el aceite de tu cuero cabelludo mientras nutre profundamente tu cabello. A $65, lo maneja todo.",
-    dry:      "Laciador transformará tu cabello seco — restaurando suavidad, tersura y ese rebote natural saludable. Precio: $48.",
-    dryAs:   "Formula Exclusiva es ideal para tu tipo de cabello — penetra profundamente para restaurar elasticidad e hidratación. Precio: $65.",
-    tangly:   "Formula Exclusiva aborda la causa raíz de los enredos mientras fortalece cada hebra. Precio: $65.",
-    tanglyHi: "Laciador es perfecto — suaviza, desenreda y deja tu cabello manejable con un movimiento hermoso. Precio: $48.",
-    flat:     "Laciador le dará a tu cabello el cuerpo y movimiento que le falta — ligero y natural. Precio: $48.",
-    default:  "Formula Exclusiva es tu mejor opción general. Cubre humedad, fuerza y salud del cuero cabelludo en un tratamiento profesional. Precio: $65."
+    color:    "Gotika es la respuesta para tu color. Restaura la vitalidad, corrige el tono y protege tu pigmento. Precio: $54.",
+    colorAf:  "Gotero es tu mejor opción — restaura el brillo natural y equilibra tu cuero cabelludo. A $42, funciona perfectamente.",
+    oily:     "Gotero es ideal para el cabello graso — regula la producción de sebo. Precio: $42.",
+    oilyHi:  "Formula Exclusiva equilibrará el aceite de tu cuero cabelludo mientras nutre tu cabello. A $65, lo maneja todo.",
+    dry:      "Laciador transformará tu cabello seco — restaurando suavidad y ese rebote natural. Precio: $48.",
+    dryAs:   "Formula Exclusiva es ideal para tu tipo de cabello — penetra profundamente para restaurar elasticidad. Precio: $65.",
+    tangly:   "Formula Exclusiva aborda la causa raíz de los enredos. Precio: $65.",
+    tanglyHi: "Laciador es perfecto — suaviza y desenreda dejando tu cabello manejable. Precio: $48.",
+    flat:     "Laciador le dará a tu cabello el cuerpo que le falta. Precio: $48.",
+    default:  "Formula Exclusiva es tu mejor opción general. Precio: $65."
   },
   "fr-FR": {
-    damaged:  "Formula Exclusiva est exactement ce dont vos cheveux ont besoin. Ce traitement tout-en-un professionnel reconstruit la force et restaure l'hydratation. À 65$, c'est votre solution la plus complète.",
-    color:    "Gotika est la réponse pour votre couleur. Elle restaure l'éclat, corrige le ton et protège votre pigment durablement. Prix : 54$.",
-    colorAf:  "Gotero est votre meilleur choix — il restaure l'éclat naturel tout en équilibrant votre cuir chevelu. À 42$, il fonctionne parfaitement.",
-    oily:     "Gotero est idéal pour les cheveux gras — il régule la production de sébum et garde votre cuir chevelu propre. Prix : 42$.",
-    oilyHi:  "Formula Exclusiva équilibrera l'huile de votre cuir chevelu tout en nourrissant profondément vos cheveux. À 65$, il gère les deux.",
-    dry:      "Laciador transformera vos cheveux secs — restaurant la douceur, le lissé et ce rebond naturel sain. Prix : 48$.",
-    dryAs:   "Formula Exclusiva est idéale pour votre type de cheveux — elle pénètre profondément pour restaurer l'élasticité. Prix : 65$.",
-    tangly:   "Formula Exclusiva s'attaque à la cause des nœuds tout en renforçant chaque mèche. Prix : 65$.",
-    tanglyHi: "Laciador est parfait — il lisse, démêle et laisse vos cheveux soyeux avec un beau mouvement. Prix : 48$.",
-    flat:     "Laciador donnera à vos cheveux le volume et le mouvement qui lui manquent — léger et naturel. Prix : 48$.",
-    default:  "Formula Exclusiva est votre meilleur choix global. Il couvre l'hydratation, la force et la santé du cuir chevelu. Prix : 65$."
+    damaged:  "Formula Exclusiva est exactement ce dont vos cheveux ont besoin. Ce traitement tout-en-un reconstruit la force et restaure l'hydratation. À 65$.",
+    color:    "Gotika est la réponse pour votre couleur. Elle restaure l'éclat et protège votre pigment. Prix: 54$.",
+    colorAf:  "Gotero est votre meilleur choix — il restaure l'éclat naturel. À 42$.",
+    oily:     "Gotero est idéal pour les cheveux gras. Prix: 42$.",
+    oilyHi:  "Formula Exclusiva équilibrera l'huile tout en nourrissant vos cheveux. À 65$.",
+    dry:      "Laciador transformera vos cheveux secs — restaurant douceur et rebond. Prix: 48$.",
+    dryAs:   "Formula Exclusiva est idéale pour votre type de cheveux. Prix: 65$.",
+    tangly:   "Formula Exclusiva s'attaque aux nœuds tout en renforçant chaque mèche. Prix: 65$.",
+    tanglyHi: "Laciador lisse et démêle vos cheveux. Prix: 48$.",
+    flat:     "Laciador donnera du volume à vos cheveux. Prix: 48$.",
+    default:  "Formula Exclusiva est votre meilleur choix global. Prix: 65$."
   },
   "pt-BR": {
-    damaged:  "Formula Exclusiva é exatamente o que seu cabelo precisa. Este tratamento profissional tudo-em-um reconstrói a força e restaura a hidratação. Por $65, é sua solução mais completa.",
-    color:    "Gotika é a resposta para sua cor. Ela restaura a vibração, corrige o tom e protege seu pigmento por muito tempo. Preço: $54.",
-    colorAf:  "Gotero é sua melhor opção — ele restaura o brilho natural enquanto equilibra seu couro cabeludo. Por $42, funciona perfeitamente.",
-    oily:     "Gotero é ideal para cabelos oleosos — regula a produção de sebo e mantém seu couro cabeludo limpo. Preço: $42.",
-    oilyHi:  "Formula Exclusiva equilibrará o óleo do seu couro cabeludo enquanto nutre profundamente seu cabelo. Por $65, resolve os dois.",
-    dry:      "Laciador vai transformar seu cabelo seco — restaurando suavidade, lisura e aquele bounce natural saudável. Preço: $48.",
-    dryAs:   "Formula Exclusiva é ideal para seu tipo de cabelo — penetra profundamente para restaurar elasticidade e hidratação. Preço: $65.",
-    tangly:   "Formula Exclusiva aborda a causa raiz dos nós enquanto fortalece cada fio. Preço: $65.",
-    tanglyHi: "Laciador é perfeito — alisa, desembaraça e deixa seu cabelo maleável com um belo movimento. Preço: $48.",
-    flat:     "Laciador dará ao seu cabelo o volume e movimento que faltam — leve e natural. Preço: $48.",
-    default:  "Formula Exclusiva é sua melhor escolha geral. Cobre hidratação, força e saúde do couro cabeludo em um tratamento profissional. Preço: $65."
+    damaged:  "Formula Exclusiva é exatamente o que seu cabelo precisa. Reconstrói a força e restaura a hidratação. Por $65.",
+    color:    "Gotika é a resposta para sua cor. Restaura a vibração e protege seu pigmento. Preço: $54.",
+    colorAf:  "Gotero é sua melhor opção — restaura o brilho natural. Por $42.",
+    oily:     "Gotero é ideal para cabelos oleosos. Preço: $42.",
+    oilyHi:  "Formula Exclusiva equilibrará o óleo enquanto nutre seu cabelo. Por $65.",
+    dry:      "Laciador vai transformar seu cabelo seco. Preço: $48.",
+    dryAs:   "Formula Exclusiva é ideal para seu tipo de cabelo. Preço: $65.",
+    tangly:   "Formula Exclusiva resolve os nós e fortalece cada fio. Preço: $65.",
+    tanglyHi: "Laciador alisa e desembaraça seu cabelo. Preço: $48.",
+    flat:     "Laciador dará volume ao seu cabelo. Preço: $48.",
+    default:  "Formula Exclusiva é sua melhor escolha geral. Preço: $65."
   },
   "de-DE": {
-    damaged:  "Formula Exclusiva ist genau das, was Ihr Haar braucht. Diese professionelle All-in-one-Behandlung baut Stärke auf und stellt die Feuchtigkeit wieder her. Für $65 ist es Ihre vollständigste Lösung.",
-    color:    "Gotika ist die Antwort für Ihre Farbe. Sie stellt Lebendigkeit wieder her, korrigiert den Ton und schützt Ihr Pigment langfristig. Preis: $54.",
-    colorAf:  "Gotero ist Ihre beste Wahl — es stellt natürlichen Glanz und Ton wieder her. Für $42 funktioniert es perfekt.",
-    oily:     "Gotero ist ideal für fettiges Haar — es reguliert die Talgproduktion und hält Ihre Kopfhaut sauber. Preis: $42.",
-    oilyHi:  "Formula Exclusiva bringt das Öl Ihrer Kopfhaut ins Gleichgewicht und nährt Ihr Haar tief. Für $65 übernimmt es beides.",
-    dry:      "Laciador wird Ihr trockenes Haar transformieren — Weichheit, Glätte und natürliches Volumen zurückbringen. Preis: $48.",
-    dryAs:   "Formula Exclusiva ist ideal für Ihren Haartyp — dringt tief ein, um Elastizität wiederherzustellen. Preis: $65.",
-    tangly:   "Formula Exclusiva bekämpft die Ursache von Verfilzungen und stärkt jeden Strang. Preis: $65.",
-    tanglyHi: "Laciador ist perfekt — es glättet, entwirrt und lässt Ihr Haar pflegeleicht mit schöner Bewegung. Preis: $48.",
-    flat:     "Laciador gibt Ihrem Haar das Volumen und die Bewegung, die ihm fehlen — leicht und natürlich. Preis: $48.",
-    default:  "Formula Exclusiva ist Ihre beste Gesamtlösung. Es deckt Feuchtigkeitsversorgung, Stärke und Kopfhautgesundheit ab. Preis: $65."
+    damaged:  "Formula Exclusiva ist genau das, was Ihr Haar braucht. Baut Stärke auf und stellt Feuchtigkeit wieder her. Für $65.",
+    color:    "Gotika ist die Antwort für Ihre Farbe. Stellt Lebendigkeit wieder her. Preis: $54.",
+    colorAf:  "Gotero ist Ihre beste Wahl — stellt natürlichen Glanz wieder her. Für $42.",
+    oily:     "Gotero ist ideal für fettiges Haar. Preis: $42.",
+    oilyHi:  "Formula Exclusiva bringt das Öl ins Gleichgewicht. Für $65.",
+    dry:      "Laciador wird Ihr trockenes Haar transformieren. Preis: $48.",
+    dryAs:   "Formula Exclusiva ist ideal für Ihren Haartyp. Preis: $65.",
+    tangly:   "Formula Exclusiva bekämpft Verfilzungen. Preis: $65.",
+    tanglyHi: "Laciador glättet und entwirrt Ihr Haar. Preis: $48.",
+    flat:     "Laciador gibt Ihrem Haar Volumen. Preis: $48.",
+    default:  "Formula Exclusiva ist Ihre beste Gesamtlösung. Preis: $65."
   },
   "ar-SA": {
-    damaged:  "فورمولا إكسكلوسيفا هو بالضبط ما يحتاجه شعرك. هذا العلاج المهني الشامل يعيد بناء القوة ويستعيد الرطوبة. بسعر $65، إنه حلك الأكثر اكتمالاً.",
-    color:    "غوتيكا هي الإجابة لحماية لونك. تستعيد النضارة وتصحح اللون وتحمي الصبغة على المدى البعيد. السعر: $54.",
-    colorAf:  "غوتيرو هو خيارك الأفضل — يستعيد البريق الطبيعي ويوازن فروة الرأس. بسعر $42 يعمل بشكل رائع.",
-    oily:     "غوتيرو مثالي للشعر الدهني — ينظم إنتاج الزيت ويبقي فروة رأسك نظيفة. السعر: $42.",
-    oilyHi:  "فورمولا إكسكلوسيفا سيوازن زيت فروة رأسك مع تغذية شعرك. بسعر $65 يتولى الأمرين معاً.",
-    dry:      "لاسيادور سيحول شعرك الجاف — يستعيد النعومة والملمس والارتداد الطبيعي. السعر: $48.",
-    dryAs:   "فورمولا إكسكلوسيفا مثالي لنوع شعرك — يخترق بعمق لاستعادة المرونة والترطيب. السعر: $65.",
-    tangly:   "فورمولا إكسكلوسيفا يعالج سبب التشابك ويقوي كل خصلة. السعر: $65.",
-    tanglyHi: "لاسيادور مثالي — يملس ويفك التشابك ويجعل شعرك قابلاً للتصفيف مع حركة جميلة. السعر: $48.",
-    flat:     "لاسيادور سيمنح شعرك الحجم والحركة التي يفتقدها — خفيف وطبيعي. السعر: $48.",
-    default:  "فورمولا إكسكلوسيفا هو أفضل خيار شامل لك. يغطي الترطيب والقوة وصحة فروة الرأس. السعر: $65."
+    damaged:  "فورمولا إكسكلوسيفا هو ما يحتاجه شعرك. يعيد بناء القوة ويستعيد الرطوبة. بسعر $65.",
+    color:    "غوتيكا هي الإجابة لحماية لونك. تستعيد النضارة وتحمي الصبغة. السعر: $54.",
+    colorAf:  "غوتيرو هو خيارك الأفضل — يستعيد البريق الطبيعي. بسعر $42.",
+    oily:     "غوتيرو مثالي للشعر الدهني. السعر: $42.",
+    oilyHi:  "فورمولا إكسكلوسيفا يوازن زيت فروة الرأس. بسعر $65.",
+    dry:      "لاسيادور سيحول شعرك الجاف. السعر: $48.",
+    dryAs:   "فورمولا إكسكلوسيفا مثالي لنوع شعرك. السعر: $65.",
+    tangly:   "فورمولا إكسكلوسيفا يعالج التشابك ويقوي الشعر. السعر: $65.",
+    tanglyHi: "لاسيادور يملس ويفك التشابك. السعر: $48.",
+    flat:     "لاسيادور يمنح شعرك الحجم. السعر: $48.",
+    default:  "فورمولا إكسكلوسيفا هو أفضل خيار شامل. السعر: $65."
   },
   "zh-CN": {
-    damaged:  "Formula Exclusiva 正是您的头发所需要的。这款专业全效护理产品能重建发丝强度、恢复水分，全面修护头皮健康。售价 $65，是您最完整的解决方案。",
-    color:    "Gotika 是护色的最佳选择。它能恢复色彩活力、校正发色，并长效保护色素。售价 $54。",
-    colorAf:  "Gotero 是您的最佳选择——它能恢复自然光泽与发色，同时平衡头皮状态。售价 $42，效果出色。",
-    oily:     "Gotero 非常适合油性发质——它能调节皮脂分泌，保持头皮清爽而不过度干燥。售价 $42。",
-    oilyHi:  "Formula Exclusiva 能平衡头皮油脂，同时深层滋养发丝。售价 $65，一步到位。",
-    dry:      "Laciador 能彻底改善干燥发质——恢复柔软、顺滑和自然弹性。售价 $48。",
-    dryAs:   "Formula Exclusiva 最适合您的发质——深层渗透，恢复弹性与持久水分。售价 $65。",
-    tangly:   "Formula Exclusiva 从根本上解决打结问题，同时强化每根发丝。售价 $65。",
-    tanglyHi: "Laciador 是完美之选——顺滑、解结，让发丝易于打理且充满自然动感。售价 $48。",
-    flat:     "Laciador 能赋予发丝所缺失的蓬松感和动感——轻盈自然。售价 $48。",
-    default:  "Formula Exclusiva 是您最全面的选择，涵盖水分、强度与头皮健康，一款专业护理产品搞定一切。售价 $65。"
+    damaged:  "Formula Exclusiva 正是您的头发所需。重建强度、恢复水分。售价 $65。",
+    color:    "Gotika 是护色的最佳选择。恢复色彩活力，保护色素。售价 $54。",
+    colorAf:  "Gotero 是您的最佳选择——恢复自然光泽。售价 $42。",
+    oily:     "Gotero 非常适合油性发质。售价 $42。",
+    oilyHi:  "Formula Exclusiva 平衡头皮油脂，深层滋养。售价 $65。",
+    dry:      "Laciador 彻底改善干燥发质。售价 $48。",
+    dryAs:   "Formula Exclusiva 最适合您的发质。售价 $65。",
+    tangly:   "Formula Exclusiva 解决打结，强化发丝。售价 $65。",
+    tanglyHi: "Laciador 顺滑、解结。售价 $48。",
+    flat:     "Laciador 赋予发丝蓬松感。售价 $48。",
+    default:  "Formula Exclusiva 是您最全面的选择。售价 $65。"
   },
   "hi-IN": {
-    damaged:  "Formula Exclusiva बिल्कुल वही है जो आपके बालों को चाहिए। यह पेशेवर ऑल-इन-वन उपचार बालों की मजबूती बहाल करता है और नमी देता है। $65 में यह आपका सबसे संपूर्ण समाधान है।",
-    color:    "Gotika आपके बालों के रंग के लिए सही उत्तर है। यह रंग की चमक बहाल करती है, टोन ठीक करती है और पिगमेंट को लंबे समय तक सुरक्षित रखती है। कीमत: $54।",
-    colorAf:  "Gotero आपके लिए सबसे अच्छा विकल्प है — यह प्राकृतिक चमक बहाल करता है और स्कैल्प को संतुलित रखता है। $42 में शानदार परिणाम।",
-    oily:     "Gotero तैलीय बालों के लिए आदर्श है — यह सीबम उत्पादन को नियंत्रित करता है और स्कैल्प को साफ रखता है। कीमत: $42।",
-    oilyHi:  "Formula Exclusiva आपके स्कैल्प के तेल को संतुलित करते हुए बालों को गहराई से पोषण देगा। $65 में दोनों काम एक साथ।",
-    dry:      "Laciador सूखे बालों को बदल देगा — मुलायमियत, चिकनाई और प्राकृतिक बाउंस वापस लाएगा। कीमत: $48।",
-    dryAs:   "Formula Exclusiva आपके बालों के प्रकार के लिए आदर्श है — गहराई से प्रवेश करके लोच और नमी बहाल करता है। कीमत: $65।",
-    tangly:   "Formula Exclusiva उलझन की मूल वजह को दूर करता है और हर बाल को मजबूत बनाता है। कीमत: $65।",
-    tanglyHi: "Laciador एकदम सही है — चिकना करता है, उलझन सुलझाता है और बालों को संभालने योग्य बनाता है। कीमत: $48।",
-    flat:     "Laciador आपके बालों को वो वॉल्यूम और मूवमेंट देगा जो उन्हें चाहिए — हल्का और प्राकृतिक। कीमत: $48।",
-    default:  "Formula Exclusiva आपकी सबसे अच्छी सर्वांगीण पसंद है। यह एक पेशेवर उपचार में नमी, मजबूती और स्कैल्प स्वास्थ्य को कवर करता है। कीमत: $65।"
+    damaged:  "Formula Exclusiva बिल्कुल वही है जो आपके बालों को चाहिए। $65 में सबसे संपूर्ण समाधान।",
+    color:    "Gotika आपके रंग के लिए सही उत्तर है। कीमत: $54।",
+    colorAf:  "Gotero आपके लिए सबसे अच्छा विकल्प है। $42 में शानदार।",
+    oily:     "Gotero तैलीय बालों के लिए आदर्श है। कीमत: $42।",
+    oilyHi:  "Formula Exclusiva स्कैल्प का तेल संतुलित करेगा। $65।",
+    dry:      "Laciador सूखे बालों को बदल देगा। कीमत: $48।",
+    dryAs:   "Formula Exclusiva आपके बालों के लिए आदर्श है। कीमत: $65।",
+    tangly:   "Formula Exclusiva उलझन दूर करता है। कीमत: $65।",
+    tanglyHi: "Laciador चिकना और उलझन-मुक्त करता है। कीमत: $48।",
+    flat:     "Laciador वॉल्यूम देगा। कीमत: $48।",
+    default:  "Formula Exclusiva सबसे अच्छी सर्वांगीण पसंद है। कीमत: $65।"
   }
 };
 
@@ -627,47 +587,51 @@ function localRecommend(text) {
   const lang = langSelect.value;
   const R    = LOCAL_RESPONSES[lang] || LOCAL_RESPONSES["en-US"];
 
-  // ── DAMAGE / FALLING ── (very broad — people say this many ways)
-  const damaged = /damag|break|broke|snap|snap|split end|weak|brittle|burnt|burned|chemicall?y|overprocess|heat damage|perm|relaxer|bleach|color treated|color-treated|falling apart|falling out|hair loss|losing hair|lose hair|bald|thinning|shed|shedding|alopecia|receding|recede|getting thin|getting weak/.test(t);
-
-  // ── COLOR ──
-  const color = /color|colour|fade|fading|faded|brassy|brass|discolor|dull|lost my color|lost color|grey|gray|graying|going grey|going gray|highlights|dye|tint|pigment|vibrancy|vibrant|not vibrant|color treated|roots/.test(t);
-
-  // ── OILY ──
-  const oily = /oil|oily|greasy|grease|sebum|buildup|build.?up|waxy|heavy|weigh|weighing down|scalp buildup|dirty fast|gets dirty|dirty quickly|second day|can.t go a day|too shiny|shiny scalp|limp|product buildup/.test(t);
-
-  // ── DRY ──
-  const dry = /dry|frizz|frizzy|rough|coarse|moisture|moistur|parched|thirsty|dehydrat|feels like straw|straw|fluffy|puff|poofy|puffy|no shine|lacks shine|dull and dry|lack of moisture|not smooth|not soft|hard to manage|unmanageable/.test(t);
-
-  // ── TANGLY ──
-  const tangly = /tangl|tangle|knot|knotty|knots|matted|matt|hard to brush|hard to comb|can.t brush|can.t comb|always knotted|always tangled|detangle|snag|snagging|pulls|pulling|breaks when i brush|breaks when brushing/.test(t);
-
-  // ── FLAT / NO VOLUME ──
-  const flat = /flat|no bounce|no volume|lifeless|limp|fine hair|thin hair|fine and thin|lacks body|no body|no lift|won.t hold|won.t stay|falls flat|straight down|weighed down|no movement|no fullness/.test(t);
-
-  // ── BACKGROUNDS ──
+  const damaged = /damag|break|broke|split end|weak|brittle|burnt|burned|chemical|overprocess|heat damage|perm|relaxer|bleach|falling apart|falling out|hair loss|losing hair|bald|thinning|shed|shedding|alopecia|receding/.test(t);
+  const color   = /color|colour|fade|fading|faded|brassy|brass|discolor|dull color|grey|gray|graying|highlights|dye|tint|pigment|vibrancy|vibrant|roots/.test(t);
+  const oily    = /oil|oily|greasy|grease|sebum|buildup|build.?up|waxy|weighing down|scalp buildup|dirty fast|gets dirty|too shiny|shiny scalp|limp/.test(t);
+  const dry     = /dry|frizz|frizzy|rough|coarse|moisture|parched|thirsty|dehydrat|feels like straw|straw|fluffy|puff|poofy|no shine|lacks shine|hard to manage|unmanageable/.test(t);
+  const tangly  = /tangl|tangle|knot|knotty|matted|hard to brush|hard to comb|always knotted|detangle|snag|snagging|breaks when.{0,10}brush/.test(t);
+  const flat    = /flat|no bounce|no volume|lifeless|limp|fine hair|thin hair|lacks body|no body|no lift|falls flat|weighed down|no movement/.test(t);
   const african   = /african|black hair|afro|natural hair|4[abc]|type 4|coily/.test(t);
-  const asian     = /asian|chinese|japanese|korean|east asian|southeast asian|straight asian/.test(t);
+  const asian     = /asian|chinese|japanese|korean|east asian/.test(t);
   const hispanic  = /hispanic|latin[ao]?|latin american|spanish/.test(t);
-
   const n = [color, oily, dry, damaged, tangly, flat].filter(Boolean).length;
 
-  // Always returns something — never null
   if (damaged || n >= 3)  return R.damaged;
   if (color)              return african ? R.colorAf : R.color;
   if (oily)               return hispanic ? R.oilyHi : R.oily;
   if (dry)                return asian ? R.dryAs : R.dry;
   if (tangly)             return (hispanic || african) ? R.tanglyHi : R.tangly;
   if (flat)               return R.flat;
-
-  // Absolute fallback — always gives a real product, never "I didn't hear"
   return R.default;
 }
 
-/* ── PROCESS ── */
+/* ── AI RECOMMENDATION ── */
+async function getRecommendation(text) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch("https://ai-hair-advisor.onrender.com/api/recommend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, lang: langSelect.value }),
+      signal: controller.signal
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) throw new Error("not ok");
+    const data = await resp.json();
+    if (data.recommendation) return data.recommendation;
+    throw new Error("empty");
+  } catch(e) {
+    return localRecommend(text);
+  }
+}
+
+/* ── PROCESS TEXT ── */
 async function processText(text) {
   if (!text || text.trim().length < 3) {
-    const msg = "Could you describe your hair a little more? Dryness, oiliness, damage, color, volume, or shedding all help me give you the right answer.";
+    const msg = "Could you describe your hair a little more? Dryness, oiliness, damage, color, volume, or shedding all help me find the right product for you.";
     responseBox.textContent = msg;
     setState("idle");
     setColor(...IDLE);
@@ -679,14 +643,33 @@ async function processText(text) {
   setColor(...IDLE);
   responseBox.textContent = "Analyzing your concern…";
   stateLabel.textContent  = "Thinking";
-  // getRecommendation always returns a string — localRecommend is the guaranteed fallback
   const result = await getRecommendation(text);
-  const finalResult = result || localRecommend(text);
-  responseBox.textContent = finalResult;
-  setTimeout(() => speak(finalResult), 2500);
+  const final  = result || localRecommend(text);
+  responseBox.textContent = final;
+  setTimeout(() => speak(final), 2500);
 }
 
-/* ── LISTEN ── */
+/* ── NO-HEAR MESSAGES ── */
+const NO_HEAR = {
+  "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
+  "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
+  "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation.",
+  "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
+  "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
+  "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
+  "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
+  "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
+};
+function noHear() {
+  const msg = NO_HEAR[langSelect.value] || NO_HEAR["en-US"];
+  responseBox.textContent = msg;
+  setState("idle");
+  setColor(...IDLE);
+  stateLabel.textContent = "Tap to begin";
+  speak(msg);
+}
+
+/* ── START LISTENING ── */
 function startListening() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
@@ -694,48 +677,25 @@ function startListening() {
     return;
   }
 
-  // Check mic permission explicitly — catches iframe blocking
-  if (navigator.permissions) {
-    navigator.permissions.query({name: "microphone"}).then(function(result) {
-      if (result.state === "denied") {
-        responseBox.textContent = "Microphone access is blocked. Please click the lock icon in your browser address bar and allow microphone access, then tap again.";
-        setState("idle");
-        setColor(...IDLE);
-        stateLabel.textContent = "Tap to begin";
-        return;
-      }
-    }).catch(function(){});
-  }
-
   playAmbient("intro");
-  initMic().then(() => startMicLoop());  // start reactive loop once mic is ready
   finalText = "";
   setState("listening");
   setColor(...LISTEN);
   stateLabel.textContent  = "Listening…";
   responseBox.textContent = "Listening…";
 
-  // No-speech fallback — if nothing heard in 6s, respond with "didn't hear"
-  const noSpeechTimer = setTimeout(() => {
+  // Start mic — .then() guaranteed because initMic returns a real Promise
+  initMic().then(() => {
+    // Only start loop if still listening (user might have cancelled)
+    if (appState === "listening") requestAnimationFrame(micReactiveLoop);
+  });
+
+  // Module-level noSpeechTimer — can be cleared from onresult
+  noSpeechTimer = setTimeout(() => {
     if (appState !== "listening") return;
     try { recognition.stop(); } catch(e) {}
-    const noHearMsgs = {
-      "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
-      "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
-      "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation capillaire.",
-      "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
-      "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
-      "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
-      "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
-      "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
-    };
-    const msg = noHearMsgs[langSelect.value] || noHearMsgs["en-US"];
-    responseBox.textContent = msg;
-    setState("idle");
-    setColor(...IDLE);
-    stateLabel.textContent = "Tap to begin";
-    speak(msg);
-  }, 6000);
+    noHear();
+  }, 7000);
 
   recognition = new SR();
   recognition.lang           = langSelect.value;
@@ -744,7 +704,7 @@ function startListening() {
 
   recognition.onresult = (event) => {
     clearTimeout(silenceTimer);
-    clearTimeout(noSpeechTimer);  // CRITICAL: stop "didn't hear" firing when speech detected
+    clearTimeout(noSpeechTimer);  // speech detected — cancel "didn't hear"
     let interim = "";
     finalText = "";
     for (let i = 0; i < event.results.length; i++) {
@@ -752,7 +712,7 @@ function startListening() {
       else interim += event.results[i][0].transcript;
     }
     responseBox.textContent = (finalText + interim).trim() || "Listening…";
-    // 3-second silence timer — resets on every speech event
+    // 3s silence → stop recognition
     silenceTimer = setTimeout(() => {
       try { recognition.stop(); } catch(e) {}
     }, 3000);
@@ -766,22 +726,7 @@ function startListening() {
     if (captured.length > 2) {
       processText(captured);
     } else {
-      const noHearMsgs = {
-        "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
-        "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
-        "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation.",
-        "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
-        "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
-        "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
-        "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
-        "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
-      };
-      const msg = noHearMsgs[langSelect.value] || noHearMsgs["en-US"];
-      responseBox.textContent = msg;
-      setState("idle");
-      setColor(...IDLE);
-      stateLabel.textContent = "Tap to begin";
-      speak(msg);
+      noHear();
     }
   };
 
@@ -789,33 +734,19 @@ function startListening() {
     clearTimeout(silenceTimer);
     clearTimeout(noSpeechTimer);
     if (e.error === "no-speech") {
-      const noHearMsgs = {
-        "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
-        "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
-        "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation.",
-        "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
-        "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
-        "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
-        "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
-        "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
-      };
-      const msg = noHearMsgs[langSelect.value] || noHearMsgs["en-US"];
-      responseBox.textContent = msg;
-      setState("idle");
-      setColor(...IDLE);
-      stateLabel.textContent = "Tap to begin";
-      speak(msg);
+      noHear();
     }
   };
 
   recognition.start();
 }
 
-/* ── CLICK ── */
+/* ── HALO CLICK ── */
 halo.addEventListener("click", () => {
   if (isManual) return;
   if (appState === "listening") {
     clearTimeout(silenceTimer);
+    clearTimeout(noSpeechTimer);
     try { recognition.stop(); } catch(e) {}
     setState("idle");
     setColor(...IDLE);
@@ -833,7 +764,7 @@ halo.addEventListener("click", () => {
   startListening();
 });
 
-/* ── MANUAL ── */
+/* ── MANUAL MODE ── */
 modeToggle.addEventListener("click", () => {
   isManual = !isManual;
   manualBox.style.display = isManual ? "flex" : "none";
@@ -853,26 +784,25 @@ langSelect.addEventListener("change", () => speechSynthesis.getVoices());
 
 /* ── FAQ / CONTACT ── */
 const FAQ_MSGS = {
-  "en-US": "All four products are 100% natural, organic, and salon-professional grade — Caribbean formulated. Formula Exclusiva $65 all-in-one treatment. Laciador $48 hair styler. Gotero $42 hair gel. Gotika $54 color treatment.",
-  "es-ES": "Los cuatro productos son 100% naturales, orgánicos y de grado profesional — formulados en el Caribe. Formula Exclusiva $65 tratamiento todo en uno. Laciador $48 estilizador. Gotero $42 gel. Gotika $54 tratamiento de color.",
-  "fr-FR": "Les quatre produits sont 100% naturels, biologiques et de qualité salon — formulés aux Caraïbes. Formula Exclusiva $65 soin tout-en-un. Laciador $48 stylisant. Gotero $42 gel. Gotika $54 traitement couleur.",
-  "pt-BR": "Os quatro produtos são 100% naturais, orgânicos e de grau profissional — formulados no Caribe. Formula Exclusiva $65 tratamento completo. Laciador $48 finalizador. Gotero $42 gel. Gotika $54 tratamento de cor.",
-  "de-DE": "Alle vier Produkte sind 100% natürlich, biologisch und salonprofessionell — karibisch formuliert. Formula Exclusiva $65 All-in-one. Laciador $48 Styler. Gotero $42 Gel. Gotika $54 Farbbehandlung.",
-  "ar-SA": "المنتجات الأربعة طبيعية 100%، عضوية ومستوى صالون احترافي — مُصاغة في الكاريبي. فورمولا إكسكلوسيفا $65 علاج شامل. لاسيادور $48 مُصفف. غوتيرو $42 جل. غوتيكا $54 علاج للون.",
-  "zh-CN": "四款产品均为100%天然有机、沙龙专业级，源自加勒比配方。Formula Exclusiva $65全效护理，Laciador $48造型产品，Gotero $42发胶，Gotika $54护色产品。",
-  "hi-IN": "चारों उत्पाद 100% प्राकृतिक, जैविक और सैलून-पेशेवर स्तर के हैं — कैरेबियन फॉर्मूला। Formula Exclusiva $65 ऑल-इन-वन। Laciador $48 स्टाइलर। Gotero $42 जेल। Gotika $54 रंग उपचार।"
+  "en-US": "All four products are 100% natural, organic, and salon-professional grade — Caribbean formulated. Formula Exclusiva $65 all-in-one. Laciador $48 styler. Gotero $42 gel. Gotika $54 color treatment.",
+  "es-ES": "Los cuatro productos son 100% naturales y de grado profesional. Formula Exclusiva $65. Laciador $48. Gotero $42. Gotika $54.",
+  "fr-FR": "Les quatre produits sont 100% naturels et de qualité salon. Formula Exclusiva $65. Laciador $48. Gotero $42. Gotika $54.",
+  "pt-BR": "Os quatro produtos são 100% naturais e profissionais. Formula Exclusiva $65. Laciador $48. Gotero $42. Gotika $54.",
+  "de-DE": "Alle vier Produkte sind 100% natürlich und salonprofessionell. Formula Exclusiva $65. Laciador $48. Gotero $42. Gotika $54.",
+  "ar-SA": "المنتجات الأربعة طبيعية 100%. فورمولا $65. لاسيادور $48. غوتيرو $42. غوتيكا $54.",
+  "zh-CN": "四款产品均为100%天然专业级。Formula Exclusiva $65。Laciador $48。Gotero $42。Gotika $54。",
+  "hi-IN": "चारों उत्पाद 100% प्राकृतिक हैं। Formula Exclusiva $65। Laciador $48। Gotero $42। Gotika $54।"
 };
 const CONTACT_MSGS = {
   "en-US": "To speak with one of our professional hair consultants, please email us at support at hairexpert dot com. We'd love to find your perfect product together.",
-  "es-ES": "Para hablar con uno de nuestros consultores, escríbenos a support arroba hairexpert punto com. Nos encantaría encontrar tu producto perfecto juntos.",
-  "fr-FR": "Pour parler à l'un de nos consultants, envoyez-nous un email à support chez hairexpert point com. Nous aimerions trouver votre produit parfait ensemble.",
-  "pt-BR": "Para falar com um de nossos consultores, envie um e-mail para support em hairexpert ponto com. Adoraríamos encontrar seu produto perfeito juntos.",
-  "de-DE": "Um mit einem unserer Haarberater zu sprechen, schreiben Sie uns an support bei hairexpert Punkt com. Wir helfen Ihnen gerne, das perfekte Produkt zu finden.",
-  "ar-SA": "للتحدث مع أحد مستشارينا، راسلنا على support في hairexpert نقطة com. يسعدنا مساعدتك في إيجاد منتجك المثالي.",
-  "zh-CN": "如需与我们的专业发型顾问交流，请发邮件至 support@hairexpert.com，我们很乐意为您找到最合适的产品。",
-  "hi-IN": "हमारे पेशेवर बाल सलाहकारों से बात करने के लिए, support@hairexpert.com पर ईमेल करें। हम आपके लिए सही उत्पाद खोजने में मदद करेंगे।"
+  "es-ES": "Para hablar con uno de nuestros consultores, escríbenos a support arroba hairexpert punto com.",
+  "fr-FR": "Pour parler à l'un de nos consultants, envoyez-nous un email à support chez hairexpert point com.",
+  "pt-BR": "Para falar com um de nossos consultores, envie um e-mail para support em hairexpert ponto com.",
+  "de-DE": "Um mit einem unserer Berater zu sprechen, schreiben Sie uns an support bei hairexpert Punkt com.",
+  "ar-SA": "للتحدث مع أحد مستشارينا، راسلنا على support في hairexpert نقطة com.",
+  "zh-CN": "如需与我们的顾问交流，请发邮件至 support@hairexpert.com。",
+  "hi-IN": "हमारे सलाहकारों से बात करने के लिए support@hairexpert.com पर ईमेल करें।"
 };
-
 document.getElementById("faqBtn").addEventListener("click", () => {
   const msg = FAQ_MSGS[langSelect.value] || FAQ_MSGS["en-US"];
   responseBox.textContent = msg;
@@ -893,7 +823,6 @@ def recommend():
     data      = request.get_json()
     user_text = data.get("text", "")
     lang      = data.get("lang", "en-US")
-
     lang_names = {
         "en-US": "English", "es-ES": "Spanish", "fr-FR": "French",
         "pt-BR": "Portuguese", "de-DE": "German", "ar-SA": "Arabic",
@@ -913,7 +842,6 @@ def recommend():
             "system": SYSTEM_PROMPT + lang_instruction,
             "messages": [{"role": "user", "content": user_text}]
         }).encode("utf-8")
-
         req = urlreq.Request(
             "https://api.anthropic.com/v1/messages",
             data=payload,
@@ -924,30 +852,20 @@ def recommend():
             },
             method="POST"
         )
-
         with urlreq.urlopen(req, timeout=12) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             return jsonify({"recommendation": result["content"][0]["text"].strip()})
-
     except Exception as e:
         return jsonify({"recommendation": None, "error": str(e)}), 500
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# ── SHOPIFY INTEGRATION ──────────────────────────────────────────────────────
-
 @app.route("/apps/hair-advisor")
 def shopify_proxy():
-    """Option 2: Shopify App Proxy — serves app at yourstore.com/apps/hair-advisor"""
     return index()
 
 
 @app.after_request
 def add_headers(response):
-    """Allow Shopify iframe embedding, microphone, and cross-origin requests"""
     response.headers["Access-Control-Allow-Origin"]  = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
@@ -955,3 +873,8 @@ def add_headers(response):
     response.headers["Content-Security-Policy"]      = "frame-ancestors *"
     response.headers["Permissions-Policy"]           = "microphone=*, camera=()"
     return response
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
