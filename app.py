@@ -464,16 +464,24 @@ function speak(text) {
 /* ── AI RECOMMENDATION ── */
 async function getRecommendation(text) {
   try {
-    const resp = await fetch("/api/recommend", {
+    // 5 second timeout — if fetch hangs (cross-origin iframe), fall back immediately
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const resp = await fetch("https://ai-hair-advisor.onrender.com/api/recommend", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, lang: langSelect.value })
+      body: JSON.stringify({ text, lang: langSelect.value }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
+
     if (!resp.ok) throw new Error("API unavailable");
     const data = await resp.json();
     if (data.recommendation) return data.recommendation;
     throw new Error("No recommendation");
   } catch(e) {
+    // Always fall back to local logic — never returns null
     return localRecommend(text);
   }
 }
@@ -587,28 +595,44 @@ const LOCAL_RESPONSES = {
 };
 
 function localRecommend(text) {
-  const t   = text.toLowerCase();
+  const t    = text.toLowerCase();
   const lang = langSelect.value;
-  const R   = LOCAL_RESPONSES[lang] || LOCAL_RESPONSES["en-US"];
+  const R    = LOCAL_RESPONSES[lang] || LOCAL_RESPONSES["en-US"];
 
-  const color   = /color|colour|fade|brassy|pigment|dull|tint|vibrancy|colou?r/.test(t);
-  const oily    = /oil|greasy|grease|sebum|buildup/.test(t);
-  const dry     = /dry|frizz|rough|brittle|moisture|parched/.test(t);
-  const damaged = /damag|break|weak|burn|overprocess|chemical|perm/.test(t);
-  const tangly  = /tangl|knot|matted|detangle/.test(t);
-  const flat    = /flat|no bounce|volume|lifeless|thin|fine/.test(t);
-  const falling = /fall|shed|loss|bald|alopecia|thinning/.test(t);
-  const african   = /african|black hair/.test(t);
-  const asian     = /asian|chinese|japanese|korean/.test(t);
-  const hispanic  = /hispanic|latin/.test(t);
-  const n = [color,oily,dry,damaged,tangly,flat,falling].filter(Boolean).length;
+  // ── DAMAGE / FALLING ── (very broad — people say this many ways)
+  const damaged = /damag|break|broke|snap|snap|split end|weak|brittle|burnt|burned|chemicall?y|overprocess|heat damage|perm|relaxer|bleach|color treated|color-treated|falling apart|falling out|hair loss|losing hair|lose hair|bald|thinning|shed|shedding|alopecia|receding|recede|getting thin|getting weak/.test(t);
 
-  if (damaged || falling || n >= 3) return R.damaged;
-  if (color)   return african ? R.colorAf  : R.color;
-  if (oily)    return hispanic ? R.oilyHi  : R.oily;
-  if (dry)     return asian    ? R.dryAs   : R.dry;
-  if (tangly)  return (hispanic || african) ? R.tanglyHi : R.tangly;
-  if (flat)    return R.flat;
+  // ── COLOR ──
+  const color = /color|colour|fade|fading|faded|brassy|brass|discolor|dull|lost my color|lost color|grey|gray|graying|going grey|going gray|highlights|dye|tint|pigment|vibrancy|vibrant|not vibrant|color treated|roots/.test(t);
+
+  // ── OILY ──
+  const oily = /oil|oily|greasy|grease|sebum|buildup|build.?up|waxy|heavy|weigh|weighing down|scalp buildup|dirty fast|gets dirty|dirty quickly|second day|can.t go a day|too shiny|shiny scalp|limp|product buildup/.test(t);
+
+  // ── DRY ──
+  const dry = /dry|frizz|frizzy|rough|coarse|moisture|moistur|parched|thirsty|dehydrat|feels like straw|straw|fluffy|puff|poofy|puffy|no shine|lacks shine|dull and dry|lack of moisture|not smooth|not soft|hard to manage|unmanageable/.test(t);
+
+  // ── TANGLY ──
+  const tangly = /tangl|tangle|knot|knotty|knots|matted|matt|hard to brush|hard to comb|can.t brush|can.t comb|always knotted|always tangled|detangle|snag|snagging|pulls|pulling|breaks when i brush|breaks when brushing/.test(t);
+
+  // ── FLAT / NO VOLUME ──
+  const flat = /flat|no bounce|no volume|lifeless|limp|fine hair|thin hair|fine and thin|lacks body|no body|no lift|won.t hold|won.t stay|falls flat|straight down|weighed down|no movement|no fullness/.test(t);
+
+  // ── BACKGROUNDS ──
+  const african   = /african|black hair|afro|natural hair|4[abc]|type 4|coily/.test(t);
+  const asian     = /asian|chinese|japanese|korean|east asian|southeast asian|straight asian/.test(t);
+  const hispanic  = /hispanic|latin[ao]?|latin american|spanish/.test(t);
+
+  const n = [color, oily, dry, damaged, tangly, flat].filter(Boolean).length;
+
+  // Always returns something — never null
+  if (damaged || n >= 3)  return R.damaged;
+  if (color)              return african ? R.colorAf : R.color;
+  if (oily)               return hispanic ? R.oilyHi : R.oily;
+  if (dry)                return asian ? R.dryAs : R.dry;
+  if (tangly)             return (hispanic || african) ? R.tanglyHi : R.tangly;
+  if (flat)               return R.flat;
+
+  // Absolute fallback — always gives a real product, never "I didn't hear"
   return R.default;
 }
 
@@ -617,14 +641,21 @@ async function processText(text) {
   if (!text || text.trim().length < 3) {
     const msg = "Could you describe your hair a little more? Dryness, oiliness, damage, color, volume, or shedding all help me give you the right answer.";
     responseBox.textContent = msg;
+    setState("idle");
+    setColor(...IDLE);
+    stateLabel.textContent = "Tap to begin";
     setTimeout(() => speak(msg), 2500);
     return;
   }
+  setState("idle");
+  setColor(...IDLE);
   responseBox.textContent = "Analyzing your concern…";
   stateLabel.textContent  = "Thinking";
+  // getRecommendation always returns a string — localRecommend is the guaranteed fallback
   const result = await getRecommendation(text);
-  responseBox.textContent = result;
-  setTimeout(() => speak(result), 2500);
+  const finalResult = result || localRecommend(text);
+  responseBox.textContent = finalResult;
+  setTimeout(() => speak(finalResult), 2500);
 }
 
 /* ── LISTEN ── */
@@ -634,6 +665,20 @@ function startListening() {
     responseBox.textContent = "Please use Chrome for voice input, or switch to Manual Mode.";
     return;
   }
+
+  // Check mic permission explicitly — catches iframe blocking
+  if (navigator.permissions) {
+    navigator.permissions.query({name: "microphone"}).then(function(result) {
+      if (result.state === "denied") {
+        responseBox.textContent = "Microphone access is blocked. Please click the lock icon in your browser address bar and allow microphone access, then tap again.";
+        setState("idle");
+        setColor(...IDLE);
+        stateLabel.textContent = "Tap to begin";
+        return;
+      }
+    }).catch(function(){});
+  }
+
   playAmbient("intro");
   initMic();
   finalText = "";
@@ -862,3 +907,22 @@ def recommend():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
+# ── SHOPIFY INTEGRATION ──────────────────────────────────────────────────────
+
+@app.route("/apps/hair-advisor")
+def shopify_proxy():
+    """Option 2: Shopify App Proxy — serves app at yourstore.com/apps/hair-advisor"""
+    return index()
+
+
+@app.after_request
+def add_headers(response):
+    """Allow Shopify iframe embedding, microphone, and cross-origin requests"""
+    response.headers["Access-Control-Allow-Origin"]  = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["X-Frame-Options"]              = "ALLOWALL"
+    response.headers["Content-Security-Policy"]      = "frame-ancestors *"
+    response.headers["Permissions-Policy"]           = "microphone=*, camera=()"
+    return response
