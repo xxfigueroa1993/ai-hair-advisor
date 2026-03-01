@@ -127,7 +127,6 @@ body {
   height: 220px;
   border-radius: 50%;
   cursor: pointer;
-  will-change: transform;
   background: radial-gradient(circle at 40% 38%,
     rgba(0,255,200,0.50) 0%,
     rgba(0,255,200,0.18) 42%,
@@ -142,7 +141,32 @@ body {
   transition:
     background 2.4s cubic-bezier(0.4,0,0.2,1),
     box-shadow  2.4s cubic-bezier(0.4,0,0.2,1);
-  /* transform intentionally excluded — driven by JS animation loop */
+  /* default idle breathing via CSS — cannot be throttled */
+  animation: idlePulse 3.2s ease-in-out infinite;
+}
+
+@keyframes idlePulse {
+  0%   { transform: scale(1.00); }
+  50%  { transform: scale(1.10); }
+  100% { transform: scale(1.00); }
+}
+
+#halo.listening {
+  animation: listenPulse 1.4s ease-in-out infinite;
+}
+@keyframes listenPulse {
+  0%   { transform: scale(1.00); }
+  50%  { transform: scale(1.14); }
+  100% { transform: scale(1.00); }
+}
+
+#halo.speaking {
+  animation: speakPulse 1.0s ease-in-out infinite;
+}
+@keyframes speakPulse {
+  0%   { transform: scale(1.05); }
+  50%  { transform: scale(1.18); }
+  100% { transform: scale(1.05); }
 }
 
 #stateLabel {
@@ -374,32 +398,13 @@ const LISTEN = [255, 200, 60];
 const SPEAK  = [0, 220, 255];
 setColor(...IDLE);
 
-/* ── ANIMATION LOOP ── */
-let breathPhase = 0, speakPhase = 0, smoothScale = 1, targetScale = 1;
-function animLoop() {
-  if (appState === "idle") {
-    breathPhase += 0.006;                              // ~6s per breath cycle at 60fps
-    targetScale = 1 + 0.06 * Math.sin(breathPhase);   // visible ±6% scale
-  } else if (appState === "listening") {
-    if (analyser && micData) {
-      analyser.getByteFrequencyData(micData);
-      let vol = 0;
-      for (let i = 0; i < micData.length; i++) vol += micData[i];
-      vol /= (micData.length * 255);
-      targetScale = 1 + vol * 0.55;
-    } else {
-      breathPhase += 0.012;
-      targetScale = 1 + 0.06 * Math.sin(breathPhase);
-    }
-  } else if (appState === "speaking") {
-    speakPhase += 0.038;
-    targetScale = 1 + 0.075 + 0.065 * Math.abs(Math.sin(speakPhase));
-  }
-  smoothScale += (targetScale - smoothScale) * 0.06;  // gentle lerp
-  halo.style.transform = `scale(${smoothScale.toFixed(4)})`;
-  requestAnimationFrame(animLoop);
+/* ── STATE SETTER — swaps CSS animation class ── */
+function setState(s) {
+  appState = s;
+  halo.classList.remove("listening", "speaking");
+  if (s === "listening") halo.classList.add("listening");
+  if (s === "speaking")  halo.classList.add("speaking");
 }
-requestAnimationFrame(animLoop);
 
 /* ── VOICE SELECTION ── */
 function getBestVoice(lang) {
@@ -443,13 +448,13 @@ function speak(text) {
     utter.voice = getBestVoice(langSelect.value);
     utter.rate  = 0.88;
     utter.pitch = 1.05;
-    appState = "speaking";
+    setState("speaking");
     setColor(...SPEAK);
     stateLabel.textContent = "Speaking";
     speechSynthesis.speak(utter);
     utter.onend = () => {
       playAmbient("outro");
-      appState = "idle";
+      setState("idle");
       setColor(...IDLE);
       stateLabel.textContent = "Tap to begin";
     };
@@ -632,10 +637,32 @@ function startListening() {
   playAmbient("intro");
   initMic();
   finalText = "";
-  appState  = "listening";
+  setState("listening");
   setColor(...LISTEN);
   stateLabel.textContent  = "Listening…";
   responseBox.textContent = "Listening…";
+
+  // No-speech fallback — if nothing heard in 6s, respond with "didn't hear"
+  const noSpeechTimer = setTimeout(() => {
+    if (appState !== "listening") return;
+    try { recognition.stop(); } catch(e) {}
+    const noHearMsgs = {
+      "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
+      "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
+      "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation capillaire.",
+      "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
+      "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
+      "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
+      "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
+      "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
+    };
+    const msg = noHearMsgs[langSelect.value] || noHearMsgs["en-US"];
+    responseBox.textContent = msg;
+    setState("idle");
+    setColor(...IDLE);
+    stateLabel.textContent = "Tap to begin";
+    speak(msg);
+  }, 6000);
 
   recognition = new SR();
   recognition.lang           = langSelect.value;
@@ -659,27 +686,51 @@ function startListening() {
 
   recognition.onend = () => {
     clearTimeout(silenceTimer);
-    if (appState === "listening") {
-      const captured = finalText.trim();
-      if (captured.length > 2) {
-        processText(captured);
-      } else {
-        const msg = "I didn't quite catch that. Please tap and describe your hair concern.";
-        responseBox.textContent = msg;
-        appState = "idle";
-        setColor(...IDLE);
-        stateLabel.textContent = "Tap to begin";
-      }
+    clearTimeout(noSpeechTimer);
+    if (appState !== "listening") return;
+    const captured = finalText.trim();
+    if (captured.length > 2) {
+      processText(captured);
+    } else {
+      const noHearMsgs = {
+        "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
+        "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
+        "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation.",
+        "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
+        "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
+        "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
+        "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
+        "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
+      };
+      const msg = noHearMsgs[langSelect.value] || noHearMsgs["en-US"];
+      responseBox.textContent = msg;
+      setState("idle");
+      setColor(...IDLE);
+      stateLabel.textContent = "Tap to begin";
+      speak(msg);
     }
   };
 
   recognition.onerror = (e) => {
     clearTimeout(silenceTimer);
+    clearTimeout(noSpeechTimer);
     if (e.error === "no-speech") {
-      appState = "idle";
+      const noHearMsgs = {
+        "en-US": "I didn't hear anything. Please tap and describe your hair concern.",
+        "es-ES": "No escuché nada. Por favor toca y describe tu preocupación capilar.",
+        "fr-FR": "Je n'ai rien entendu. Veuillez appuyer et décrire votre préoccupation.",
+        "pt-BR": "Não ouvi nada. Por favor toque e descreva sua preocupação capilar.",
+        "de-DE": "Ich habe nichts gehört. Bitte tippen und beschreiben Sie Ihr Haarproblem.",
+        "ar-SA": "لم أسمع شيئاً. يرجى النقر ووصف قلقك بشأن شعرك.",
+        "zh-CN": "我没有听到任何声音。请点击并描述您的发质问题。",
+        "hi-IN": "मुझे कुछ सुनाई नहीं दिया। कृपया टैप करें और अपनी बालों की समस्या बताएं।"
+      };
+      const msg = noHearMsgs[langSelect.value] || noHearMsgs["en-US"];
+      responseBox.textContent = msg;
+      setState("idle");
       setColor(...IDLE);
-      stateLabel.textContent  = "Tap to begin";
-      responseBox.textContent = "Tap the sphere and describe your hair concern.";
+      stateLabel.textContent = "Tap to begin";
+      speak(msg);
     }
   };
 
@@ -692,7 +743,7 @@ halo.addEventListener("click", () => {
   if (appState === "listening") {
     clearTimeout(silenceTimer);
     try { recognition.stop(); } catch(e) {}
-    appState = "idle";
+    setState("idle");
     setColor(...IDLE);
     stateLabel.textContent  = "Tap to begin";
     responseBox.textContent = "Tap the sphere and describe your hair concern.";
@@ -700,7 +751,7 @@ halo.addEventListener("click", () => {
   }
   if (appState === "speaking") {
     speechSynthesis.cancel();
-    appState = "idle";
+    setState("idle");
     setColor(...IDLE);
     stateLabel.textContent = "Tap to begin";
     return;
