@@ -142,6 +142,7 @@ body {
   transition:
     background 2.4s cubic-bezier(0.4,0,0.2,1),
     box-shadow  2.4s cubic-bezier(0.4,0,0.2,1);
+  /* transform intentionally excluded — driven by JS animation loop */
 }
 
 #stateLabel {
@@ -375,7 +376,7 @@ setColor(...IDLE);
 
 /* ── ANIMATION LOOP ── */
 let breathPhase = 0, speakPhase = 0, smoothScale = 1, targetScale = 1;
-(function loop() {
+function animLoop() {
   if (appState === "idle") {
     breathPhase += 0.00065;
     targetScale = 1 + 0.052 * Math.sin(breathPhase);
@@ -396,31 +397,38 @@ let breathPhase = 0, speakPhase = 0, smoothScale = 1, targetScale = 1;
   }
   smoothScale += (targetScale - smoothScale) * 0.10;
   halo.style.transform = `scale(${smoothScale.toFixed(4)})`;
-  requestAnimationFrame(loop);
-})();
+  requestAnimationFrame(animLoop);
+}
+requestAnimationFrame(animLoop);
 
 /* ── VOICE SELECTION ── */
 function getBestVoice(lang) {
   const voices = speechSynthesis.getVoices();
   if (!voices.length) return null;
-  const preferred = [
-    "Google US English", "Google UK English Female", "Google UK English Male",
-    "Microsoft Aria Online (Natural) - English (United States)",
-    "Microsoft Jenny Online (Natural) - English (United States)",
-    "Microsoft Guy Online (Natural) - English (United States)",
-    "Samantha", "Karen", "Moira", "Fiona"
-  ];
-  for (const name of preferred) {
-    const v = voices.find(v => v.name === name);
-    if (v) return v;
+
+  // Only use English-named preferred list when English is actually selected
+  if (lang === "en-US" || lang === "en-GB") {
+    const preferred = [
+      "Google US English", "Google UK English Female", "Google UK English Male",
+      "Microsoft Aria Online (Natural) - English (United States)",
+      "Microsoft Jenny Online (Natural) - English (United States)",
+      "Microsoft Guy Online (Natural) - English (United States)",
+      "Samantha", "Karen", "Moira", "Fiona"
+    ];
+    for (const name of preferred) {
+      const v = voices.find(v => v.name === name);
+      if (v) return v;
+    }
   }
+
+  // For all languages: pick best voice matching the exact lang code
   const byLang = voices.filter(v => v.lang === lang);
   return (
-    byLang.find(v => /Google/.test(v.name)) ||
+    byLang.find(v => /Google/.test(v.name))        ||
     byLang.find(v => /Natural|Online/.test(v.name)) ||
-    byLang.find(v => /Microsoft/.test(v.name)) ||
-    byLang.find(v => !v.localService) ||
-    byLang[0] ||
+    byLang.find(v => /Microsoft/.test(v.name))      ||
+    byLang.find(v => !v.localService)               ||
+    byLang[0]                                        ||
     voices.find(v => v.lang.startsWith(lang.split('-')[0])) ||
     voices[0]
   );
