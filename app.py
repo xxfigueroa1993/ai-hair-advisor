@@ -26,81 +26,87 @@ color:white;
 overflow:hidden;
 }
 
-/* ===== BASE SPHERE ===== */
+/* ===== SPHERE BASE ===== */
 
 #sphere{
 width:280px;
 height:280px;
 border-radius:50%;
 cursor:pointer;
+
+/* Soft teal luxury tone */
 background:radial-gradient(circle,
 rgba(0,255,200,0.95) 0%,
 rgba(0,255,200,0.25) 60%,
 rgba(0,255,200,0.08) 100%);
-box-shadow:
-0 0 120px rgba(0,255,200,0.9),
-0 0 240px rgba(0,255,200,0.6),
-0 0 360px rgba(0,255,200,0.3);
 
-/* DEFAULT BREATHING */
-animation: breathe 3.5s ease-in-out infinite;
+box-shadow:
+0 0 90px rgba(0,255,200,0.8),
+0 0 180px rgba(0,255,200,0.5),
+0 0 260px rgba(0,255,200,0.2);
+
+/* SLOW BREATHING */
+animation: breathe 6.5s ease-in-out infinite;
 }
 
-/* ===== BREATHING ANIMATION ===== */
+/* ===== SLOW BREATHING ===== */
 
 @keyframes breathe{
+
 0%{
 transform:scale(1);
 box-shadow:
-0 0 110px rgba(0,255,200,0.9),
-0 0 220px rgba(0,255,200,0.6),
-0 0 330px rgba(0,255,200,0.3);
+0 0 90px rgba(0,255,200,0.8),
+0 0 180px rgba(0,255,200,0.5),
+0 0 260px rgba(0,255,200,0.2);
 }
+
 50%{
-transform:scale(1.08);
+transform:scale(1.06);
 box-shadow:
-0 0 160px rgba(0,255,200,0.9),
-0 0 300px rgba(0,255,200,0.6),
-0 0 420px rgba(0,255,200,0.3);
+0 0 140px rgba(0,255,200,0.9),
+0 0 260px rgba(0,255,200,0.6),
+0 0 360px rgba(0,255,200,0.3);
 }
+
 100%{
 transform:scale(1);
 box-shadow:
-0 0 110px rgba(0,255,200,0.9),
-0 0 220px rgba(0,255,200,0.6),
-0 0 330px rgba(0,255,200,0.3);
+0 0 90px rgba(0,255,200,0.8),
+0 0 180px rgba(0,255,200,0.5),
+0 0 260px rgba(0,255,200,0.2);
 }
 }
 
-/* ===== LISTENING STATE ===== */
+/* ===== LISTENING (slightly faster, but still smooth) ===== */
 
 .listening{
 background:radial-gradient(circle,
 rgba(255,200,60,0.95) 0%,
 rgba(255,200,60,0.25) 60%,
 rgba(255,200,60,0.08) 100%);
-animation: listenPulse 0.6s ease-in-out infinite;
+animation: listeningPulse 2s ease-in-out infinite;
 }
 
-@keyframes listenPulse{
+@keyframes listeningPulse{
 0%{transform:scale(1);}
-50%{transform:scale(1.12);}
+50%{transform:scale(1.1);}
 100%{transform:scale(1);}
 }
 
-/* ===== SPEAKING STATE ===== */
+/* ===== SPEAKING ===== */
 
 .speaking{
 background:radial-gradient(circle,
 rgba(0,200,255,0.95) 0%,
 rgba(0,200,255,0.25) 60%,
 rgba(0,200,255,0.08) 100%);
-animation: speakPulse 0.5s ease-in-out infinite;
+animation: speakingPulse 1.8s ease-in-out infinite;
 }
 
-@keyframes speakPulse{
+@keyframes speakingPulse{
 0%{transform:scale(1);}
-50%{transform:scale(1.15);}
+50%{transform:scale(1.12);}
 100%{transform:scale(1);}
 }
 
@@ -134,6 +140,7 @@ const SILENCE_DELAY=2500;
 function startListening(){
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+
 if(!SR){
 responseBox.innerText="Speech recognition not supported.";
 return;
@@ -185,6 +192,8 @@ function speak(text){
 sphere.className="speaking";
 
 let utter=new SpeechSynthesisUtterance(text);
+utter.rate=0.95;
+
 speechSynthesis.cancel();
 speechSynthesis.speak(utter);
 
