@@ -49,33 +49,24 @@ cursor:pointer;
 
 .wrapper{
 position:relative;
-width:280px;
-height:280px;
+width:300px;
+height:300px;
 display:flex;
 align-items:center;
 justify-content:center;
 }
 
 #halo{
-width:220px;
-height:220px;
+width:230px;
+height:230px;
 border-radius:50%;
-background:radial-gradient(circle at center,
-rgba(0,255,200,0.35) 0%,
-rgba(0,255,200,0.20) 50%,
-rgba(0,255,200,0.10) 75%,
-rgba(0,255,200,0.05) 100%);
-box-shadow:
-0 0 120px rgba(0,255,200,0.55),
-0 0 240px rgba(0,255,200,0.35),
-0 0 360px rgba(0,255,200,0.25);
-transition:box-shadow 1.2s ease, background 1.2s ease;
+transition:background 2s ease, box-shadow 2s ease;
 cursor:pointer;
 }
 
 #response{
 position:absolute;
-bottom:50px;
+bottom:60px;
 width:70%;
 text-align:center;
 font-size:18px;
@@ -85,16 +76,18 @@ opacity:0.9;
 #manualBox{
 display:none;
 position:absolute;
-bottom:120px;
+bottom:140px;
 width:60%;
 text-align:center;
 }
+
 input{
 width:80%;
 padding:10px;
 border:none;
 outline:none;
 }
+
 button{
 padding:8px 12px;
 margin-top:10px;
@@ -143,95 +136,111 @@ const outroSound=document.getElementById("outroSound");
 let state="idle";
 let recognition=null;
 let silenceTimer=null;
-let audioContext, analyser, micStream;
+let finalTranscript="";
+let audioContext, analyser, dataArray;
 
-// ======================
+// =====================
 // COLOR ENGINE
-// ======================
+// =====================
 
 function setGlow(r,g,b){
-halo.style.boxShadow=
-`0 0 120px rgba(${r},${g},${b},0.6),
-0 0 240px rgba(${r},${g},${b},0.4),
-0 0 360px rgba(${r},${g},${b},0.3)`;
-
 halo.style.background=
 `radial-gradient(circle at center,
 rgba(${r},${g},${b},0.35) 0%,
 rgba(${r},${g},${b},0.20) 50%,
 rgba(${r},${g},${b},0.10) 75%,
 rgba(${r},${g},${b},0.05) 100%)`;
+
+halo.style.boxShadow=
+`0 0 140px rgba(${r},${g},${b},0.6),
+0 0 280px rgba(${r},${g},${b},0.4),
+0 0 400px rgba(${r},${g},${b},0.3)`;
 }
 
-// ======================
-// DEFAULT BREATHING
-// ======================
+setGlow(0,255,200);
+
+// =====================
+// BREATHING BASE PULSE
+// =====================
 
 function breathe(){
-let intensity=0.03;
-if(state==="listening") intensity=0.07;
-if(state==="speaking") intensity=0.09;
+let baseIntensity=0.025;
+if(state==="listening") baseIntensity=0.05;
+if(state==="speaking") baseIntensity=0.06;
 
-let scale=1+Math.sin(Date.now()*0.0015)*intensity;
+let scale=1+Math.sin(Date.now()*0.0012)*baseIntensity;
 halo.style.transform=`scale(${scale})`;
+
 requestAnimationFrame(breathe);
 }
 breathe();
 
-// ======================
-// MIC REACTIVE PULSE
-// ======================
+// =====================
+// MIC REACTIVE ENGINE
+// =====================
 
-async function startMic(){
+async function initMic(){
 audioContext=new(window.AudioContext||window.webkitAudioContext)();
-micStream=await navigator.mediaDevices.getUserMedia({audio:true});
-const source=audioContext.createMediaStreamSource(micStream);
+const stream=await navigator.mediaDevices.getUserMedia({audio:true});
+const source=audioContext.createMediaStreamSource(stream);
 analyser=audioContext.createAnalyser();
 analyser.fftSize=256;
 source.connect(analyser);
-reactToSound();
+dataArray=new Uint8Array(analyser.frequencyBinCount);
+react();
 }
 
-function reactToSound(){
+function react(){
 if(!analyser) return;
-
-let data=new Uint8Array(analyser.frequencyBinCount);
-analyser.getByteFrequencyData(data);
-let volume=data.reduce((a,b)=>a+b)/data.length;
+analyser.getByteFrequencyData(dataArray);
+let volume=dataArray.reduce((a,b)=>a+b)/dataArray.length;
 
 if(state==="listening"){
-let scale=1+volume/600;
+let scale=1+(volume/500);
 halo.style.transform=`scale(${scale})`;
 }
 
-requestAnimationFrame(reactToSound);
+requestAnimationFrame(react);
 }
 
-// ======================
+// =====================
 // PRODUCT LOGIC
-// ======================
+// =====================
 
 function chooseProduct(text){
 text=text.toLowerCase();
 
 if(/color|fade|brassy/.test(text))
-return "Gotika restores vibrancy and protects natural pigment. Price: $54.";
+return "Gotika restores vibrancy and protects pigment integrity. Price: $54.";
 
 if(/oil|greasy/.test(text))
-return "Gotero regulates excess oil without stripping hydration. Price: $42.";
+return "Gotero regulates excess oil while preserving hydration balance. Price: $42.";
 
 if(/dry|frizz|rough/.test(text))
-return "Laciador restores softness and smooth movement. Price: $48.";
+return "Laciador restores smoothness, moisture, and bounce. Price: $48.";
 
-if(/damage|break|weak|loss|thin/.test(text))
-return "Formula Exclusiva rebuilds strength and moisture balance. Price: $65.";
+if(/damage|break|weak|thin|loss/.test(text))
+return "Formula Exclusiva rebuilds structural strength and scalp health. Price: $65.";
 
-return null;
+return "Formula Exclusiva is your safest all-in-one restoration treatment. Price: $65.";
 }
 
-// ======================
-// SPEAK ENGINE
-// ======================
+// =====================
+// NATURAL VOICE SELECTION
+// =====================
+
+function getBestVoice(){
+let voices=speechSynthesis.getVoices();
+let lang=languageSelect.value;
+
+let filtered=voices.filter(v=>v.lang===lang && !v.name.toLowerCase().includes("robot"));
+
+return filtered[0] || voices.find(v=>v.lang===lang) || voices[0];
+}
+
+// =====================
+// SPEAK
+// =====================
 
 function speak(text){
 
@@ -239,7 +248,8 @@ speechSynthesis.cancel();
 
 const utter=new SpeechSynthesisUtterance(text);
 utter.lang=languageSelect.value;
-utter.rate=0.92;
+utter.voice=getBestVoice();
+utter.rate=0.95;
 utter.pitch=1;
 
 state="speaking";
@@ -254,40 +264,34 @@ setGlow(0,255,200);
 };
 }
 
-// ======================
-// PROCESS
-// ======================
+// =====================
+// PROCESS TEXT
+// =====================
 
 function processText(text){
 
 responseBox.innerText="Analyzing...";
+
 setTimeout(()=>{
-
 let result=chooseProduct(text);
-
-if(!result){
-speak("Please describe dryness, oiliness, damage, color fading, or thinning.");
-return;
-}
-
 responseBox.innerText=result;
 
 setTimeout(()=>{
 speak(result);
-},2500); // 2.5 second silence before AI talks
+},2500); // 2.5 second true silence buffer
 
 },1200);
 }
 
-// ======================
-// VOICE LISTENING
-// ======================
+// =====================
+// START LISTENING
+// =====================
 
 function startListening(){
 
 introSound.play();
 
-const SpeechRecognition =
+const SpeechRecognition=
 window.SpeechRecognition||window.webkitSpeechRecognition;
 
 recognition=new SpeechRecognition();
@@ -295,10 +299,10 @@ recognition.lang=languageSelect.value;
 recognition.continuous=true;
 recognition.interimResults=false;
 
-let finalTranscript="";
+finalTranscript="";
 
 state="listening";
-setGlow(255,210,80);
+setGlow(255,215,100);
 
 recognition.onresult=function(event){
 
@@ -318,18 +322,17 @@ processText(finalTranscript.trim());
 };
 
 recognition.start();
-startMic();
+initMic();
 }
 
-// ======================
+// =====================
 // MANUAL MODE
-// ======================
+// =====================
 
 let manual=false;
 document.getElementById("modeToggle").onclick=function(){
 manual=!manual;
-document.getElementById("manualBox").style.display=
-manual?"block":"none";
+document.getElementById("manualBox").style.display=manual?"block":"none";
 this.innerText=manual?"Switch to Voice":"Switch to Manual";
 };
 
@@ -339,9 +342,9 @@ if(text.length<5) return;
 processText(text);
 }
 
-// ======================
+// =====================
 // CLICK CONTROL
-// ======================
+// =====================
 
 halo.addEventListener("click",()=>{
 
@@ -370,5 +373,5 @@ startListening();
 """
 
 if __name__ == "__main__":
-    port=int(os.environ.get("PORT",10000))
-    app.run(host="0.0.0.0",port=port)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
