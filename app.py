@@ -17,6 +17,14 @@ def init_db():
         product   TEXT,
         concern   TEXT
     )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS tips (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts         TEXT    NOT NULL,
+        lang       TEXT,
+        rating     INTEGER,
+        tip_amount TEXT,
+        product    TEXT
+    )""")
     con.commit(); con.close()
 
 init_db()
@@ -29,6 +37,15 @@ def log_event(lang, user_msg, product, concern):
         con.commit(); con.close()
     except Exception as e:
         print("DB log error:", e)
+
+def log_tip(lang, rating, tip_amount, product):
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.execute("INSERT INTO tips (ts,lang,rating,tip_amount,product) VALUES (?,?,?,?,?)",
+                    (datetime.datetime.utcnow().isoformat(), lang, rating, tip_amount, product))
+        con.commit(); con.close()
+    except Exception as e:
+        print("DB tip log error:", e)
 
 def extract_product(text):
     t = text.lower()
@@ -88,25 +105,19 @@ def index():
 <title>Hair Expert Advisor</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
 <style>
-/* ═══════════════════════════════════════════════════
-   BRAND COLORS — change these 4 values to rebrand
-   ═══════════════════════════════════════════════════ */
 :root {
   --brand-idle-r:   193;
   --brand-idle-g:   163;
-  --brand-idle-b:   162;   /* #c1a3a2 dusty rose — idle sphere   */
-
+  --brand-idle-b:   162;
   --brand-listen-r: 157;
   --brand-listen-g: 127;
-  --brand-listen-b: 106;   /* #9d7f6a warm mocha — listening     */
-
+  --brand-listen-b: 106;
   --brand-speak-r:  208;
   --brand-speak-g:  208;
-  --brand-speak-b:  208;   /* #d0d0d0 silver — speaking          */
-
-  --brand-bg:       #f0ebe8;          /* warm off-white background     */
-  --brand-text:     #0d0906;          /* deep warm dark text           */
-  --brand-accent:   rgba(193,163,162,1);/* dusty rose buttons/highlights */
+  --brand-speak-b:  208;
+  --brand-bg:       #f0ebe8;
+  --brand-text:     #0d0906;
+  --brand-accent:   rgba(193,163,162,1);
   --brand-accent-lo: rgba(193,163,162,0.08);
   --brand-accent-mid: rgba(193,163,162,0.22);
   --brand-font-head: 'Cormorant Garamond', serif;
@@ -335,11 +346,176 @@ body {
 }
 #manualSubmit:hover { background: rgba(193,163,162,0.20); }
 
+/* ══════════════════════════════════════════
+   TIP PANEL
+══════════════════════════════════════════ */
+#tipPanel {
+  position: fixed;
+  bottom: -320px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400px;
+  max-width: 94vw;
+  background: #faf6f3;
+  border: 1px solid rgba(193,163,162,0.35);
+  border-radius: 24px 24px 0 0;
+  padding: 28px 28px 36px;
+  box-shadow: 0 -12px 60px rgba(0,0,0,0.10);
+  transition: bottom 0.55s cubic-bezier(0.32,0.72,0,1);
+  z-index: 200;
+  text-align: center;
+}
+#tipPanel.open {
+  bottom: 0;
+}
+
+#tipTitle {
+  font-family: var(--brand-font-head);
+  font-size: 20px;
+  font-style: italic;
+  color: rgba(0,0,0,0.70);
+  margin-bottom: 4px;
+}
+#tipSubtitle {
+  font-family: var(--brand-font-body);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0,0,0,0.30);
+  margin-bottom: 20px;
+}
+
+/* Stars */
+#starRow {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+.star {
+  font-size: 26px;
+  cursor: pointer;
+  color: rgba(0,0,0,0.15);
+  transition: color 0.2s, transform 0.15s;
+  line-height: 1;
+}
+.star.active { color: #c1a3a2; }
+.star:hover  { transform: scale(1.2); }
+
+/* Tip amounts */
+#tipAmounts {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+.tip-amt {
+  padding: 9px 20px;
+  border-radius: 30px;
+  border: 1px solid rgba(193,163,162,0.40);
+  background: rgba(193,163,162,0.07);
+  color: rgba(0,0,0,0.55);
+  font-family: var(--brand-font-body);
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+.tip-amt:hover, .tip-amt.selected {
+  background: rgba(193,163,162,0.22);
+  border-color: rgba(193,163,162,0.70);
+  color: #0d0906;
+}
+
+/* Custom tip input (hidden until "Custom" selected) */
+#customTipWrap {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+#customTipWrap.show { display: flex; }
+#customTipInput {
+  width: 110px;
+  padding: 9px 14px;
+  border-radius: 30px;
+  border: 1px solid rgba(193,163,162,0.40);
+  background: rgba(193,163,162,0.07);
+  color: #0d0906;
+  font-family: var(--brand-font-body);
+  font-size: 14px;
+  text-align: center;
+  outline: none;
+}
+#customTipInput:focus { border-color: rgba(193,163,162,0.70); }
+
+/* Submit + skip */
+#tipSubmit {
+  display: block;
+  width: 100%;
+  padding: 13px;
+  border-radius: 30px;
+  border: none;
+  background: rgba(193,163,162,0.90);
+  color: #fff;
+  font-family: var(--brand-font-body);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.3s;
+  margin-bottom: 12px;
+}
+#tipSubmit:hover { background: rgba(157,127,106,0.90); }
+
+#tipSkip {
+  font-family: var(--brand-font-body);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0,0,0,0.25);
+  cursor: pointer;
+  transition: color 0.3s;
+  background: none;
+  border: none;
+}
+#tipSkip:hover { color: rgba(0,0,0,0.50); }
+
+/* Thank-you state */
+#tipThanks {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+#tipThanks .thanks-icon {
+  font-size: 36px;
+  margin-bottom: 4px;
+}
+#tipThanks .thanks-title {
+  font-family: var(--brand-font-head);
+  font-size: 22px;
+  font-style: italic;
+  color: rgba(0,0,0,0.70);
+}
+#tipThanks .thanks-sub {
+  font-family: var(--brand-font-body);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(0,0,0,0.30);
+}
+
 #footer {
   position: fixed;
   bottom: 22px;
   display: flex;
   gap: 36px;
+  z-index: 10;
 }
 #footer span {
   font-size: 10px;
@@ -381,6 +557,46 @@ body {
 
 <div id="response">Tap the sphere and describe your hair concern.</div>
 
+<!-- ══ TIP PANEL ══ -->
+<div id="tipPanel">
+  <!-- Form view -->
+  <div id="tipForm">
+    <div id="tipTitle">Did this help?</div>
+    <div id="tipSubtitle">Rate your experience &amp; leave a tip</div>
+
+    <div id="starRow">
+      <span class="star" data-v="1">★</span>
+      <span class="star" data-v="2">★</span>
+      <span class="star" data-v="3">★</span>
+      <span class="star" data-v="4">★</span>
+      <span class="star" data-v="5">★</span>
+    </div>
+
+    <div id="tipAmounts">
+      <button class="tip-amt" data-amt="1">$1</button>
+      <button class="tip-amt" data-amt="2">$2</button>
+      <button class="tip-amt" data-amt="5">$5</button>
+      <button class="tip-amt" data-amt="custom">Custom</button>
+      <button class="tip-amt" data-amt="0">No tip</button>
+    </div>
+
+    <div id="customTipWrap">
+      <span style="color:rgba(0,0,0,0.40);font-size:16px;">$</span>
+      <input id="customTipInput" type="number" min="1" max="100" placeholder="0.00" />
+    </div>
+
+    <button id="tipSubmit">Submit</button>
+    <button id="tipSkip">Skip</button>
+  </div>
+
+  <!-- Thank-you view -->
+  <div id="tipThanks">
+    <div class="thanks-icon">🌿</div>
+    <div class="thanks-title">Thank you!</div>
+    <div class="thanks-sub">Your feedback means everything</div>
+  </div>
+</div>
+
 <div id="footer">
   <span id="faqBtn">FAQ</span>
   <span id="contactBtn">Contact Us</span>
@@ -398,6 +614,124 @@ const manualSubmit = document.getElementById("manualSubmit");
 const historyEl    = document.getElementById("history");
 const clearBtn     = document.getElementById("clearBtn");
 
+/* ── TIP PANEL ELEMENTS ── */
+const tipPanel       = document.getElementById("tipPanel");
+const tipForm        = document.getElementById("tipForm");
+const tipThanks      = document.getElementById("tipThanks");
+const tipSubmitBtn   = document.getElementById("tipSubmit");
+const tipSkipBtn     = document.getElementById("tipSkip");
+const customTipWrap  = document.getElementById("customTipWrap");
+const customTipInput = document.getElementById("customTipInput");
+
+let tipRating    = 0;
+let tipAmount    = null;
+let tipProduct   = "";  // last recommended product
+
+/* ── STAR RATING ── */
+document.querySelectorAll(".star").forEach(star => {
+  star.addEventListener("click", () => {
+    tipRating = parseInt(star.dataset.v);
+    document.querySelectorAll(".star").forEach(s => {
+      s.classList.toggle("active", parseInt(s.dataset.v) <= tipRating);
+    });
+  });
+  star.addEventListener("mouseover", () => {
+    const v = parseInt(star.dataset.v);
+    document.querySelectorAll(".star").forEach(s => {
+      s.classList.toggle("active", parseInt(s.dataset.v) <= v);
+    });
+  });
+  star.addEventListener("mouseout", () => {
+    document.querySelectorAll(".star").forEach(s => {
+      s.classList.toggle("active", parseInt(s.dataset.v) <= tipRating);
+    });
+  });
+});
+
+/* ── TIP AMOUNT BUTTONS ── */
+document.querySelectorAll(".tip-amt").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tip-amt").forEach(b => b.classList.remove("selected"));
+    btn.classList.add("selected");
+    tipAmount = btn.dataset.amt;
+    customTipWrap.classList.toggle("show", tipAmount === "custom");
+    if (tipAmount !== "custom") customTipInput.value = "";
+  });
+});
+
+/* ── OPEN / CLOSE TIP PANEL ── */
+function openTipPanel(product) {
+  tipProduct = product || "";
+  tipRating  = 0;
+  tipAmount  = null;
+  document.querySelectorAll(".star").forEach(s => s.classList.remove("active"));
+  document.querySelectorAll(".tip-amt").forEach(b => b.classList.remove("selected"));
+  customTipWrap.classList.remove("show");
+  customTipInput.value = "";
+  tipForm.style.display   = "block";
+  tipThanks.style.display = "none";
+  tipPanel.classList.add("open");
+}
+
+function closeTipPanel() {
+  tipPanel.classList.remove("open");
+}
+
+/* ── SUBMIT TIP ── */
+tipSubmitBtn.addEventListener("click", async () => {
+  let finalAmt = tipAmount;
+  if (tipAmount === "custom") {
+    const v = parseFloat(customTipInput.value);
+    finalAmt = isNaN(v) || v <= 0 ? "0" : v.toFixed(2);
+  }
+  if (!finalAmt) finalAmt = "0";
+
+  // Log to backend
+  try {
+    await fetch("https://ai-hair-advisor.onrender.com/api/tip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lang:    langSelect.value,
+        rating:  tipRating,
+        amount:  finalAmt,
+        product: tipProduct
+      })
+    });
+  } catch(e) {}
+
+  // If real money tip (amount > 0), open Shopify checkout in new tab
+  if (finalAmt !== "0" && finalAmt !== "custom") {
+    const amtCents = Math.round(parseFloat(finalAmt) * 100);
+    // Replace SHOPIFY_TIP_VARIANT_ID with your tip product variant ID
+    const shopifyUrl = "https://supportdr-com.myshopify.com/cart/SHOPIFY_TIP_VARIANT_ID:" + 1 +
+      "?properties[tip_amount]=$" + finalAmt + "&checkout";
+    window.open(shopifyUrl, "_blank");
+  }
+
+  // Show thank you
+  tipForm.style.display   = "none";
+  tipThanks.style.display = "flex";
+  setTimeout(closeTipPanel, 3000);
+});
+
+tipSkipBtn.addEventListener("click", () => {
+  // Log skip (rating only, no tip)
+  try {
+    fetch("https://ai-hair-advisor.onrender.com/api/tip", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        lang:    langSelect.value,
+        rating:  tipRating,
+        amount:  "skip",
+        product: tipProduct
+      })
+    });
+  } catch(e) {}
+  closeTipPanel();
+});
+
 /* ── STATE ── */
 let appState      = "idle";
 let recognition   = null;
@@ -405,14 +739,19 @@ let silenceTimer  = null;
 let noSpeechTimer = null;
 let finalText     = "";
 let isManual      = false;
-
-/* ── CONVERSATION MEMORY ──
-   Full message history passed to Claude each call.
-   Stored as [{role:"user"|"assistant", content:"..."}]       ── */
 let conversationHistory = [];
+let lastRecommendedProduct = "";
 
 function addToHistory(role, text) {
   conversationHistory.push({ role, content: text });
+  if (role === "assistant") {
+    // Try to detect which product was mentioned
+    const t = text.toLowerCase();
+    if (t.includes("formula exclusiva")) lastRecommendedProduct = "Formula Exclusiva";
+    else if (t.includes("laciador"))     lastRecommendedProduct = "Laciador";
+    else if (t.includes("gotero"))       lastRecommendedProduct = "Gotero";
+    else if (t.includes("gotika"))       lastRecommendedProduct = "Gotika";
+  }
 
   const bubble = document.createElement("div");
   bubble.className = "msg " + (role === "user" ? "user" : "ai");
@@ -429,6 +768,7 @@ clearBtn.addEventListener("click", () => {
   historyEl.innerHTML = "";
   clearBtn.classList.remove("visible");
   responseBox.textContent = "Tap the sphere and describe your hair concern.";
+  lastRecommendedProduct = "";
 });
 
 /* ── AUDIO ── */
@@ -554,7 +894,7 @@ function getBestVoice(lang) {
 }
 
 /* ── SPEAK ── */
-function speak(text) {
+function speak(text, showTip) {
   speechSynthesis.cancel();
   setTimeout(() => {
     const utter = new SpeechSynthesisUtterance(text);
@@ -568,11 +908,14 @@ function speak(text) {
       playAmbient("outro");
       setState("idle"); setColor(...IDLE);
       stateLabel.textContent = "Tap to begin";
+      if (showTip) {
+        setTimeout(() => openTipPanel(lastRecommendedProduct), 1200);
+      }
     };
   }, 80);
 }
 
-/* ── LOCAL RESPONSES (fallback when no API key) ── */
+/* ── LOCAL RESPONSES ── */
 const LOCAL_R = {
   "en-US": {
     damaged: "Formula Exclusiva is exactly what your hair needs. This professional all-in-one treatment rebuilds strength, restores moisture, and revives scalp health. At $65, it's your most complete solution.",
@@ -702,7 +1045,7 @@ function localRecommend(text) {
   return R.default;
 }
 
-/* ── AI RECOMMENDATION (with conversation history) ── */
+/* ── AI RECOMMENDATION ── */
 async function getRecommendation(userText) {
   try {
     const controller = new AbortController();
@@ -713,7 +1056,7 @@ async function getRecommendation(userText) {
       body: JSON.stringify({
         text: userText,
         lang: langSelect.value,
-        history: conversationHistory.slice(0, -1) // exclude the message we just added
+        history: conversationHistory.slice(0, -1)
       }),
       signal: controller.signal
     });
@@ -733,7 +1076,7 @@ async function processText(text) {
     responseBox.textContent = "Could you describe your hair a little more?";
     setState("idle"); setColor(...IDLE);
     stateLabel.textContent = "Tap to begin";
-    setTimeout(() => speak(responseBox.textContent), 800);
+    setTimeout(() => speak(responseBox.textContent, false), 800);
     return;
   }
 
@@ -747,7 +1090,8 @@ async function processText(text) {
   const final  = result || localRecommend(text);
 
   addToHistory("assistant", final);
-  setTimeout(() => speak(final), 2500);
+  // showTip=true → tip panel opens after AI finishes speaking
+  setTimeout(() => speak(final, true), 2500);
 }
 
 /* ── NO-HEAR ── */
@@ -766,7 +1110,7 @@ function noHear() {
   responseBox.textContent = msg;
   setState("idle"); setColor(...IDLE);
   stateLabel.textContent = "Tap to begin";
-  speak(msg);
+  speak(msg, false);
 }
 
 /* ── START LISTENING ── */
@@ -883,31 +1227,31 @@ const CONTACT_MSGS = {
 };
 document.getElementById("faqBtn").addEventListener("click", () => {
   const msg = FAQ_MSGS[langSelect.value]||FAQ_MSGS["en-US"];
-  responseBox.textContent = msg; speak(msg);
+  responseBox.textContent = msg; speak(msg, false);
 });
 document.getElementById("contactBtn").addEventListener("click", () => {
   const msg = CONTACT_MSGS[langSelect.value]||CONTACT_MSGS["en-US"];
-  responseBox.textContent = msg; speak(msg);
+  responseBox.textContent = msg; speak(msg, false);
 });
 </script>
 </body>
 </html>"""
 
 
-# ── API: RECOMMEND (with conversation history) ───────────────────────────────
+# ── API: RECOMMEND ────────────────────────────────────────────────────────────
 @app.route("/api/recommend", methods=["POST"])
 def recommend():
     data      = request.get_json()
     user_text = data.get("text", "")
     lang      = data.get("lang", "en-US")
-    history   = data.get("history", [])   # [{role, content}, ...]
+    history   = data.get("history", [])
 
     lang_names = {
         "en-US":"English","es-ES":"Spanish","fr-FR":"French",
         "pt-BR":"Portuguese","de-DE":"German","ar-SA":"Arabic",
         "zh-CN":"Mandarin Chinese","hi-IN":"Hindi"
     }
-    lang_name = lang_names.get(lang, "English")
+    lang_name  = lang_names.get(lang, "English")
     lang_instr = f"\n\nIMPORTANT: Your ENTIRE response must be in {lang_name}."
 
     if not ANTHROPIC_API_KEY:
@@ -916,7 +1260,6 @@ def recommend():
     try:
         import urllib.request as urlreq
 
-        # Build messages: history + current user message
         messages = []
         for h in history:
             if h.get("role") in ("user", "assistant") and h.get("content"):
@@ -944,7 +1287,6 @@ def recommend():
             result = json.loads(resp.read().decode("utf-8"))
             recommendation = result["content"][0]["text"].strip()
 
-        # Log to analytics
         product = extract_product(recommendation)
         concern = extract_concern(user_text)
         log_event(lang, user_text, product, concern)
@@ -955,10 +1297,22 @@ def recommend():
         return jsonify({"recommendation": None, "error": str(e)}), 500
 
 
+# ── API: TIP LOGGING ──────────────────────────────────────────────────────────
+@app.route("/api/tip", methods=["POST"])
+def tip():
+    data    = request.get_json()
+    lang    = data.get("lang", "en-US")
+    rating  = data.get("rating", 0)
+    amount  = data.get("amount", "skip")
+    product = data.get("product", "")
+    log_tip(lang, rating, amount, product)
+    return jsonify({"ok": True})
+
+
 # ── ANALYTICS DASHBOARD ───────────────────────────────────────────────────────
 ANALYTICS_KEY = os.environ.get("ANALYTICS_KEY", "hairadmin")
 
-@app.route(f"/analytics")
+@app.route("/analytics")
 def analytics():
     key = request.args.get("key", "")
     if key != ANALYTICS_KEY:
@@ -971,6 +1325,11 @@ def analytics():
         concerns = con.execute("SELECT concern, COUNT(*) as n FROM events GROUP BY concern ORDER BY n DESC").fetchall()
         langs    = con.execute("SELECT lang, COUNT(*) as n FROM events GROUP BY lang ORDER BY n DESC").fetchall()
         recent   = con.execute("SELECT ts, lang, user_msg, product, concern FROM events ORDER BY id DESC LIMIT 50").fetchall()
+        # Tip stats
+        tip_total   = con.execute("SELECT COUNT(*) FROM tips").fetchone()[0]
+        avg_rating  = con.execute("SELECT AVG(rating) FROM tips WHERE rating > 0").fetchone()[0]
+        tip_amounts = con.execute("SELECT tip_amount, COUNT(*) as n FROM tips GROUP BY tip_amount ORDER BY n DESC").fetchall()
+        avg_r = round(avg_rating, 2) if avg_rating else "N/A"
         con.close()
     except Exception as e:
         return f"DB error: {e}", 500
@@ -996,6 +1355,8 @@ def analytics():
 
     lang_rows = "".join(f"<tr><td>{l[0]}</td><td>{l[1]}</td><td>{round(l[1]/total*100)}%</td></tr>" for l in langs) if langs else ""
 
+    tip_amt_rows = "".join(f"<tr><td>{t[0]}</td><td>{t[1]}</td></tr>" for t in tip_amounts)
+
     return f"""<!DOCTYPE html><html><head>
 <meta charset="UTF-8"><title>Hair Advisor Analytics</title>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@300;400;600&display=swap" rel="stylesheet">
@@ -1019,6 +1380,8 @@ def analytics():
 <div class="stat"><div class="n">{total}</div><div class="l">Total Sessions</div></div>
 <div class="stat"><div class="n">{len(products)}</div><div class="l">Products Recommended</div></div>
 <div class="stat"><div class="n">{len(langs)}</div><div class="l">Languages Used</div></div>
+<div class="stat"><div class="n">{tip_total}</div><div class="l">Tip Submissions</div></div>
+<div class="stat"><div class="n">{avg_r}</div><div class="l">Avg Star Rating</div></div>
 
 <h2>Product Recommendations</h2>
 <table><tr><th>Product</th><th>Count</th><th>Share</th><th>%</th></tr>{prod_rows}</table>
@@ -1028,6 +1391,9 @@ def analytics():
 
 <h2>Languages</h2>
 <table><tr><th>Language</th><th>Count</th><th>%</th></tr>{lang_rows}</table>
+
+<h2>Tip Amounts</h2>
+<table><tr><th>Amount</th><th>Count</th></tr>{tip_amt_rows}</table>
 
 <h2>Recent Sessions (last 50)</h2>
 <table><tr><th>Time</th><th>Lang</th><th>Message</th><th>Product</th><th>Concern</th></tr>{rows}</table>
