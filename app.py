@@ -703,8 +703,8 @@ tipSubmitBtn.addEventListener("click", async () => {
   // If real money tip (amount > 0), open Shopify checkout in new tab
   if (finalAmt !== "0" && finalAmt !== "custom") {
     const amtCents = Math.round(parseFloat(finalAmt) * 100);
-    // Replace SHOPIFY_TIP_VARIANT_ID with your tip product variant ID
-    const shopifyUrl = "https://supportdr-com.myshopify.com/cart/SHOPIFY_TIP_VARIANT_ID:" + 1 +
+    // Replace 42109000908880 with your tip product variant ID
+    const shopifyUrl = "https://supportdr-com.myshopify.com/cart/42109000908880:" + 1 +
       "?properties[tip_amount]=$" + finalAmt + "&checkout";
     window.open(shopifyUrl, "_blank");
   }
