@@ -92,23 +92,23 @@ def index():
    BRAND COLORS — change these 4 values to rebrand
    ═══════════════════════════════════════════════════ */
 :root {
-  --brand-idle-r:   0;
-  --brand-idle-g:   255;
-  --brand-idle-b:   200;   /* teal  — idle sphere   */
+  --brand-idle-r:   193;
+  --brand-idle-g:   163;
+  --brand-idle-b:   162;   /* #c1a3a2 dusty rose — idle sphere   */
 
-  --brand-listen-r: 255;
-  --brand-listen-g: 200;
-  --brand-listen-b: 60;    /* gold  — listening     */
+  --brand-listen-r: 157;
+  --brand-listen-g: 127;
+  --brand-listen-b: 106;   /* #9d7f6a warm mocha — listening     */
 
-  --brand-speak-r:  0;
-  --brand-speak-g:  220;
-  --brand-speak-b:  255;   /* blue  — speaking      */
+  --brand-speak-r:  208;
+  --brand-speak-g:  208;
+  --brand-speak-b:  208;   /* #d0d0d0 silver — speaking          */
 
-  --brand-bg:       #040709;          /* page background       */
-  --brand-text:     #dff2ec;          /* primary text          */
-  --brand-accent:   rgba(0,255,200,1);/* buttons / highlights  */
-  --brand-accent-lo: rgba(0,255,200,0.08);
-  --brand-accent-mid: rgba(0,255,200,0.22);
+  --brand-bg:       #f0ebe8;          /* warm off-white background     */
+  --brand-text:     #0d0906;          /* deep warm dark text           */
+  --brand-accent:   rgba(193,163,162,1);/* dusty rose buttons/highlights */
+  --brand-accent-lo: rgba(193,163,162,0.08);
+  --brand-accent-mid: rgba(193,163,162,0.22);
   --brand-font-head: 'Cormorant Garamond', serif;
   --brand-font-body: 'Jost', sans-serif;
 }
@@ -116,7 +116,7 @@ def index():
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background: radial-gradient(ellipse at 50% 60%, #050d0a 0%, var(--brand-bg) 100%);
+  background: radial-gradient(ellipse at 50% 60%, #e8e0da 0%, var(--brand-bg) 100%);
   color: var(--brand-text);
   font-family: var(--brand-font-body);
   font-weight: 300;
@@ -140,9 +140,9 @@ body {
 }
 
 .top-btn {
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.50);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.05);
+  color: rgba(0,0,0,0.55);
+  border: 1px solid rgba(0,0,0,0.12);
   padding: 8px 18px;
   border-radius: 30px;
   font-size: 11px;
@@ -161,9 +161,9 @@ body {
 }
 
 #langSelect {
-  background: rgba(255,255,255,0.04);
-  color: rgba(255,255,255,0.50);
-  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.05);
+  color: rgba(0,0,0,0.55);
+  border: 1px solid rgba(0,0,0,0.12);
   padding: 8px 14px;
   border-radius: 30px;
   font-size: 11px;
@@ -173,7 +173,7 @@ body {
   outline: none;
   transition: all 0.4s ease;
 }
-#langSelect option { background: #060e0b; color: white; }
+#langSelect option { background: #f0ebe8; color: #0d0906; }
 
 .sphere-wrap {
   width: 300px; height: 300px;
@@ -185,7 +185,7 @@ body {
   border-radius: 50%;
   cursor: pointer;
   background: radial-gradient(circle at 40% 38%,
-    rgba(var(--brand-idle-r),var(--brand-idle-g),var(--brand-idle-b),0.50) 0%,
+    rgba(var(--brand-idle-r),var(--brand-idle-g),var(--brand-idle-b),0.55) 0%,
     rgba(var(--brand-idle-r),var(--brand-idle-g),var(--brand-idle-b),0.18) 42%,
     rgba(var(--brand-idle-r),var(--brand-idle-g),var(--brand-idle-b),0.07) 70%,
     rgba(var(--brand-idle-r),var(--brand-idle-g),var(--brand-idle-b),0.01) 100%);
@@ -218,7 +218,7 @@ body {
   font-size: 10px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.20);
+  color: rgba(0,0,0,0.30);
   height: 16px;
 }
 
@@ -234,7 +234,7 @@ body {
   margin-top: 18px;
   padding: 0 4px;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255,255,255,0.10) transparent;
+  scrollbar-color: rgba(0,0,0,0.12) transparent;
 }
 #history:empty { display: none; }
 
@@ -249,15 +249,15 @@ body {
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
 
 .msg.user {
-  background: rgba(255,255,255,0.07);
-  color: rgba(255,255,255,0.65);
+  background: rgba(0,0,0,0.07);
+  color: rgba(0,0,0,0.60);
   align-self: flex-end;
   border-bottom-right-radius: 4px;
   font-family: var(--brand-font-body);
 }
 .msg.ai {
   background: rgba(var(--brand-idle-r),var(--brand-idle-g),var(--brand-idle-b),0.10);
-  color: rgba(255,255,255,0.85);
+  color: rgba(0,0,0,0.80);
   align-self: flex-start;
   border-bottom-left-radius: 4px;
   font-family: var(--brand-font-head);
@@ -270,7 +270,7 @@ body {
   font-size: 10px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.18);
+  color: rgba(0,0,0,0.25);
   cursor: pointer;
   background: none;
   border: none;
@@ -278,7 +278,7 @@ body {
   transition: color 0.3s;
   display: none;
 }
-#clearBtn:hover { color: rgba(255,255,255,0.45); }
+#clearBtn:hover { color: rgba(0,0,0,0.55); }
 #clearBtn.visible { display: block; }
 
 #response {
@@ -290,7 +290,7 @@ body {
   font-size: 18px;
   font-weight: 300;
   line-height: 1.7;
-  color: rgba(255,255,255,0.60);
+  color: rgba(0,0,0,0.65);
   min-height: 28px;
   font-style: italic;
 }
@@ -307,17 +307,17 @@ body {
 #manualInput {
   width: 100%;
   padding: 13px 20px;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.14);
   border-radius: 30px;
-  color: white;
+  color: #0d0906;
   font-family: var(--brand-font-body);
   font-size: 14px;
   outline: none;
   transition: border-color 0.3s;
 }
 #manualInput:focus { border-color: var(--brand-accent-mid); }
-#manualInput::placeholder { color: rgba(255,255,255,0.22); }
+#manualInput::placeholder { color: rgba(0,0,0,0.30); }
 
 #manualSubmit {
   padding: 10px 32px;
@@ -333,7 +333,7 @@ body {
   cursor: pointer;
   transition: all 0.3s;
 }
-#manualSubmit:hover { background: rgba(0,255,200,0.15); }
+#manualSubmit:hover { background: rgba(193,163,162,0.20); }
 
 #footer {
   position: fixed;
@@ -345,7 +345,7 @@ body {
   font-size: 10px;
   letter-spacing: 0.15em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.20);
+  color: rgba(0,0,0,0.30);
   cursor: pointer;
   transition: color 0.4s;
 }
@@ -506,7 +506,7 @@ function setColor(r, g, b) {
     0 0 290px rgba(${r},${g},${b},0.16),
     0 0 440px rgba(${r},${g},${b},0.08)`;
 }
-const IDLE=[0,255,200], LISTEN=[255,200,60], SPEAK=[0,220,255];
+const IDLE=[193,163,162], LISTEN=[157,127,106], SPEAK=[208,208,208];
 setColor(...IDLE);
 
 function setState(s) {
@@ -1052,4 +1052,3 @@ def add_headers(response):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
