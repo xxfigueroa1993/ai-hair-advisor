@@ -1795,6 +1795,21 @@ def options_handler(dummy):
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
+# ── KEEP-ALIVE SELF PING (prevents Render free tier sleep) ───────────────────
+import threading
+
+def _keep_alive():
+    import time
+    import urllib.request as _urlreq
+    _url = os.environ.get("APP_BASE_URL","https://ai-hair-advisor.onrender.com") + "/api/ping"
+    time.sleep(60)  # Wait for server to fully start
+    while True:
+        time.sleep(600)  # Ping every 10 minutes
+        try: _urlreq.urlopen(_url, timeout=10)
+        except: pass
+
+threading.Thread(target=_keep_alive, daemon=True).start()
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
