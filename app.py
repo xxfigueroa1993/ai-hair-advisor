@@ -1555,19 +1555,26 @@ document.getElementById("contactBtn").addEventListener("click", () => {
   const cached = localStorage.getItem('srd_user');
   if(!token) return; // show sign in button (default)
 
-  // Show user chip immediately from cache
+  // Show user chip immediately from cache — don't wait for API
   if(cached){
     try{
       const u = JSON.parse(cached);
       showUserChip(u.name, u.avatar);
     }catch(e){}
+  } else {
+    // No cache but have token — hide sign in button optimistically
+    document.getElementById('authBtn').style.display = 'none';
   }
 
   // Verify token + load profile for welcome banner
   fetch('/api/auth/me', {headers:{'X-Auth-Token':token}})
     .then(r => r.ok ? r.json() : null)
     .then(d => {
-      if(!d){ localStorage.removeItem('srd_token'); localStorage.removeItem('srd_user'); return; }
+      if(!d){ 
+        // Token invalid — but don't clear it, just keep sign in hidden if we had cache
+        if(!cached){ document.getElementById('authBtn').style.display = 'block'; }
+        return; 
+      }
       showUserChip(d.name, d.avatar);
       localStorage.setItem('srd_user', JSON.stringify({name:d.name,email:d.email,avatar:d.avatar||''}));
 
