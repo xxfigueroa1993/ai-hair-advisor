@@ -6,8 +6,15 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 AUTH_DB = os.path.join(os.path.dirname(__file__), "users.db")
 
+def get_db():
+    """Get a SQLite connection with timeout and WAL mode to prevent locking."""
+    con = sqlite3.connect(AUTH_DB, timeout=30, check_same_thread=False)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=30000")
+    return con
+
 def init_auth_db():
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     con.execute("""CREATE TABLE IF NOT EXISTS users (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         email         TEXT    UNIQUE NOT NULL,
@@ -52,7 +59,7 @@ def hash_password(pw):
 def create_session(user_id):
     token = secrets.token_hex(32)
     expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     con.execute("INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)", (token, user_id, expires))
     con.execute("UPDATE users SET last_login=? WHERE id=?", (datetime.datetime.utcnow().isoformat(), user_id))
     con.commit()
@@ -61,7 +68,7 @@ def create_session(user_id):
 
 def get_user_from_token(token):
     if not token: return None
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     row = con.execute("""SELECT u.id,u.email,u.name,u.avatar FROM users u
         JOIN sessions s ON s.user_id=u.id
         WHERE s.token=? AND s.expires_at > datetime('now')""", (token,)).fetchone()
@@ -74,14 +81,14 @@ def get_current_user():
     return get_user_from_token(token)
 
 def get_hair_profile(user_id):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     row = con.execute("SELECT * FROM hair_profiles WHERE user_id=?", (user_id,)).fetchone()
     con.close()
     if not row: return {}
     return {"hair_type":row[2],"hair_concerns":row[3],"treatments":row[4],"products_tried":row[5]}
 
 def save_hair_profile(user_id, data):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     con.execute("""INSERT INTO hair_profiles (user_id,hair_type,hair_concerns,treatments,products_tried)
         VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
         hair_type=excluded.hair_type, hair_concerns=excluded.hair_concerns,
@@ -93,14 +100,14 @@ def save_hair_profile(user_id, data):
     con.close()
 
 def get_chat_history(user_id, limit=20):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     rows = con.execute("""SELECT role,content FROM chat_history
         WHERE user_id=? ORDER BY id DESC LIMIT ?""", (user_id, limit)).fetchall()
     con.close()
     return [{"role":r[0],"content":r[1]} for r in reversed(rows)]
 
 def save_chat_message(user_id, role, content):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     con.execute("INSERT INTO chat_history (user_id,role,content) VALUES (?,?,?)",
                 (user_id, role, content))
     con.execute("""DELETE FROM chat_history WHERE user_id=? AND id NOT IN
@@ -112,8 +119,14 @@ def save_chat_message(user_id, role, content):
 # ── ANALYTICS DB ─────────────────────────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(__file__), "analytics.db")
 
+def get_analytics_db():
+    con = sqlite3.connect(DB_PATH, timeout=30, check_same_thread=False)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA busy_timeout=30000")
+    return con
+
 def init_db():
-    con = sqlite3.connect(DB_PATH)
+    con = get_analytics_db()
     con.execute("""CREATE TABLE IF NOT EXISTS events (
         id        INTEGER PRIMARY KEY AUTOINCREMENT,
         ts        TEXT    NOT NULL,
@@ -136,7 +149,7 @@ init_db()
 
 def log_event(lang, user_msg, product, concern):
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = get_analytics_db()
         con.execute("INSERT INTO events (ts,lang,user_msg,product,concern) VALUES (?,?,?,?,?)",
                     (datetime.datetime.utcnow().isoformat(), lang, user_msg, product, concern))
         con.commit(); con.close()
@@ -145,7 +158,7 @@ def log_event(lang, user_msg, product, concern):
 
 def log_tip(lang, rating, tip_amount, product):
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = get_analytics_db()
         con.execute("INSERT INTO tips (ts,lang,rating,tip_amount,product) VALUES (?,?,?,?,?)",
                     (datetime.datetime.utcnow().isoformat(), lang, rating, tip_amount, product))
         con.commit(); con.close()
@@ -1798,7 +1811,7 @@ def analytics():
         return "Unauthorized. Add ?key=YOUR_ANALYTICS_KEY to the URL.", 401
 
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = get_analytics_db()
         total    = con.execute("SELECT COUNT(*) FROM events").fetchone()[0]
         products = con.execute("SELECT product, COUNT(*) as n FROM events GROUP BY product ORDER BY n DESC").fetchall()
         concerns = con.execute("SELECT concern, COUNT(*) as n FROM events GROUP BY concern ORDER BY n DESC").fetchall()
@@ -1910,7 +1923,7 @@ def test_register():
     """Quick test to verify DB and registration works."""
     import traceback
     try:
-        con = sqlite3.connect(AUTH_DB)
+        con = get_db()
         con.execute("SELECT count(*) FROM users").fetchone()
         con.close()
         test_hash = hash_password("testpass123")
@@ -2000,7 +2013,7 @@ def movement():
     live = []
     # Pull real orders from analytics DB (last 30)
     try:
-        con = sqlite3.connect(DB_PATH)
+        con = get_analytics_db()
         rows = con.execute(
             "SELECT ts, lang, product FROM events ORDER BY id DESC LIMIT 30"
         ).fetchall()
@@ -2222,7 +2235,7 @@ def register():
             return jsonify({"error":"Name is required"}), 400
         if len(pw) < 6:
             return jsonify({"error":"Password must be at least 6 characters"}), 400
-        con = sqlite3.connect(AUTH_DB)
+        con = get_db()
         con.execute("INSERT INTO users (email,name,password_hash) VALUES (?,?,?)",
                     (email, name, hash_password(pw)))
         user_id = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
@@ -2243,7 +2256,7 @@ def login():
         pw    = data.get("password","")
         if not email or not pw:
             return jsonify({"error":"Email and password required"}), 400
-        con = sqlite3.connect(AUTH_DB)
+        con = get_db()
         row = con.execute("SELECT id,name,avatar FROM users WHERE email=? AND password_hash=?",
                           (email, hash_password(pw))).fetchone()
         con.close()
@@ -2258,7 +2271,7 @@ def login():
 def logout():
     token = request.headers.get("X-Auth-Token") or request.cookies.get("srd_token")
     if token:
-        con = sqlite3.connect(AUTH_DB)
+        con = get_db()
         con.execute("DELETE FROM sessions WHERE token=?", (token,))
         con.commit()
         con.close()
@@ -2289,7 +2302,7 @@ def google_auth():
     except Exception as e:
         return jsonify({"error":"Invalid Google token"}), 400
 
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     row = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
     if row:
         user_id = row[0]
@@ -2325,7 +2338,7 @@ def history():
 def clear_history():
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     con.execute("DELETE FROM chat_history WHERE user_id=?", (user["id"],))
     con.commit()
     con.close()
@@ -2849,7 +2862,7 @@ SHOPIFY_TOKEN   = os.environ.get("SHOPIFY_ADMIN_TOKEN", "")  # Admin API token
 
 def get_or_create_user_by_shopify(shopify_customer_id, email, name, avatar=""):
     """Link a Shopify customer to our users DB, or create if new."""
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     row = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
     if row:
         user_id = row[0]
@@ -2901,7 +2914,7 @@ def shopify_verify():
 
 def get_recommendation_history(user_id):
     """Extract product recommendations from chat history."""
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     rows = con.execute("""SELECT content, ts FROM chat_history
         WHERE user_id=? AND role='assistant' ORDER BY id DESC LIMIT 50""",
         (user_id,)).fetchall()
@@ -2923,7 +2936,7 @@ def rate_experience():
     data   = request.get_json()
     rating = data.get("rating", 0)
     review = data.get("review","")
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     # Add ratings column if not exists
     try:
         con.execute("ALTER TABLE hair_profiles ADD COLUMN site_rating INTEGER DEFAULT 0")
@@ -2953,7 +2966,7 @@ SUBSCRIPTION_PRICE_USD = 80
 APP_BASE_URL           = os.environ.get("APP_BASE_URL", "https://ai-hair-advisor.onrender.com")
 
 def init_subscription_db():
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     con.execute("""CREATE TABLE IF NOT EXISTS subscriptions (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id         INTEGER UNIQUE NOT NULL,
@@ -2981,7 +2994,7 @@ def init_subscription_db():
 init_subscription_db()
 
 def get_subscription(user_id):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     row = con.execute("SELECT * FROM subscriptions WHERE user_id=?", (user_id,)).fetchone()
     con.close()
     if not row: return None
@@ -3004,7 +3017,7 @@ def is_subscribed(user_id):
     return False
 
 def get_session_count(session_id, user_id=None):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     if user_id:
         row = con.execute("SELECT count FROM session_usage WHERE user_id=?", (user_id,)).fetchone()
     else:
@@ -3013,7 +3026,7 @@ def get_session_count(session_id, user_id=None):
     return row[0] if row else 0
 
 def increment_session_count(session_id, user_id=None):
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     if user_id:
         row = con.execute("SELECT id FROM session_usage WHERE user_id=?", (user_id,)).fetchone()
         if row:
@@ -3111,7 +3124,7 @@ def create_checkout():
             session = json.loads(r.read())
 
         # Save stripe customer id
-        con = sqlite3.connect(AUTH_DB)
+        con = get_db()
         row = con.execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],)).fetchone()
         if row:
             con.execute("UPDATE subscriptions SET stripe_customer=?,updated_at=? WHERE user_id=?",
@@ -3149,7 +3162,7 @@ def stripe_webhook():
         if obj.get("metadata",{}).get("user_id"):
             user_id = int(obj["metadata"]["user_id"])
         elif obj.get("customer"):
-            con = sqlite3.connect(AUTH_DB)
+            con = get_db()
             row = con.execute("SELECT user_id FROM subscriptions WHERE stripe_customer=?",
                               (obj["customer"],)).fetchone()
             con.close()
@@ -3158,7 +3171,7 @@ def stripe_webhook():
         if not user_id:
             return jsonify({"ok":True})
 
-        con = sqlite3.connect(AUTH_DB)
+        con = get_db()
         if event_type in ("customer.subscription.created","customer.subscription.updated"):
             status      = obj.get("status","inactive")
             trial_end   = datetime.datetime.utcfromtimestamp(obj["trial_end"]).isoformat() if obj.get("trial_end") else None
@@ -3194,7 +3207,7 @@ def activate_shopify():
     data   = request.get_json()
     sub_id = data.get("shopify_sub_id","")
     trial_end = (datetime.datetime.utcnow() + datetime.timedelta(days=STRIPE_TRIAL_DAYS)).isoformat()
-    con = sqlite3.connect(AUTH_DB)
+    con = get_db()
     row = con.execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],)).fetchone()
     if row:
         con.execute("""UPDATE subscriptions SET shopify_sub_id=?,status='trialing',plan='premium',
