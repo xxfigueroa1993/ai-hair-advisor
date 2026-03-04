@@ -1943,6 +1943,17 @@ def add_cors_headers(response):
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
+@app.route("/api/debug-stripe", methods=["GET"])
+def debug_stripe():
+    return jsonify({
+        "stripe_key_set":     bool(STRIPE_SECRET_KEY),
+        "stripe_key_prefix":  STRIPE_SECRET_KEY[:7] if STRIPE_SECRET_KEY else "NOT SET",
+        "price_id_set":       bool(STRIPE_PRICE_ID),
+        "price_id_prefix":    STRIPE_PRICE_ID[:10] if STRIPE_PRICE_ID else "NOT SET",
+        "webhook_set":        bool(STRIPE_WEBHOOK_SECRET),
+        "app_base_url":       APP_BASE_URL,
+    })
+
 @app.route("/api/test-register", methods=["GET"])
 def test_register():
     """Quick test to verify DB and registration works."""
