@@ -166,8 +166,11 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 18px 28px;
+  padding: 16px 24px;
   z-index: 100;
+  background: rgba(250,246,243,0.60);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(193,163,162,0.12);
 }
 
 .top-btn {
@@ -549,42 +552,38 @@ body {
 
 /* ── AUTH BAR ── */
 #authBar {
-  position: fixed;
-  top: 12px;
-  right: 16px;
-  z-index: 1000;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 #authBtn {
-  padding: 7px 16px;
-  border: 1px solid rgba(193,163,162,0.50);
+  padding: 8px 20px;
+  border: 1px solid #c1a3a2;
   border-radius: 20px;
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: blur(8px);
+  background: #c1a3a2;
   font-family: 'Jost', sans-serif;
   font-size: 10px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   cursor: pointer;
-  color: #9d7f6a;
+  color: #fff;
   transition: all 0.2s;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-weight: 400;
+  box-shadow: 0 2px 12px rgba(193,163,162,0.40);
 }
-#authBtn:hover { background: #c1a3a2; color: #fff; border-color: #c1a3a2; }
+#authBtn:hover { background: #9d7f6a; border-color: #9d7f6a; }
 #userChip {
   display: none;
   align-items: center;
   gap: 8px;
-  background: rgba(255,255,255,0.85);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(193,163,162,0.35);
+  background: rgba(255,255,255,0.92);
+  border: 1px solid rgba(193,163,162,0.40);
   border-radius: 20px;
-  padding: 5px 12px 5px 6px;
+  padding: 4px 12px 4px 5px;
 }
 #userAvatar {
   width: 26px; height: 26px;
@@ -625,16 +624,6 @@ body {
 </head>
 <body>
 
-<!-- ── AUTH BAR ── -->
-<div id="authBar">
-  <a href="/login" id="authBtn">⚡ Sign In</a>
-  <div id="userChip">
-    <div id="userAvatar"></div>
-    <span id="userName"></span>
-    <a href="/dashboard" id="dashLink">Dashboard</a>
-  </div>
-</div>
-
 <!-- ── WELCOME BACK BANNER ── -->
 <div id="welcomeBanner">
   <div class="wb-name" id="wb-name">Welcome back!</div>
@@ -655,8 +644,16 @@ body {
     <option value="de-DE">Deutsch</option>
     <option value="ar-SA">عربي</option>
     <option value="zh-CN">中文</option>
-    <option value="hi-IN">हिन्दी</option>
+    <option value="hi-IN">हिن्दी</option>
   </select>
+  <div id="authBar">
+    <a href="/login" id="authBtn">✦ Sign In</a>
+    <div id="userChip">
+      <div id="userAvatar"></div>
+      <span id="userName"></span>
+      <a href="/dashboard" id="dashLink">Dashboard</a>
+    </div>
+  </div>
 </div>
 
 <div class="sphere-wrap"><div id="halo"></div></div>
@@ -2641,3 +2638,102 @@ loadData();
 loadHistory();
 </script>
 </body></html>"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── SHOPIFY CUSTOMER BRIDGE ───────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SHOPIFY_STORE   = os.environ.get("SHOPIFY_STORE", "supportrd.myshopify.com")
+SHOPIFY_TOKEN   = os.environ.get("SHOPIFY_ADMIN_TOKEN", "")  # Admin API token
+
+def get_or_create_user_by_shopify(shopify_customer_id, email, name, avatar=""):
+    """Link a Shopify customer to our users DB, or create if new."""
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+    if row:
+        user_id = row[0]
+        con.execute("UPDATE users SET name=?,avatar=? WHERE id=?", (name, avatar, user_id))
+    else:
+        con.execute("INSERT INTO users (email,name,avatar,google_id) VALUES (?,?,?,?)",
+                    (email, name, avatar, f"shopify_{shopify_customer_id}"))
+        user_id = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
+    con.commit()
+    con.close()
+    token = create_session(user_id)
+    return token, user_id
+
+@app.route("/api/auth/shopify", methods=["POST"])
+def shopify_auth():
+    """
+    Called from Shopify page with customer info injected via Liquid.
+    Shopify injects: customer.id, customer.email, customer.first_name, customer.last_name
+    We create/link their account and return a session token.
+    """
+    data  = request.get_json()
+    cid   = str(data.get("shopify_customer_id",""))
+    email = data.get("email","").strip().lower()
+    name  = data.get("name","").strip()
+    if not email or not cid:
+        return jsonify({"error":"Missing customer data"}), 400
+    token, user_id = get_or_create_user_by_shopify(cid, email, name)
+    profile = get_hair_profile(user_id)
+    history_count = len(get_chat_history(user_id, limit=100))
+    return jsonify({"ok":True,"token":token,"name":name,"email":email,
+                    "user_id":user_id,"profile":profile,"chat_count":history_count})
+
+@app.route("/api/auth/shopify-verify", methods=["POST"])
+def shopify_verify():
+    """Verify a session token and return full profile — called on every dashboard load."""
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    profile = get_hair_profile(user["id"])
+    history = get_chat_history(user["id"], limit=50)
+    recs    = get_recommendation_history(user["id"])
+    return jsonify({
+        "ok": True,
+        "user": user,
+        "profile": profile,
+        "history": history,
+        "recommendations": recs,
+        "chat_count": len(history)
+    })
+
+def get_recommendation_history(user_id):
+    """Extract product recommendations from chat history."""
+    con = sqlite3.connect(AUTH_DB)
+    rows = con.execute("""SELECT content, ts FROM chat_history
+        WHERE user_id=? AND role='assistant' ORDER BY id DESC LIMIT 50""",
+        (user_id,)).fetchall()
+    con.close()
+    recs = []
+    products = ["Formula Exclusiva","Laciador Crece","Gotero Rapido","Gotitas Brillantes","Mascarilla","Shampoo Aloe Vera"]
+    for content, ts in rows:
+        for p in products:
+            if p.lower() in content.lower():
+                recs.append({"product":p,"context":content[:120]+"...","ts":ts})
+                break
+    return recs[:20]
+
+@app.route("/api/rate-experience", methods=["POST"])
+def rate_experience():
+    """Save a website experience rating from the dashboard."""
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    data   = request.get_json()
+    rating = data.get("rating", 0)
+    review = data.get("review","")
+    con = sqlite3.connect(AUTH_DB)
+    # Add ratings column if not exists
+    try:
+        con.execute("ALTER TABLE hair_profiles ADD COLUMN site_rating INTEGER DEFAULT 0")
+        con.execute("ALTER TABLE hair_profiles ADD COLUMN site_review TEXT DEFAULT ''")
+        con.commit()
+    except: pass
+    con.execute("""INSERT INTO hair_profiles (user_id, site_rating, site_review)
+        VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+        site_rating=excluded.site_rating, site_review=excluded.site_review""",
+        (user["id"], rating, review))
+    con.commit()
+    con.close()
+    return jsonify({"ok":True})
