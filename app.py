@@ -1782,8 +1782,26 @@ def shopify_proxy():
 @app.after_request
 def add_headers(response):
     response.headers["Access-Control-Allow-Origin"]  = "*"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token, X-Session-Id"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, DELETE"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
+
+@app.route("/api/auth/register", methods=["OPTIONS"])
+@app.route("/api/auth/login", methods=["OPTIONS"])
+@app.route("/api/auth/google", methods=["OPTIONS"])
+@app.route("/api/auth/me", methods=["OPTIONS"])
+@app.route("/api/profile", methods=["OPTIONS"])
+@app.route("/api/history", methods=["OPTIONS"])
+@app.route("/api/history/clear", methods=["OPTIONS"])
+@app.route("/api/auth/shopify", methods=["OPTIONS"])
+@app.route("/api/auth/shopify-verify", methods=["OPTIONS"])
+@app.route("/api/rate-experience", methods=["OPTIONS"])
+@app.route("/api/recommend", methods=["OPTIONS"])
+@app.route("/api/subscription/status", methods=["OPTIONS"])
+@app.route("/api/subscription/checkout", methods=["OPTIONS"])
+def options_handler():
+    return "", 200
     response.headers["X-Frame-Options"]              = "ALLOWALL"
     response.headers["Content-Security-Policy"]      = "frame-ancestors *"
     response.headers["Permissions-Policy"]           = "microphone=*, camera=()"
@@ -2164,15 +2182,17 @@ def save_chat_message(user_id, role, content):
 
 @app.route("/api/auth/register", methods=["POST"])
 def register():
-    data = request.get_json()
-    email = (data.get("email","")).strip().lower()
-    name  = data.get("name","").strip()
-    pw    = data.get("password","")
-    if not email or not pw:
-        return jsonify({"error":"Email and password required"}), 400
-    if len(pw) < 6:
-        return jsonify({"error":"Password must be at least 6 characters"}), 400
     try:
+        data = request.get_json(force=True, silent=True) or {}
+        email = (data.get("email","")).strip().lower()
+        name  = data.get("name","").strip()
+        pw    = data.get("password","")
+        if not email or not pw:
+            return jsonify({"error":"Email and password required"}), 400
+        if not name:
+            return jsonify({"error":"Name is required"}), 400
+        if len(pw) < 6:
+            return jsonify({"error":"Password must be at least 6 characters"}), 400
         con = sqlite3.connect(AUTH_DB)
         con.execute("INSERT INTO users (email,name,password_hash) VALUES (?,?,?)",
                     (email, name, hash_password(pw)))
@@ -2183,20 +2203,27 @@ def register():
         return jsonify({"ok":True,"token":token,"name":name,"email":email})
     except sqlite3.IntegrityError:
         return jsonify({"error":"Email already registered"}), 409
+    except Exception as e:
+        return jsonify({"error":"Registration failed: " + str(e)}), 500
 
 @app.route("/api/auth/login", methods=["POST"])
 def login():
-    data = request.get_json()
-    email = (data.get("email","")).strip().lower()
-    pw    = data.get("password","")
-    con   = sqlite3.connect(AUTH_DB)
-    row   = con.execute("SELECT id,name,avatar FROM users WHERE email=? AND password_hash=?",
-                        (email, hash_password(pw))).fetchone()
-    con.close()
-    if not row:
-        return jsonify({"error":"Invalid email or password"}), 401
-    token = create_session(row[0])
-    return jsonify({"ok":True,"token":token,"name":row[1],"email":email,"avatar":row[2]})
+    try:
+        data  = request.get_json(force=True, silent=True) or {}
+        email = (data.get("email","")).strip().lower()
+        pw    = data.get("password","")
+        if not email or not pw:
+            return jsonify({"error":"Email and password required"}), 400
+        con = sqlite3.connect(AUTH_DB)
+        row = con.execute("SELECT id,name,avatar FROM users WHERE email=? AND password_hash=?",
+                          (email, hash_password(pw))).fetchone()
+        con.close()
+        if not row:
+            return jsonify({"error":"Invalid email or password"}), 401
+        token = create_session(row[0])
+        return jsonify({"ok":True,"token":token,"name":row[1],"email":email,"avatar":row[2]})
+    except Exception as e:
+        return jsonify({"error":"Login failed: " + str(e)}), 500
 
 @app.route("/api/auth/logout", methods=["POST"])
 def logout():
