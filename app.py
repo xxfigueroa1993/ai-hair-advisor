@@ -620,6 +620,38 @@ body {
 #welcomeBanner .wb-btn { flex: 1; padding: 8px; border-radius: 10px; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; text-align: center; text-decoration: none; font-family: 'Jost', sans-serif; }
 .wb-btn-rose { background: #c1a3a2; color: #fff; }
 .wb-btn-outline { border: 1px solid rgba(193,163,162,0.40); color: #9d7f6a; }
+
+/* ── PAYWALL BANNER ── */
+#paywallBanner {
+  display: none;
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 92%;
+  max-width: 480px;
+  background: #fff;
+  border: 1px solid rgba(193,163,162,0.30);
+  border-radius: 20px;
+  padding: 20px 22px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.14);
+  z-index: 2000;
+  animation: pwIn 0.45s cubic-bezier(0.22,1,0.36,1);
+}
+@keyframes pwIn { from{opacity:0;transform:translateX(-50%) translateY(16px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+#paywallBanner .pw-top { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; }
+#paywallBanner .pw-title { font-family:'Cormorant Garamond',serif; font-size:20px; font-style:italic; color:#0d0906; }
+#paywallBanner .pw-close { background:none; border:none; font-size:18px; cursor:pointer; color:rgba(0,0,0,0.25); padding:0; line-height:1; }
+#paywallBanner .pw-desc { font-size:12px; color:rgba(0,0,0,0.45); line-height:1.6; margin-bottom:14px; letter-spacing:0.03em; }
+#paywallBanner .pw-trial { background:linear-gradient(135deg,#c1a3a2,#9d7f6a); color:#fff; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; padding:5px 14px; border-radius:20px; display:inline-block; margin-bottom:14px; }
+#paywallBanner .pw-btns { display:flex; gap:10px; }
+#paywallBanner .pw-btn-upgrade { flex:2; padding:12px; background:#c1a3a2; color:#fff; border:none; border-radius:24px; font-family:'Jost',sans-serif; font-size:11px; letter-spacing:0.12em; text-transform:uppercase; cursor:pointer; transition:background 0.2s; }
+#paywallBanner .pw-btn-upgrade:hover { background:#9d7f6a; }
+#paywallBanner .pw-btn-continue { flex:1; padding:12px; background:transparent; color:rgba(0,0,0,0.35); border:1px solid rgba(0,0,0,0.12); border-radius:24px; font-family:'Jost',sans-serif; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; cursor:pointer; }
+#paywallBanner .pw-features { display:grid; grid-template-columns:1fr 1fr; gap:5px; margin-bottom:14px; }
+#paywallBanner .pw-feature { font-size:11px; color:rgba(0,0,0,0.50); display:flex; align-items:center; gap:5px; }
+#paywallBanner .pw-feature::before { content:'✦'; color:#c1a3a2; font-size:9px; }
+#paywallCounter { display:none; position:fixed; top:58px; left:50%; transform:translateX(-50%); background:rgba(193,163,162,0.90); backdrop-filter:blur(8px); color:#fff; font-family:'Jost',sans-serif; font-size:10px; letter-spacing:0.12em; text-transform:uppercase; padding:5px 16px; border-radius:20px; z-index:999; }
 </style>
 </head>
 <body>
@@ -712,6 +744,33 @@ body {
 <div id="footer">
   <span id="faqBtn">FAQ</span>
   <span id="contactBtn">Contact Us</span>
+</div>
+
+<!-- ── PAYWALL COUNTER ── -->
+<div id="paywallCounter" id="pw-counter">Free responses: <span id="pw-count">3</span> remaining</div>
+
+<!-- ── PAYWALL BANNER ── -->
+<div id="paywallBanner">
+  <div class="pw-top">
+    <div>
+      <div class="pw-trial">7-Day Free Trial · $80/mo after</div>
+      <div class="pw-title">Unlock Full Hair Analysis</div>
+    </div>
+    <button class="pw-close" onclick="closePaywall()">✕</button>
+  </div>
+  <div class="pw-desc">You've used your 3 free responses. Upgrade to Premium for unlimited expert hair advice, your personal Hair Health Score, and full consultation history.</div>
+  <div class="pw-features">
+    <div class="pw-feature">Unlimited Aria conversations</div>
+    <div class="pw-feature">Hair Health Score dashboard</div>
+    <div class="pw-feature">Full consultation history</div>
+    <div class="pw-feature">Salon recommendations</div>
+    <div class="pw-feature">Medical resource guidance</div>
+    <div class="pw-feature">Priority live advisor access</div>
+  </div>
+  <div class="pw-btns">
+    <button class="pw-btn-upgrade" onclick="goUpgrade()">Start Free Trial</button>
+    <button class="pw-btn-continue" onclick="closePaywall()">Continue Free</button>
+  </div>
 </div>
 
 <script>
@@ -1163,7 +1222,7 @@ async function getRecommendation(userText) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
-    const authHeaders = {"Content-Type": "application/json"};
+    const authHeaders = {"Content-Type": "application/json", "X-Session-Id": SESSION_ID};
     if(window._srd_token) authHeaders["X-Auth-Token"] = window._srd_token;
     const resp = await fetch("https://ai-hair-advisor.onrender.com/api/recommend", {
       method: "POST",
@@ -1178,6 +1237,8 @@ async function getRecommendation(userText) {
     clearTimeout(timeout);
     if (!resp.ok) throw new Error("not ok");
     const data = await resp.json();
+    // Handle subscription gating
+    handleSubscriptionResponse(data);
     if (data.recommendation) return data.recommendation;
     throw new Error("empty");
   } catch(e) {
@@ -1416,21 +1477,91 @@ function showUserChip(name, avatar){
   if(avatar){ av.innerHTML = '<img src="'+avatar+'" alt="">'; }
   else { av.textContent = (name||'?')[0].toUpperCase(); }
 }
+
+// ── PAYWALL + SUBSCRIPTION SYSTEM ────────────────────────────────────────────
+let _paywallDismissed = false;
+const SESSION_ID = 'srd_' + Math.random().toString(36).substr(2,9);
+
+function handleSubscriptionResponse(data){
+  if(!data) return;
+  const count    = data.response_count || 0;
+  const limit    = data.free_limit || 3;
+  const subbed   = data.subscribed || false;
+  const remaining = Math.max(0, limit - count);
+
+  if(subbed) {
+    // Hide all paywall elements for subscribers
+    document.getElementById('paywallCounter').style.display = 'none';
+    document.getElementById('paywallBanner').style.display  = 'none';
+    return;
+  }
+
+  // Show counter if they've used at least 1 free response
+  if(count >= 1 && count < limit){
+    const counter = document.getElementById('paywallCounter');
+    counter.style.display = 'block';
+    document.getElementById('pw-count').textContent = remaining;
+    setTimeout(()=>{ counter.style.display='none'; }, 4000);
+  }
+
+  // Show soft paywall banner after limit hit
+  if(data.show_paywall && !_paywallDismissed){
+    setTimeout(()=>{
+      document.getElementById('paywallBanner').style.display = 'block';
+    }, 800);
+  }
+}
+
+function closePaywall(){
+  _paywallDismissed = true;
+  document.getElementById('paywallBanner').style.display = 'none';
+}
+
+async function goUpgrade(){
+  const token = localStorage.getItem('srd_token');
+  if(!token){
+    // Not logged in — send to login first
+    window.location.href = '/login?next=subscribe';
+    return;
+  }
+  // Create Stripe checkout
+  const r = await fetch('/api/subscription/checkout', {
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Auth-Token':token}
+  });
+  const d = await r.json();
+  if(d.checkout_url){
+    window.location.href = d.checkout_url;
+  } else if(d.setup_needed){
+    // Stripe not configured yet — send to Shopify subscription page
+    window.location.href = 'https://supportrd.com/products/hair-advisor-premium';
+  } else {
+    alert('Something went wrong. Please try again.');
+  }
+}
 </script>
 </body>
 </html>"""
 
 
-# ── API: RECOMMEND (UPGRADED WITH USER HISTORY + PROFILE) ────────────────────
+# ── API: RECOMMEND (WITH SUBSCRIPTION GATING) ────────────────────────────────
+FREE_SYSTEM_PROMPT = """You are Aria, a hair care advisor for SupportRD. Give ONE brief, helpful product recommendation in 2 sentences max. Mention the product name and price. End every response with: "For deeper hair analysis, personalized advice, and your full hair health score, upgrade to SupportRD Premium — start free for 7 days." Keep it warm and helpful."""
+
 @app.route("/api/recommend", methods=["POST"])
 def recommend():
-    data      = request.get_json()
-    user_text = data.get("text", "")
-    lang      = data.get("lang", "en-US")
-    history   = data.get("history", [])
+    data       = request.get_json()
+    user_text  = data.get("text", "")
+    lang       = data.get("lang", "en-US")
+    history    = data.get("history", [])
+    session_id = request.headers.get("X-Session-Id", request.remote_addr or "anon")
 
-    # Check if user is logged in
-    user = get_current_user()
+    # Check user + subscription
+    user       = get_current_user()
+    subscribed = is_subscribed(user["id"]) if user else False
+
+    # Count responses for gating
+    count = get_session_count(session_id, user["id"] if user else None)
+    show_paywall = not subscribed and count >= FREE_RESPONSE_LIMIT
 
     lang_names = {
         "en-US":"English","es-ES":"Spanish","fr-FR":"French",
@@ -1440,12 +1571,14 @@ def recommend():
     lang_name  = lang_names.get(lang, "English")
     lang_instr = f"\n\nIMPORTANT: Your ENTIRE response must be in {lang_name}."
 
-    # Build profile context if logged in
-    profile_context = ""
-    if user:
-        profile = get_hair_profile(user["id"])
-        if profile.get("hair_type") or profile.get("hair_concerns"):
-            profile_context = f"""
+    # ── CHOOSE SYSTEM PROMPT BASED ON TIER ───────────────────────────────────
+    if subscribed:
+        # Full premium experience
+        profile_context = ""
+        if user:
+            profile = get_hair_profile(user["id"])
+            if profile.get("hair_type") or profile.get("hair_concerns"):
+                profile_context = f"""
 
 RETURNING CLIENT PROFILE:
 - Name: {user.get("name","this client")}
@@ -1454,9 +1587,13 @@ RETURNING CLIENT PROFILE:
 - Treatments history: {profile.get("treatments","none saved")}
 - Products tried: {profile.get("products_tried","none saved")}
 Reference this naturally in your response."""
-
-        # Save this message to their history
-        save_chat_message(user["id"], "user", user_text)
+            save_chat_message(user["id"], "user", user_text)
+        active_prompt = SYSTEM_PROMPT + profile_context + lang_instr
+        max_tokens    = 350
+    else:
+        # Free tier — basic response only, always nudge upgrade
+        active_prompt = FREE_SYSTEM_PROMPT + lang_instr
+        max_tokens    = 180
 
     if not ANTHROPIC_API_KEY:
         return jsonify({"recommendation": None, "error": "No API key"}), 500
@@ -1464,16 +1601,16 @@ Reference this naturally in your response."""
     try:
         import urllib.request as urlreq
 
-        # Build messages — use saved DB history for logged-in users
+        # Build messages
         messages = []
-        if user:
+        if subscribed and user:
             db_history = get_chat_history(user["id"], limit=16)
-            # exclude the message we just saved (last one)
             for h in db_history[:-1]:
                 if h.get("role") in ("user","assistant") and h.get("content"):
                     messages.append({"role": h["role"], "content": h["content"]})
         else:
-            for h in history:
+            # Free users only get last 1 exchange for context
+            for h in history[-2:]:
                 if h.get("role") in ("user","assistant") and h.get("content"):
                     messages.append({"role": h["role"], "content": h["content"]})
 
@@ -1481,8 +1618,8 @@ Reference this naturally in your response."""
 
         payload = json.dumps({
             "model": "claude-sonnet-4-20250514",
-            "max_tokens": 300,
-            "system": SYSTEM_PROMPT + profile_context + lang_instr,
+            "max_tokens": max_tokens,
+            "system": active_prompt,
             "messages": messages
         }).encode("utf-8")
 
@@ -1497,30 +1634,37 @@ Reference this naturally in your response."""
             method="POST"
         )
         with urlreq.urlopen(req, timeout=12) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
+            result    = json.loads(resp.read().decode("utf-8"))
             recommendation = result["content"][0]["text"].strip()
 
-        # Save AI response to history if logged in
-        if user:
+        # Save history + auto-update profile for subscribers
+        if subscribed and user:
             save_chat_message(user["id"], "assistant", recommendation)
-            # Auto-update hair profile from conversation
-            product = extract_product(recommendation)
             concern = extract_concern(user_text)
             if concern:
-                profile = get_hair_profile(user["id"])
+                profile  = get_hair_profile(user["id"])
                 existing = profile.get("hair_concerns","")
                 if concern not in existing:
                     updated = (existing + ", " + concern).strip(", ")
                     save_hair_profile(user["id"], {**profile, "hair_concerns": updated})
+
+        # Increment usage counter
+        increment_session_count(session_id, user["id"] if user else None)
+        new_count = count + 1
 
         product = extract_product(recommendation)
         concern = extract_concern(user_text)
         log_event(lang, user_text, product, concern)
 
         return jsonify({
-            "recommendation": recommendation,
-            "logged_in": user is not None,
-            "user_name": user["name"] if user else None
+            "recommendation":  recommendation,
+            "logged_in":       user is not None,
+            "user_name":       user["name"] if user else None,
+            "subscribed":      subscribed,
+            "response_count":  new_count,
+            "free_limit":      FREE_RESPONSE_LIMIT,
+            "show_paywall":    show_paywall,
+            "paywall_soft":    True
         })
 
     except Exception as e:
@@ -2737,3 +2881,330 @@ def rate_experience():
     con.commit()
     con.close()
     return jsonify({"ok":True})
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── SUBSCRIPTION SYSTEM ───────────────────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+
+STRIPE_SECRET_KEY      = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_PRICE_ID        = os.environ.get("STRIPE_PRICE_ID", "")        # $80/mo price
+STRIPE_WEBHOOK_SECRET  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_TRIAL_DAYS      = 7
+FREE_RESPONSE_LIMIT    = 3
+SUBSCRIPTION_PRICE_USD = 80
+APP_BASE_URL           = os.environ.get("APP_BASE_URL", "https://ai-hair-advisor.onrender.com")
+
+def init_subscription_db():
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("""CREATE TABLE IF NOT EXISTS subscriptions (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id         INTEGER UNIQUE NOT NULL,
+        stripe_customer TEXT,
+        stripe_sub_id   TEXT,
+        shopify_sub_id  TEXT,
+        status          TEXT DEFAULT 'inactive',
+        plan            TEXT DEFAULT 'free',
+        trial_start     TEXT,
+        trial_end       TEXT,
+        current_period_end TEXT,
+        created_at      TEXT DEFAULT (datetime('now')),
+        updated_at      TEXT DEFAULT (datetime('now'))
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS session_usage (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        user_id    INTEGER,
+        count      INTEGER DEFAULT 0,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
+    con.commit()
+    con.close()
+
+init_subscription_db()
+
+def get_subscription(user_id):
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("SELECT * FROM subscriptions WHERE user_id=?", (user_id,)).fetchone()
+    con.close()
+    if not row: return None
+    cols = ["id","user_id","stripe_customer","stripe_sub_id","shopify_sub_id",
+            "status","plan","trial_start","trial_end","current_period_end","created_at","updated_at"]
+    return dict(zip(cols, row))
+
+def is_subscribed(user_id):
+    """Returns True if user has active subscription or active trial."""
+    sub = get_subscription(user_id)
+    if not sub: return False
+    if sub["status"] in ("active", "trialing"): return True
+    # Check trial manually
+    if sub["trial_end"]:
+        try:
+            trial_end = datetime.datetime.fromisoformat(sub["trial_end"])
+            if datetime.datetime.utcnow() < trial_end:
+                return True
+        except: pass
+    return False
+
+def get_session_count(session_id, user_id=None):
+    con = sqlite3.connect(AUTH_DB)
+    if user_id:
+        row = con.execute("SELECT count FROM session_usage WHERE user_id=?", (user_id,)).fetchone()
+    else:
+        row = con.execute("SELECT count FROM session_usage WHERE session_id=? AND user_id IS NULL", (session_id,)).fetchone()
+    con.close()
+    return row[0] if row else 0
+
+def increment_session_count(session_id, user_id=None):
+    con = sqlite3.connect(AUTH_DB)
+    if user_id:
+        row = con.execute("SELECT id FROM session_usage WHERE user_id=?", (user_id,)).fetchone()
+        if row:
+            con.execute("UPDATE session_usage SET count=count+1 WHERE user_id=?", (user_id,))
+        else:
+            con.execute("INSERT INTO session_usage (session_id,user_id,count) VALUES (?,?,1)", (session_id, user_id))
+    else:
+        row = con.execute("SELECT id FROM session_usage WHERE session_id=? AND user_id IS NULL", (session_id,)).fetchone()
+        if row:
+            con.execute("UPDATE session_usage SET count=count+1 WHERE session_id=?", (session_id,))
+        else:
+            con.execute("INSERT INTO session_usage (session_id,user_id,count) VALUES (?,NULL,1)", (session_id,))
+    con.commit()
+    con.close()
+
+# ── SUBSCRIPTION STATUS ENDPOINT ──────────────────────────────────────────────
+@app.route("/api/subscription/status", methods=["GET"])
+def subscription_status():
+    user = get_current_user()
+    session_id = request.headers.get("X-Session-Id","anon")
+    if user:
+        sub      = get_subscription(user["id"])
+        count    = get_session_count(session_id, user["id"])
+        subscribed = is_subscribed(user["id"])
+        return jsonify({
+            "subscribed": subscribed,
+            "plan": sub["plan"] if sub else "free",
+            "status": sub["status"] if sub else "inactive",
+            "trial_end": sub["trial_end"] if sub else None,
+            "current_period_end": sub["current_period_end"] if sub else None,
+            "response_count": count,
+            "free_limit": FREE_RESPONSE_LIMIT,
+            "show_paywall": not subscribed and count >= FREE_RESPONSE_LIMIT
+        })
+    else:
+        count = get_session_count(session_id)
+        return jsonify({
+            "subscribed": False,
+            "plan": "free",
+            "status": "inactive",
+            "response_count": count,
+            "free_limit": FREE_RESPONSE_LIMIT,
+            "show_paywall": count >= FREE_RESPONSE_LIMIT
+        })
+
+# ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
+@app.route("/api/subscription/checkout", methods=["POST"])
+def create_checkout():
+    """Create a Stripe checkout session with 7-day free trial."""
+    user = get_current_user()
+    if not user:
+        return jsonify({"error":"Must be logged in to subscribe"}), 401
+    if not STRIPE_SECRET_KEY or not STRIPE_PRICE_ID:
+        return jsonify({"error":"Stripe not configured","setup_needed":True}), 503
+
+    try:
+        import urllib.request as urlreq, urllib.parse as urlparse
+        # Create/get Stripe customer
+        sub = get_subscription(user["id"])
+        stripe_customer = sub["stripe_customer"] if sub else None
+
+        if not stripe_customer:
+            cust_data = urlparse.urlencode({
+                "email": user["email"],
+                "name": user["name"] or user["email"],
+                "metadata[user_id]": str(user["id"])
+            }).encode()
+            req = urlreq.Request("https://api.stripe.com/v1/customers",
+                data=cust_data,
+                headers={"Authorization": f"Bearer {STRIPE_SECRET_KEY}",
+                         "Content-Type": "application/x-www-form-urlencoded"},
+                method="POST")
+            with urlreq.urlopen(req) as r:
+                cust = json.loads(r.read())
+            stripe_customer = cust["id"]
+
+        # Create checkout session
+        params = urlparse.urlencode({
+            "customer": stripe_customer,
+            "mode": "subscription",
+            "line_items[0][price]": STRIPE_PRICE_ID,
+            "line_items[0][quantity]": "1",
+            "subscription_data[trial_period_days]": str(STRIPE_TRIAL_DAYS),
+            "success_url": f"{APP_BASE_URL}/subscription/success?session_id={{CHECKOUT_SESSION_ID}}",
+            "cancel_url": f"{APP_BASE_URL}/subscription/cancel",
+            "metadata[user_id]": str(user["id"])
+        }).encode()
+
+        req = urlreq.Request("https://api.stripe.com/v1/checkout/sessions",
+            data=params,
+            headers={"Authorization": f"Bearer {STRIPE_SECRET_KEY}",
+                     "Content-Type": "application/x-www-form-urlencoded"},
+            method="POST")
+        with urlreq.urlopen(req) as r:
+            session = json.loads(r.read())
+
+        # Save stripe customer id
+        con = sqlite3.connect(AUTH_DB)
+        row = con.execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],)).fetchone()
+        if row:
+            con.execute("UPDATE subscriptions SET stripe_customer=?,updated_at=? WHERE user_id=?",
+                        (stripe_customer, datetime.datetime.utcnow().isoformat(), user["id"]))
+        else:
+            con.execute("INSERT INTO subscriptions (user_id,stripe_customer,status,plan) VALUES (?,?,'inactive','free')",
+                        (user["id"], stripe_customer))
+        con.commit()
+        con.close()
+
+        return jsonify({"checkout_url": session["url"], "session_id": session["id"]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ── STRIPE WEBHOOK ────────────────────────────────────────────────────────────
+@app.route("/api/subscription/webhook", methods=["POST"])
+def stripe_webhook():
+    payload = request.get_data()
+    sig     = request.headers.get("Stripe-Signature","")
+    event_type = None
+    try:
+        if STRIPE_WEBHOOK_SECRET:
+            # Verify signature manually
+            import hmac, hashlib
+            ts    = sig.split(",")[0].split("=")[1]
+            v1    = sig.split("v1=")[1].split(",")[0]
+            signed = f"{ts}.{payload.decode()}"
+            expected = hmac.new(STRIPE_WEBHOOK_SECRET.encode(), signed.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(v1, expected):
+                return jsonify({"error":"Invalid signature"}), 400
+        event = json.loads(payload)
+        event_type = event["type"]
+        obj        = event["data"]["object"]
+        user_id    = None
+        if obj.get("metadata",{}).get("user_id"):
+            user_id = int(obj["metadata"]["user_id"])
+        elif obj.get("customer"):
+            con = sqlite3.connect(AUTH_DB)
+            row = con.execute("SELECT user_id FROM subscriptions WHERE stripe_customer=?",
+                              (obj["customer"],)).fetchone()
+            con.close()
+            if row: user_id = row[0]
+
+        if not user_id:
+            return jsonify({"ok":True})
+
+        con = sqlite3.connect(AUTH_DB)
+        if event_type in ("customer.subscription.created","customer.subscription.updated"):
+            status      = obj.get("status","inactive")
+            trial_end   = datetime.datetime.utcfromtimestamp(obj["trial_end"]).isoformat() if obj.get("trial_end") else None
+            period_end  = datetime.datetime.utcfromtimestamp(obj["current_period_end"]).isoformat() if obj.get("current_period_end") else None
+            sub_id      = obj.get("id","")
+            row = con.execute("SELECT id FROM subscriptions WHERE user_id=?", (user_id,)).fetchone()
+            if row:
+                con.execute("""UPDATE subscriptions SET stripe_sub_id=?,status=?,plan='premium',
+                    trial_end=?,current_period_end=?,updated_at=? WHERE user_id=?""",
+                    (sub_id, status, trial_end, period_end, datetime.datetime.utcnow().isoformat(), user_id))
+            else:
+                con.execute("""INSERT INTO subscriptions (user_id,stripe_sub_id,status,plan,trial_end,current_period_end)
+                    VALUES (?,?,'trialing','premium',?,?)""",
+                    (user_id, sub_id, trial_end, period_end))
+        elif event_type == "customer.subscription.deleted":
+            con.execute("UPDATE subscriptions SET status='canceled',plan='free',updated_at=? WHERE user_id=?",
+                        (datetime.datetime.utcnow().isoformat(), user_id))
+        elif event_type in ("invoice.payment_failed",):
+            con.execute("UPDATE subscriptions SET status='past_due',updated_at=? WHERE user_id=?",
+                        (datetime.datetime.utcnow().isoformat(), user_id))
+        con.commit()
+        con.close()
+    except Exception as e:
+        print(f"Webhook error: {e}")
+    return jsonify({"ok":True})
+
+# ── SHOPIFY SUBSCRIPTION (manual activation for Shopify flow) ─────────────────
+@app.route("/api/subscription/activate-shopify", methods=["POST"])
+def activate_shopify():
+    """Called when a Shopify subscription is confirmed."""
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    data   = request.get_json()
+    sub_id = data.get("shopify_sub_id","")
+    trial_end = (datetime.datetime.utcnow() + datetime.timedelta(days=STRIPE_TRIAL_DAYS)).isoformat()
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],)).fetchone()
+    if row:
+        con.execute("""UPDATE subscriptions SET shopify_sub_id=?,status='trialing',plan='premium',
+            trial_end=?,updated_at=? WHERE user_id=?""",
+            (sub_id, trial_end, datetime.datetime.utcnow().isoformat(), user["id"]))
+    else:
+        con.execute("""INSERT INTO subscriptions (user_id,shopify_sub_id,status,plan,trial_end)
+            VALUES (?,?,'trialing','premium',?)""",
+            (user["id"], sub_id, trial_end))
+    con.commit()
+    con.close()
+    return jsonify({"ok":True,"trial_end":trial_end})
+
+# ── SUBSCRIPTION SUCCESS/CANCEL PAGES ─────────────────────────────────────────
+@app.route("/subscription/success")
+def subscription_success():
+    return """<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SupportRD — Welcome to Premium</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#f0ebe8;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:'Jost',sans-serif;padding:24px;}
+.card{background:#fff;border-radius:24px;padding:56px 40px;max-width:460px;width:100%;text-align:center;box-shadow:0 12px 48px rgba(0,0,0,0.08);}
+.icon{font-size:56px;margin-bottom:20px;}
+.title{font-family:'Cormorant Garamond',serif;font-size:36px;font-style:italic;color:#0d0906;margin-bottom:10px;}
+.sub{font-size:13px;color:rgba(0,0,0,0.40);letter-spacing:0.06em;line-height:1.7;margin-bottom:28px;}
+.trial-badge{background:linear-gradient(135deg,#c1a3a2,#9d7f6a);color:#fff;padding:10px 24px;border-radius:20px;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;display:inline-block;margin-bottom:28px;}
+.btn{display:block;padding:14px;background:#c1a3a2;color:#fff;text-decoration:none;border-radius:30px;font-family:'Jost',sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:10px;transition:background 0.2s;}
+.btn:hover{background:#9d7f6a;}
+.btn-outline{background:transparent;color:#9d7f6a;border:1px solid rgba(193,163,162,0.40);}
+</style></head><body>
+<div class="card">
+  <div class="icon">🌿</div>
+  <div class="title">Welcome to Premium</div>
+  <div class="trial-badge">7-Day Free Trial Active</div>
+  <div class="sub">Your hair journey just leveled up. You now have unlimited access to Aria, your full hair health dashboard, and priority advisor support.</div>
+  <a href="/" class="btn">Talk to Aria Now</a>
+  <a href="/dashboard" class="btn btn-outline">View My Dashboard</a>
+</div>
+<script>
+// Update token subscription status in localStorage
+var u = localStorage.getItem('srd_user');
+if(u){ try{ var p=JSON.parse(u); p.plan='premium'; localStorage.setItem('srd_user',JSON.stringify(p)); }catch(e){} }
+</script>
+</body></html>"""
+
+@app.route("/subscription/cancel")
+def subscription_cancel():
+    return """<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SupportRD — No worries</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#f0ebe8;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:'Jost',sans-serif;padding:24px;}
+.card{background:#fff;border-radius:24px;padding:56px 40px;max-width:460px;width:100%;text-align:center;box-shadow:0 12px 48px rgba(0,0,0,0.08);}
+.title{font-family:'Cormorant Garamond',serif;font-size:32px;font-style:italic;color:#0d0906;margin-bottom:12px;}
+.sub{font-size:13px;color:rgba(0,0,0,0.40);letter-spacing:0.06em;line-height:1.7;margin-bottom:28px;}
+.btn{display:block;padding:14px;background:#c1a3a2;color:#fff;text-decoration:none;border-radius:30px;font-family:'Jost',sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:10px;}
+.btn-outline{background:transparent;color:#9d7f6a;border:1px solid rgba(193,163,162,0.40);}
+</style></head><body>
+<div class="card">
+  <div class="title">No worries</div>
+  <div class="sub">You can still get free hair recommendations from Aria anytime. Upgrade whenever you're ready for the full experience.</div>
+  <a href="/" class="btn">Continue with Free</a>
+  <a href="/login" class="btn btn-outline">Sign In to Subscribe Later</a>
+</div>
+</body></html>"""
