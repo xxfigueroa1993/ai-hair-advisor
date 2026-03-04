@@ -6,12 +6,38 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 AUTH_DB = os.path.join(os.path.dirname(__file__), "users.db")
 
+_db_lock = threading.Lock()
+
 def get_db():
-    """Get a SQLite connection with timeout and WAL mode to prevent locking."""
-    con = sqlite3.connect(AUTH_DB, timeout=30, check_same_thread=False)
+    """Get a SQLite connection with WAL mode and locking to prevent conflicts."""
+    con = sqlite3.connect(AUTH_DB, timeout=60, check_same_thread=False)
     con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA busy_timeout=30000")
+    con.execute("PRAGMA synchronous=NORMAL")
+    con.execute("PRAGMA busy_timeout=60000")
+    con.row_factory = sqlite3.Row
     return con
+
+def db_execute(query, params=(), fetchone=False, fetchall=False):
+    """Thread-safe DB execute with auto-retry on lock."""
+    import time
+    for attempt in range(5):
+        try:
+            with _db_lock:
+                con = sqlite3.connect(AUTH_DB, timeout=60, check_same_thread=False)
+                con.execute("PRAGMA journal_mode=WAL")
+                con.execute("PRAGMA busy_timeout=60000")
+                cur = con.execute(query, params)
+                result = None
+                if fetchone: result = cur.fetchone()
+                elif fetchall: result = cur.fetchall()
+                con.commit()
+                con.close()
+                return result
+        except sqlite3.OperationalError as e:
+            if "locked" in str(e) and attempt < 4:
+                time.sleep(0.5 * (attempt + 1))
+                continue
+            raise
 
 def init_auth_db():
     con = get_db()
@@ -59,20 +85,15 @@ def hash_password(pw):
 def create_session(user_id):
     token = secrets.token_hex(32)
     expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
-    con = get_db()
-    con.execute("INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)", (token, user_id, expires))
-    con.execute("UPDATE users SET last_login=? WHERE id=?", (datetime.datetime.utcnow().isoformat(), user_id))
-    con.commit()
-    con.close()
+    db_execute("INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)", (token, user_id, expires))
+    db_execute("UPDATE users SET last_login=? WHERE id=?", (datetime.datetime.utcnow().isoformat(), user_id))
     return token
 
 def get_user_from_token(token):
     if not token: return None
-    con = get_db()
-    row = con.execute("""SELECT u.id,u.email,u.name,u.avatar FROM users u
+    row = db_execute("""SELECT u.id,u.email,u.name,u.avatar FROM users u
         JOIN sessions s ON s.user_id=u.id
-        WHERE s.token=? AND s.expires_at > datetime('now')""", (token,)).fetchone()
-    con.close()
+        WHERE s.token=? AND s.expires_at > datetime('now')""", (token,), fetchone=True)
     if row: return {"id":row[0],"email":row[1],"name":row[2],"avatar":row[3]}
     return None
 
@@ -2235,12 +2256,10 @@ def register():
             return jsonify({"error":"Name is required"}), 400
         if len(pw) < 6:
             return jsonify({"error":"Password must be at least 6 characters"}), 400
-        con = get_db()
-        con.execute("INSERT INTO users (email,name,password_hash) VALUES (?,?,?)",
+        db_execute("INSERT INTO users (email,name,password_hash) VALUES (?,?,?)",
                     (email, name, hash_password(pw)))
-        user_id = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
-        con.commit()
-        con.close()
+        row = db_execute("SELECT id FROM users WHERE email=?", (email,), fetchone=True)
+        user_id = row[0]
         token = create_session(user_id)
         return jsonify({"ok":True,"token":token,"name":name,"email":email})
     except sqlite3.IntegrityError:
@@ -2256,10 +2275,9 @@ def login():
         pw    = data.get("password","")
         if not email or not pw:
             return jsonify({"error":"Email and password required"}), 400
-        con = get_db()
-        row = con.execute("SELECT id,name,avatar FROM users WHERE email=? AND password_hash=?",
-                          (email, hash_password(pw))).fetchone()
-        con.close()
+        row = db_execute(
+            "SELECT id,name,avatar FROM users WHERE email=? AND password_hash=?",
+            (email, hash_password(pw)), fetchone=True)
         if not row:
             return jsonify({"error":"Invalid email or password"}), 401
         token = create_session(row[0])
