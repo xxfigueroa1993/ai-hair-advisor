@@ -1802,6 +1802,10 @@ def add_headers(response):
 @app.route("/api/subscription/checkout", methods=["OPTIONS"])
 def options_handler():
     return "", 200
+
+@app.route("/api/ping", methods=["GET"])
+def ping():
+    return jsonify({"ok": True, "status": "awake"})
     response.headers["X-Frame-Options"]              = "ALLOWALL"
     response.headers["Content-Security-Policy"]      = "frame-ancestors *"
     response.headers["Permissions-Policy"]           = "microphone=*, camera=()"
