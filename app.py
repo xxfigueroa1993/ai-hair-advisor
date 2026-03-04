@@ -3232,29 +3232,25 @@ def stripe_webhook():
     return jsonify({"ok":True})
 
 # ── SHOPIFY SUBSCRIPTION (manual activation for Shopify flow) ─────────────────
-@app.route("/api/subscription/activate-shopify", methods=["POST"])
+@app.route("/api/subscription/activate-shopify", methods=["POST","OPTIONS"])
 def activate_shopify():
-    """Called when a Shopify subscription is confirmed."""
+    """Activate premium after Shopify purchase — no Stripe needed."""
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
-    data   = request.get_json()
-    sub_id = data.get("shopify_sub_id","")
-    trial_end = (datetime.datetime.utcnow() + datetime.timedelta(days=STRIPE_TRIAL_DAYS)).isoformat()
-    con = get_db()
-    row = con.execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],)).fetchone()
+    data   = request.get_json(force=True, silent=True) or {}
+    sub_id = data.get("shopify_sub_id", "shopify_" + secrets.token_hex(8))
+    period_end = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+    row = db_execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],), fetchone=True)
     if row:
-        con.execute("""UPDATE subscriptions SET shopify_sub_id=?,status='trialing',plan='premium',
-            trial_end=?,updated_at=? WHERE user_id=?""",
-            (sub_id, trial_end, datetime.datetime.utcnow().isoformat(), user["id"]))
+        db_execute("""UPDATE subscriptions SET shopify_sub_id=?,status='active',plan='premium',
+            current_period_end=?,updated_at=datetime('now') WHERE user_id=?""",
+            (sub_id, period_end, user["id"]))
     else:
-        con.execute("""INSERT INTO subscriptions (user_id,shopify_sub_id,status,plan,trial_end)
-            VALUES (?,?,'trialing','premium',?)""",
-            (user["id"], sub_id, trial_end))
-    con.commit()
-    con.close()
-    return jsonify({"ok":True,"trial_end":trial_end})
+        db_execute("""INSERT INTO subscriptions (user_id,shopify_sub_id,status,plan,current_period_end)
+            VALUES (?,?,'active','premium',?)""",
+            (user["id"], sub_id, period_end))
+    return jsonify({"ok": True, "plan": "premium", "status": "active"})
 
-# ── SUBSCRIPTION SUCCESS/CANCEL PAGES ─────────────────────────────────────────
 @app.route("/subscription/success")
 def subscription_success():
     return """<!DOCTYPE html><html><head>
