@@ -708,7 +708,7 @@ body {
   color: #fff;
   transition: all 0.2s;
   text-decoration: none;
-  display: inline-flex;
+  display: none;
   align-items: center;
   gap: 6px;
   font-weight: 400;
@@ -1553,10 +1553,9 @@ document.getElementById("contactBtn").addEventListener("click", () => {
 (function initAuth(){
   const token = localStorage.getItem('srd_token');
   const cached = localStorage.getItem('srd_user');
-  if(!token) return; // show sign in button (default)
+  if(!token){ document.getElementById('authBtn').style.display='inline-flex'; return; }
 
-  // Hide sign in button immediately if we have a token — show chip from cache or placeholder
-  document.getElementById('authBtn').style.display = 'none';
+  // Token exists — show user chip from cache or placeholder
   if(cached){
     try{
       const u = JSON.parse(cached);
