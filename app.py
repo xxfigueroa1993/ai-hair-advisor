@@ -1,5 +1,5 @@
-import os, json, sqlite3, datetime
-from flask import Flask, request, jsonify
+import os, json, sqlite3, datetime, hashlib, secrets, threading, random, re
+from flask import Flask, request, jsonify, Response
 
 app = Flask(__name__)
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -1800,10 +1800,32 @@ def add_headers(response):
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
+@app.route("/api/test-register", methods=["GET"])
+def test_register():
+    """Quick test to verify DB and registration works."""
+    import traceback
+    try:
+        con = sqlite3.connect(AUTH_DB)
+        con.execute("SELECT count(*) FROM users").fetchone()
+        con.close()
+        test_hash = hash_password("testpass123")
+        return jsonify({
+            "ok": True,
+            "db": "connected",
+            "auth_db_path": AUTH_DB,
+            "hash_works": len(test_hash) > 0,
+            "secrets_module": True
+        })
+    except Exception as e:
+        return jsonify({
+            "ok": False,
+            "error": str(e),
+            "trace": traceback.format_exc()
+        })
+
 
 
 # ── KEEP-ALIVE SELF PING (prevents Render free tier sleep) ───────────────────
-import threading
 
 def _keep_alive():
     import time
@@ -1823,7 +1845,7 @@ if __name__ == "__main__":
 
 
 # ── MOVEMENT FEED API ─────────────────────────────────────────────────────────
-import random, time as _time
+import time as _time
 
 _CITIES = [
     ("Miami, FL", "🇺🇸"), ("New York, NY", "🇺🇸"), ("Los Angeles, CA", "🇺🇸"),
@@ -2079,8 +2101,6 @@ Only the hair concern, product, and city will appear publicly."></textarea>
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── USER AUTH + HAIR PROFILE SYSTEM ──────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
-import hashlib, secrets, re as _re
-from functools import wraps
 
 AUTH_DB = os.path.join(os.path.dirname(__file__), "users.db")
 
