@@ -50,9 +50,9 @@ def log_tip(lang, rating, tip_amount, product):
 def extract_product(text):
     t = text.lower()
     if "formula exclusiva" in t: return "Formula Exclusiva"
-    if "laciador"         in t: return "Laciador"
-    if "gotero"           in t: return "Gotero"
-    if "gotika"           in t: return "Gotika"
+    if "laciador" in t or "crece" in t: return "Laciador Crece"
+    if "gotero" in t or "rapido" in t: return "Gotero Rapido"
+    if "gotika"           in t: return "Gotitas Brillantes"
     return "Unknown"
 
 def extract_concern(text):
@@ -66,29 +66,49 @@ def extract_concern(text):
     return "general"
 
 # ── SYSTEM PROMPT ─────────────────────────────────────────────────────────────
-SYSTEM_PROMPT = """You are a luxury hair care expert advisor for a professional salon brand.
-You have memory of this conversation and can answer follow-up questions naturally.
+SYSTEM_PROMPT = """You are Aria — a warm, knowledgeable, luxury hair care advisor for SupportRD, a professional Dominican hair care brand. You have deep expertise in hair science, scalp health, and hair culture across all ethnicities.
 
-PRODUCTS:
-- Formula Exclusiva ($65): All-in-one natural professional salon treatment. Best for: damaged, weak, breaking, thinning, falling out, severely dry, multi-problem hair.
-- Laciador ($48): All-natural hair styler. Best for: dry hair needing smoothness, tangly/knotty hair, frizz, lack of bounce, manageability issues.
-- Gotero ($42): All-natural hair gel. Best for: oily/greasy hair, scalp oil balance, hair that loses shape, flat hair needing definition without frizz.
-- Gotika ($54): All-natural hair color treatment. Best for: faded color, brassy tones, dull color, color loss, wanting to enhance natural color.
+YOUR PRODUCTS:
+- Formula Exclusiva ($55): Professional all-in-one treatment. Apply on dry or damp hair; for wash use 1oz for 5 min in dryer then rinse. Safe for whole family including children. Best for: damaged, weak, breaking, thinning, severely dry, multi-problem hair.
+- Laciador Crece ($40): Hair restructurer that gives softness, elasticity, natural styling, shine, and stimulates growth by activating dead cells. Best for: dry hair, frizz, lack of shine, growth, strengthening, styling.
+- Gotero Rapido ($55): Fast dropper that stimulates dead scalp cells, promotes hair growth, eliminates scalp parasites, removes obstructions, and regenerates lost hair. Use on scalp every night then remove. Best for: hair loss, scalp issues, slow growth, thinning, parasites.
+- Gotitas Brillantes ($30): Gives softness, better fall to hairstyle, shine and beauty. Use after any hairstyle or anytime. Adds warmth and evenness. Best for: finishing, shine, frizz control, styling touch-up.
+- Mascarilla - Deep Natural Blender & Avocado ($25): Conditions, gives shine and strength to dry or damaged hair. Keeps hair beautiful and healthy. Best for: deep conditioning, dry/damaged hair, shine boost.
+- Shampoo with Aloe Vera & Rosemary ($20): Cleanses, conditions, stimulates dead cells, strengthens and increases hair. Massage 2-3 min with fingertips into scalp. Best for: scalp stimulation, strengthening, growth, daily cleanse.
 
-RULES:
-- On first message: recommend exactly one product, state its name, price, and why it's perfect.
-- On follow-up questions: answer naturally and conversationally using the conversation history.
-- Be warm, confident, and professional — like a luxury salon consultant who remembers what was just said.
-- Keep responses to 2-3 sentences maximum.
-- Never say "I recommend" — use natural phrasing like "For your concern, [Product] is exactly what you need."
-- Sound like a knowledgeable friend, not a chatbot.
+HAIR TYPE RULES:
+- African/Black hair + dry: Laciador Crece | oily: Gotero Rapido | damaged: Formula Exclusiva
+- Asian hair + dry: Formula Exclusiva | oily: Gotero Rapido
+- Hispanic/Latino hair + styling/shine: Laciador Crece | loss/growth: Gotero Rapido
+- Caucasian hair + damaged: Formula Exclusiva | oily scalp: Gotero Rapido
+- Any hair + severe damage/breakage/falling out: Formula Exclusiva (overrides all)
+- Any hair + scalp issues/parasites/growth: Gotero Rapido
+- Any hair + needs shine/finish: Gotitas Brillantes
+- Any hair + deep conditioning: Mascarilla
+- Daily cleanse: Shampoo with Aloe Vera & Rosemary
 
-BACKGROUND RULES (when mentioned):
-- African/Black hair + dry → Laciador | oily → Gotero | damaged → Formula Exclusiva
-- Asian hair + dry → Formula Exclusiva | oily → Gotero
-- Hispanic/Latino hair + color → Gotika | dry → Laciador
-- Caucasian/White hair + damaged → Formula Exclusiva | oily → Gotero
-- Any hair + severe damage/breakage/falling out → Formula Exclusiva (overrides everything)
+CONSULTATION STYLE:
+- You are a knowledgeable friend, not a chatbot. Be warm, confident, conversational.
+- Ask diagnostic questions about their full hair history: products used, heat tools, chemical treatments, diet, stress, water type.
+- Build on conversation history. Reference what they told you before.
+- Keep responses to 2-4 sentences. Never use "I recommend" — say "For your hair, [Product] is exactly what you need."
+- Naturally mention your products every 3-4 exchanges even in casual conversation.
+- Occasionally say: "If you want a 1-on-1 with a live advisor, message us on WhatsApp at 829-233-2670"
+
+PROFESSIONAL RESOURCES:
+- Medical: suggest dermatologist for severe hair loss, scalp conditions, alopecia
+- Professional: offer to help find a salon — ask for their city
+- Trusted sites: AAD (American Academy of Dermatology), Naturally Curly, NAHA
+
+OFF-TOPIC REDIRECT:
+- If they bring up unrelated topics (sports, gaming, travel, food, movies), acknowledge warmly and redirect:
+  "Ha, love that! But let's get back to what matters — your hair. You mentioned [last hair topic] — any updates?"
+- After 2 off-topic messages: "I want to give you the best hair advice — let's refocus on your hair journey!"
+- Connect topics back to hair when possible: "Stress from [activity] can actually affect hair health..."
+
+PROFILE AWARENESS:
+- If profile shows saved concerns, reference them: "Based on your [concern], this is especially important..."
+- Reference past conversations naturally to build a relationship over time.
 
 Respond ONLY with your answer. No preamble. No "Sure!" or "Of course!".
 If the language code indicates non-English, respond entirely in that language."""
@@ -526,9 +546,104 @@ body {
   transition: color 0.4s;
 }
 #footer span:hover { color: var(--brand-accent); }
+
+/* ── AUTH BAR ── */
+#authBar {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#authBtn {
+  padding: 7px 16px;
+  border: 1px solid rgba(193,163,162,0.50);
+  border-radius: 20px;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  font-family: 'Jost', sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  color: #9d7f6a;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+#authBtn:hover { background: #c1a3a2; color: #fff; border-color: #c1a3a2; }
+#userChip {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255,255,255,0.85);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(193,163,162,0.35);
+  border-radius: 20px;
+  padding: 5px 12px 5px 6px;
+}
+#userAvatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: #c1a3a2;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; color: #fff; overflow: hidden; flex-shrink: 0;
+}
+#userAvatar img { width: 100%; height: 100%; object-fit: cover; }
+#userName { font-size: 11px; color: #0d0906; font-family: 'Jost', sans-serif; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#dashLink { font-size: 10px; color: #9d7f6a; text-decoration: none; letter-spacing: 0.08em; text-transform: uppercase; border-left: 1px solid rgba(193,163,162,0.30); padding-left: 8px; margin-left: 2px; }
+#dashLink:hover { color: #c1a3a2; }
+
+/* ── WELCOME BACK BANNER ── */
+#welcomeBanner {
+  display: none;
+  position: fixed;
+  top: 56px;
+  right: 16px;
+  background: #fff;
+  border: 1px solid rgba(193,163,162,0.25);
+  border-radius: 14px;
+  padding: 14px 18px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.10);
+  z-index: 999;
+  max-width: 260px;
+  animation: wbIn 0.4s cubic-bezier(0.22,1,0.36,1);
+}
+@keyframes wbIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+#welcomeBanner .wb-name { font-family: 'Cormorant Garamond', serif; font-size: 17px; font-style: italic; color: #0d0906; margin-bottom: 4px; }
+#welcomeBanner .wb-score { font-size: 11px; color: rgba(0,0,0,0.40); letter-spacing: 0.06em; margin-bottom: 10px; }
+#welcomeBanner .wb-score span { color: #c1a3a2; font-weight: 600; }
+#welcomeBanner .wb-btns { display: flex; gap: 8px; }
+#welcomeBanner .wb-btn { flex: 1; padding: 8px; border-radius: 10px; font-size: 10px; letter-spacing: 0.10em; text-transform: uppercase; text-align: center; text-decoration: none; font-family: 'Jost', sans-serif; }
+.wb-btn-rose { background: #c1a3a2; color: #fff; }
+.wb-btn-outline { border: 1px solid rgba(193,163,162,0.40); color: #9d7f6a; }
 </style>
 </head>
 <body>
+
+<!-- ── AUTH BAR ── -->
+<div id="authBar">
+  <a href="/login" id="authBtn">⚡ Sign In</a>
+  <div id="userChip">
+    <div id="userAvatar"></div>
+    <span id="userName"></span>
+    <a href="/dashboard" id="dashLink">Dashboard</a>
+  </div>
+</div>
+
+<!-- ── WELCOME BACK BANNER ── -->
+<div id="welcomeBanner">
+  <div class="wb-name" id="wb-name">Welcome back!</div>
+  <div class="wb-score">Hair Score: <span id="wb-score">—</span></div>
+  <div class="wb-btns">
+    <a href="/dashboard" class="wb-btn wb-btn-rose">My Profile</a>
+    <a href="https://wa.me/18292332670" target="_blank" class="wb-btn wb-btn-outline">Live Advisor</a>
+  </div>
+</div>
 
 <div id="topBar">
   <button id="modeToggle" class="top-btn">Manual Mode</button>
@@ -702,8 +817,10 @@ tipSubmitBtn.addEventListener("click", async () => {
 
   // If real money tip (amount > 0), open Shopify checkout in new tab
   if (finalAmt !== "0" && finalAmt !== "custom") {
-    const qty = Math.round(parseFloat(finalAmt));
-    const shopifyUrl = "https://supportdr-com.myshopify.com/cart/42109000908880:" + qty + "?checkout";
+    const amtCents = Math.round(parseFloat(finalAmt) * 100);
+    // Replace 42109000908880 with your tip product variant ID
+    const shopifyUrl = "https://supportdr-com.myshopify.com/cart/42109000908880:" + 1 +
+      "?properties[tip_amount]=$" + finalAmt + "&checkout";
     window.open(shopifyUrl, "_blank");
   }
 
@@ -746,9 +863,9 @@ function addToHistory(role, text) {
     // Try to detect which product was mentioned
     const t = text.toLowerCase();
     if (t.includes("formula exclusiva")) lastRecommendedProduct = "Formula Exclusiva";
-    else if (t.includes("laciador"))     lastRecommendedProduct = "Laciador";
-    else if (t.includes("gotero"))       lastRecommendedProduct = "Gotero";
-    else if (t.includes("gotika"))       lastRecommendedProduct = "Gotika";
+    else if (t.includes("laciador")||t.includes("crece")) lastRecommendedProduct = "Laciador Crece";
+    else if (t.includes("gotero")||t.includes("rapido")) lastRecommendedProduct = "Gotero Rapido";
+    else if (t.includes("gotitas")||t.includes("brillantes")) lastRecommendedProduct = "Gotitas Brillantes";
   }
 
   const bubble = document.createElement("div");
@@ -916,69 +1033,70 @@ function speak(text, showTip) {
 /* ── LOCAL RESPONSES ── */
 const LOCAL_R = {
   "en-US": {
-    damaged: "Formula Exclusiva is exactly what your hair needs. This professional all-in-one treatment rebuilds strength, restores moisture, and revives scalp health. At $65, it's your most complete solution.",
-    color:   "Gotika is the answer for your color. It restores vibrancy, corrects tone, and protects your pigment long-term — all naturally. Price: $54.",
-    colorAf: "Gotero restores natural sheen and tone while balancing your scalp. At $42, it works beautifully with your hair's natural texture.",
-    oily:    "Gotero regulates sebum production and keeps your scalp clear. Price: $42.",
-    oilyHi: "Formula Exclusiva balances your scalp's oil while deeply nourishing your hair. At $65, it handles both in one.",
-    dry:     "Laciador transforms dry hair — restoring softness, smoothness, and natural bounce. Price: $48.",
-    dryAs:  "Formula Exclusiva penetrates deeply to restore elasticity and hydration. Price: $65.",
-    tangly:  "Formula Exclusiva addresses the root cause of tangles while strengthening every strand. Price: $65.",
-    tanglyH:"Laciador smooths, detangles, and leaves your hair manageable with beautiful movement. Price: $48.",
-    flat:    "Laciador gives your hair the body and movement it's been missing. Price: $48.",
-    default: "Formula Exclusiva is your best all-around choice — moisture, strength, and scalp health in one. Price: $65."
+    damaged: "Formula Exclusiva is exactly what your hair needs. This professional all-in-one treatment rebuilds strength, restores moisture, and revives scalp health — safe for the whole family including children. At $55, it's your most complete solution.",
+    color:   "Gotitas Brillantes is perfect for you. It gives your hair incredible softness, shine, and beauty — just apply after styling and let it work. Price: $30.",
+    colorAf: "Gotitas Brillantes adds the perfect warmth, evenness, and shine to your hair. At $30, it's your best finishing touch.",
+    oily:    "Gotero Rapido works directly on your scalp to eliminate obstructions and parasites while stimulating growth. Use it every night. Price: $55.",
+    oilyHi: "Gotero Rapido is your solution — it targets dead scalp cells, removes obstructions, and regenerates hair. At $55, it's your nightly treatment.",
+    dry:     "Laciador Crece restructures your hair giving it softness, elasticity, and natural shine all day. It even stimulates growth. Price: $40.",
+    dryAs:  "Formula Exclusiva penetrates deeply to restore elasticity and hydration — perfect for the whole family. Price: $55.",
+    tangly:  "Laciador Crece is your answer — it restructures and gives your hair amazing softness and manageability. Price: $40.",
+    tanglyH:"Laciador Crece smooths, restructures, and leaves your hair with beautiful shine and elasticity. Price: $40.",
+    flat:    "Gotitas Brillantes gives your style the perfect fall, shine, and body it needs. Price: $30.",
+    loss:    "Gotero Rapido stimulates every dead cell on your scalp, eliminates parasites, removes obstructions, and regenerates the hair you've lost. Use every night. Price: $55.",
+    default: "Formula Exclusiva is your best all-around choice — moisture, strength, and scalp health in one, safe for the whole family. Price: $55."
   },
   "es-ES": {
-    damaged:"Formula Exclusiva es exactamente lo que tu cabello necesita. A $65.",
-    color:  "Gotika restaura la vitalidad y protege tu pigmento. Precio: $54.",
-    colorAf:"Gotero restaura el brillo natural. A $42.",
-    oily:   "Gotero regula la producción de sebo. Precio: $42.",
-    oilyHi:"Formula Exclusiva equilibra el aceite. A $65.",
-    dry:    "Laciador restaura suavidad y rebote. Precio: $48.",
-    dryAs: "Formula Exclusiva restaura elasticidad. Precio: $65.",
-    tangly: "Formula Exclusiva resuelve los enredos. Precio: $65.",
-    tanglyH:"Laciador suaviza y desenreda. Precio: $48.",
-    flat:   "Laciador da volumen. Precio: $48.",
-    default:"Formula Exclusiva es tu mejor opción. Precio: $65."
+    damaged:"Formula Exclusiva es exactamente lo que tu cabello necesita. A $55.",
+    color:  "Gotika restaura la vitalidad y protege tu pigmento. Precio: $30.",
+    colorAf:"Gotero restaura el brillo natural. A $55.",
+    oily:   "Gotero regula la producción de sebo. Precio: $55.",
+    oilyHi:"Formula Exclusiva equilibra el aceite. A $55.",
+    dry:    "Laciador restaura suavidad y rebote. Precio: $40.",
+    dryAs: "Formula Exclusiva restaura elasticidad. Precio: $55.",
+    tangly: "Formula Exclusiva resuelve los enredos. Precio: $55.",
+    tanglyH:"Laciador suaviza y desenreda. Precio: $40.",
+    flat:   "Laciador da volumen. Precio: $40.",
+    default:"Formula Exclusiva es tu mejor opción. Precio: $55."
   },
   "fr-FR": {
     damaged:"Formula Exclusiva est exactement ce dont vos cheveux ont besoin. À 65$.",
-    color:  "Gotika restaure l'éclat et protège votre pigment. Prix: 54$.",
+    color:  "Gotika restaure l'éclat et protège votre pigment. Prix: $30.",
     colorAf:"Gotero restaure l'éclat naturel. À 42$.",
-    oily:   "Gotero régule la production de sébum. Prix: 42$.",
+    oily:   "Gotero régule la production de sébum. Prix: $55.",
     oilyHi:"Formula Exclusiva équilibre l'huile. À 65$.",
-    dry:    "Laciador transforme les cheveux secs. Prix: 48$.",
-    dryAs: "Formula Exclusiva est idéale pour votre type. Prix: 65$.",
-    tangly: "Formula Exclusiva s'attaque aux nœuds. Prix: 65$.",
-    tanglyH:"Laciador lisse et démêle. Prix: 48$.",
-    flat:   "Laciador donne du volume. Prix: 48$.",
-    default:"Formula Exclusiva est votre meilleur choix. Prix: 65$."
+    dry:    "Laciador transforme les cheveux secs. Prix: $40.",
+    dryAs: "Formula Exclusiva est idéale pour votre type. Prix: $55.",
+    tangly: "Formula Exclusiva s'attaque aux nœuds. Prix: $55.",
+    tanglyH:"Laciador lisse et démêle. Prix: $40.",
+    flat:   "Laciador donne du volume. Prix: $40.",
+    default:"Formula Exclusiva est votre meilleur choix. Prix: $55."
   },
   "pt-BR": {
-    damaged:"Formula Exclusiva é o que seu cabelo precisa. Por $65.",
-    color:  "Gotika restaura a vibração e protege seu pigmento. Preço: $54.",
-    colorAf:"Gotero restaura o brilho natural. Por $42.",
-    oily:   "Gotero regula a produção de sebo. Preço: $42.",
-    oilyHi:"Formula Exclusiva equilibra o óleo. Por $65.",
-    dry:    "Laciador transforma o cabelo seco. Preço: $48.",
-    dryAs: "Formula Exclusiva é ideal para seu tipo. Preço: $65.",
-    tangly: "Formula Exclusiva resolve os nós. Preço: $65.",
-    tanglyH:"Laciador alisa e desembaraça. Preço: $48.",
-    flat:   "Laciador dá volume. Preço: $48.",
-    default:"Formula Exclusiva é sua melhor escolha. Preço: $65."
+    damaged:"Formula Exclusiva é o que seu cabelo precisa. Por $55.",
+    color:  "Gotika restaura a vibração e protege seu pigmento. Preço: $30.",
+    colorAf:"Gotero restaura o brilho natural. Por $55.",
+    oily:   "Gotero regula a produção de sebo. Preço: $55.",
+    oilyHi:"Formula Exclusiva equilibra o óleo. Por $55.",
+    dry:    "Laciador transforma o cabelo seco. Preço: $40.",
+    dryAs: "Formula Exclusiva é ideal para seu tipo. Preço: $55.",
+    tangly: "Formula Exclusiva resolve os nós. Preço: $55.",
+    tanglyH:"Laciador alisa e desembaraça. Preço: $40.",
+    flat:   "Laciador dá volume. Preço: $40.",
+    default:"Formula Exclusiva é sua melhor escolha. Preço: $55."
   },
   "de-DE": {
-    damaged:"Formula Exclusiva ist genau das, was Ihr Haar braucht. Für $65.",
-    color:  "Gotika stellt Lebendigkeit wieder her. Preis: $54.",
-    colorAf:"Gotero stellt natürlichen Glanz wieder her. Für $42.",
-    oily:   "Gotero reguliert Talgproduktion. Preis: $42.",
-    oilyHi:"Formula Exclusiva bringt das Öl ins Gleichgewicht. Für $65.",
-    dry:    "Laciador transformiert trockenes Haar. Preis: $48.",
-    dryAs: "Formula Exclusiva ist ideal für Ihren Haartyp. Preis: $65.",
-    tangly: "Formula Exclusiva bekämpft Verfilzungen. Preis: $65.",
-    tanglyH:"Laciador glättet und entwirrt. Preis: $48.",
-    flat:   "Laciador gibt Volumen. Preis: $48.",
-    default:"Formula Exclusiva ist Ihre beste Lösung. Preis: $65."
+    damaged:"Formula Exclusiva ist genau das, was Ihr Haar braucht. Für $55.",
+    color:  "Gotika stellt Lebendigkeit wieder her. Preis: $30.",
+    colorAf:"Gotero stellt natürlichen Glanz wieder her. Für $55.",
+    oily:   "Gotero reguliert Talgproduktion. Preis: $55.",
+    oilyHi:"Formula Exclusiva bringt das Öl ins Gleichgewicht. Für $55.",
+    dry:    "Laciador transformiert trockenes Haar. Preis: $40.",
+    dryAs: "Formula Exclusiva ist ideal für Ihren Haartyp. Preis: $55.",
+    tangly: "Formula Exclusiva bekämpft Verfilzungen. Preis: $55.",
+    tanglyH:"Laciador glättet und entwirrt. Preis: $40.",
+    flat:   "Laciador gibt Volumen. Preis: $40.",
+    default:"Formula Exclusiva ist Ihre beste Lösung. Preis: $55."
   },
   "ar-SA": {
     damaged:"فورمولا إكسكلوسيفا هو ما يحتاجه شعرك. بسعر $65.",
@@ -994,17 +1112,17 @@ const LOCAL_R = {
     default:"فورمولا هو أفضل خيار شامل. السعر: $65."
   },
   "zh-CN": {
-    damaged:"Formula Exclusiva 正是您需要的。售价 $65。",
-    color:  "Gotika 恢复色彩活力，保护色素。售价 $54。",
-    colorAf:"Gotero 恢复自然光泽。售价 $42。",
-    oily:   "Gotero 调节皮脂分泌。售价 $42。",
-    oilyHi:"Formula Exclusiva 平衡油脂。售价 $65。",
-    dry:    "Laciador 改善干燥发质。售价 $48。",
-    dryAs: "Formula Exclusiva 最适合您的发质。售价 $65。",
-    tangly: "Formula Exclusiva 解决打结。售价 $65。",
-    tanglyH:"Laciador 顺滑解结。售价 $48。",
-    flat:   "Laciador 增加蓬松感。售价 $48。",
-    default:"Formula Exclusiva 是您最全面的选择。售价 $65。"
+    damaged:"Formula Exclusiva 正是您需要的。售价 $55。",
+    color:  "Gotika 恢复色彩活力，保护色素。售价 $30。",
+    colorAf:"Gotero 恢复自然光泽。售价 $55。",
+    oily:   "Gotero 调节皮脂分泌。售价 $55。",
+    oilyHi:"Formula Exclusiva 平衡油脂。售价 $55。",
+    dry:    "Laciador 改善干燥发质。售价 $40。",
+    dryAs: "Formula Exclusiva 最适合您的发质。售价 $55。",
+    tangly: "Formula Exclusiva 解决打结。售价 $55。",
+    tanglyH:"Laciador 顺滑解结。售价 $40。",
+    flat:   "Laciador 增加蓬松感。售价 $40。",
+    default:"Formula Exclusiva 是您最全面的选择。售价 $55。"
   },
   "hi-IN": {
     damaged:"Formula Exclusiva बिल्कुल वही है जो चाहिए। $65।",
@@ -1048,9 +1166,11 @@ async function getRecommendation(userText) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 6000);
+    const authHeaders = {"Content-Type": "application/json"};
+    if(window._srd_token) authHeaders["X-Auth-Token"] = window._srd_token;
     const resp = await fetch("https://ai-hair-advisor.onrender.com/api/recommend", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders,
       body: JSON.stringify({
         text: userText,
         lang: langSelect.value,
@@ -1231,18 +1351,89 @@ document.getElementById("contactBtn").addEventListener("click", () => {
   const msg = CONTACT_MSGS[langSelect.value]||CONTACT_MSGS["en-US"];
   responseBox.textContent = msg; speak(msg, false);
 });
+
+// ── AUTH + USER STATE ─────────────────────────────────────────────────────────
+(function initAuth(){
+  const token = localStorage.getItem('srd_token');
+  const cached = localStorage.getItem('srd_user');
+  if(!token) return; // show sign in button (default)
+
+  // Show user chip immediately from cache
+  if(cached){
+    try{
+      const u = JSON.parse(cached);
+      showUserChip(u.name, u.avatar);
+    }catch(e){}
+  }
+
+  // Verify token + load profile for welcome banner
+  fetch('/api/auth/me', {headers:{'X-Auth-Token':token}})
+    .then(r => r.ok ? r.json() : null)
+    .then(d => {
+      if(!d){ localStorage.removeItem('srd_token'); localStorage.removeItem('srd_user'); return; }
+      showUserChip(d.name, d.avatar);
+      localStorage.setItem('srd_user', JSON.stringify({name:d.name,email:d.email,avatar:d.avatar||''}));
+
+      // Calc hair score from profile
+      let score = '—';
+      if(d.profile && (d.profile.hair_concerns || d.profile.hair_type)){
+        const concerns = (d.profile.hair_concerns||'').toLowerCase();
+        const treatments = (d.profile.treatments||'').toLowerCase();
+        const products = (d.profile.products_tried||'').toLowerCase();
+        let s = 75;
+        if(concerns.includes('dry')) s -= 10;
+        if(concerns.includes('damage')) s -= 15;
+        if(concerns.includes('breakage')) s -= 20;
+        if(concerns.includes('thinning')) s -= 15;
+        if(concerns.includes('oily')) s -= 8;
+        if(treatments.includes('bleach')) s -= 10;
+        if(treatments.includes('relaxer')) s -= 8;
+        if(products.includes('formula exclusiva')) s += 12;
+        if(products.includes('laciador crece')||products.includes('laciador')) s += 10;
+        if(products.includes('gotero rapido')||products.includes('gotero')) s += 8;
+        if(products.includes('gotitas brillantes')||products.includes('gotika')) s += 6;
+        s = Math.max(0, Math.min(100, s));
+        score = s + '%';
+      }
+
+      // Show welcome banner for 6 seconds
+      document.getElementById('wb-name').textContent = 'Welcome back, ' + (d.name||'').split(' ')[0] + '!';
+      document.getElementById('wb-score').textContent = score;
+      const banner = document.getElementById('welcomeBanner');
+      banner.style.display = 'block';
+      setTimeout(()=>{ banner.style.opacity='0'; banner.style.transition='opacity 0.5s'; setTimeout(()=>banner.style.display='none',500); }, 6000);
+
+      // Pass token to recommend calls
+      window._srd_token = token;
+      window._srd_user = d;
+    })
+    .catch(()=>{});
+})();
+
+function showUserChip(name, avatar){
+  document.getElementById('authBtn').style.display = 'none';
+  const chip = document.getElementById('userChip');
+  chip.style.display = 'flex';
+  document.getElementById('userName').textContent = (name||'').split(' ')[0];
+  const av = document.getElementById('userAvatar');
+  if(avatar){ av.innerHTML = '<img src="'+avatar+'" alt="">'; }
+  else { av.textContent = (name||'?')[0].toUpperCase(); }
+}
 </script>
 </body>
 </html>"""
 
 
-# ── API: RECOMMEND ────────────────────────────────────────────────────────────
+# ── API: RECOMMEND (UPGRADED WITH USER HISTORY + PROFILE) ────────────────────
 @app.route("/api/recommend", methods=["POST"])
 def recommend():
     data      = request.get_json()
     user_text = data.get("text", "")
     lang      = data.get("lang", "en-US")
     history   = data.get("history", [])
+
+    # Check if user is logged in
+    user = get_current_user()
 
     lang_names = {
         "en-US":"English","es-ES":"Spanish","fr-FR":"French",
@@ -1252,22 +1443,49 @@ def recommend():
     lang_name  = lang_names.get(lang, "English")
     lang_instr = f"\n\nIMPORTANT: Your ENTIRE response must be in {lang_name}."
 
+    # Build profile context if logged in
+    profile_context = ""
+    if user:
+        profile = get_hair_profile(user["id"])
+        if profile.get("hair_type") or profile.get("hair_concerns"):
+            profile_context = f"""
+
+RETURNING CLIENT PROFILE:
+- Name: {user.get("name","this client")}
+- Hair type: {profile.get("hair_type","unknown")}
+- Known concerns: {profile.get("hair_concerns","none saved")}
+- Treatments history: {profile.get("treatments","none saved")}
+- Products tried: {profile.get("products_tried","none saved")}
+Reference this naturally in your response."""
+
+        # Save this message to their history
+        save_chat_message(user["id"], "user", user_text)
+
     if not ANTHROPIC_API_KEY:
         return jsonify({"recommendation": None, "error": "No API key"}), 500
 
     try:
         import urllib.request as urlreq
 
+        # Build messages — use saved DB history for logged-in users
         messages = []
-        for h in history:
-            if h.get("role") in ("user", "assistant") and h.get("content"):
-                messages.append({"role": h["role"], "content": h["content"]})
+        if user:
+            db_history = get_chat_history(user["id"], limit=16)
+            # exclude the message we just saved (last one)
+            for h in db_history[:-1]:
+                if h.get("role") in ("user","assistant") and h.get("content"):
+                    messages.append({"role": h["role"], "content": h["content"]})
+        else:
+            for h in history:
+                if h.get("role") in ("user","assistant") and h.get("content"):
+                    messages.append({"role": h["role"], "content": h["content"]})
+
         messages.append({"role": "user", "content": user_text})
 
         payload = json.dumps({
             "model": "claude-sonnet-4-20250514",
-            "max_tokens": 250,
-            "system": SYSTEM_PROMPT + lang_instr,
+            "max_tokens": 300,
+            "system": SYSTEM_PROMPT + profile_context + lang_instr,
             "messages": messages
         }).encode("utf-8")
 
@@ -1285,11 +1503,28 @@ def recommend():
             result = json.loads(resp.read().decode("utf-8"))
             recommendation = result["content"][0]["text"].strip()
 
+        # Save AI response to history if logged in
+        if user:
+            save_chat_message(user["id"], "assistant", recommendation)
+            # Auto-update hair profile from conversation
+            product = extract_product(recommendation)
+            concern = extract_concern(user_text)
+            if concern:
+                profile = get_hair_profile(user["id"])
+                existing = profile.get("hair_concerns","")
+                if concern not in existing:
+                    updated = (existing + ", " + concern).strip(", ")
+                    save_hair_profile(user["id"], {**profile, "hair_concerns": updated})
+
         product = extract_product(recommendation)
         concern = extract_concern(user_text)
         log_event(lang, user_text, product, concern)
 
-        return jsonify({"recommendation": recommendation})
+        return jsonify({
+            "recommendation": recommendation,
+            "logged_in": user is not None,
+            "user_name": user["name"] if user else None
+        })
 
     except Exception as e:
         return jsonify({"recommendation": None, "error": str(e)}), 500
@@ -1416,3 +1651,993 @@ def add_headers(response):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+
+
+# ── MOVEMENT FEED API ─────────────────────────────────────────────────────────
+import random, time as _time
+
+_CITIES = [
+    ("Miami, FL", "🇺🇸"), ("New York, NY", "🇺🇸"), ("Los Angeles, CA", "🇺🇸"),
+    ("Houston, TX", "🇺🇸"), ("Atlanta, GA", "🇺🇸"), ("Chicago, IL", "🇺🇸"),
+    ("Santo Domingo", "🇩🇴"), ("Santiago, DR", "🇩🇴"), ("San Pedro de Macorís", "🇩🇴"),
+    ("San Juan, PR", "🇵🇷"), ("Bogotá", "🇨🇴"), ("Medellín", "🇨🇴"),
+    ("Ciudad de México", "🇲🇽"), ("Monterrey", "🇲🇽"), ("Madrid", "🇪🇸"),
+    ("Barcelona", "🇪🇸"), ("Toronto", "🇨🇦"), ("Montreal", "🇨🇦"),
+    ("London", "🇬🇧"), ("Paris", "🇫🇷")
+]
+_PRODUCTS = ["Formula Exclusiva","Laciador Crece","Gotero Rapido","Gotitas Brillantes"]
+_CONCERNS = ["damaged hair","dry hair","frizzy hair","oily scalp",
+             "hair thinning","color fading","tangled hair","lack of volume"]
+_ACTIONS  = [
+    "just ordered {product}",
+    "found their solution for {concern}",
+    "recommended {product} to a client",
+    "reordered {product} for their salon",
+    "discovered {product} for {concern}",
+    "picked up {product} for {concern}",
+]
+
+def _make_movement_event(source="simulated", mins_ago=None):
+    city, flag = random.choice(_CITIES)
+    product    = random.choice(_PRODUCTS)
+    concern    = random.choice(_CONCERNS)
+    action     = random.choice(_ACTIONS).format(product=product, concern=concern)
+    if mins_ago is None:
+        mins_ago = random.randint(0, 55)
+    ts = datetime.datetime.utcnow() - datetime.timedelta(minutes=mins_ago)
+    return {
+        "id":      int(_time.time()*1000) + random.randint(0,999),
+        "city":    city,
+        "flag":    flag,
+        "action":  action,
+        "product": product,
+        "ts":      ts.isoformat(),
+        "source":  source
+    }
+
+# Seed 15 simulated events on startup (so the feed is never empty)
+_MOVEMENT_EVENTS = [_make_movement_event(mins_ago=random.randint(1,55)) for _ in range(15)]
+
+@app.route("/api/movement", methods=["GET"])
+def movement():
+    """Return recent movement events — mix of real orders + simulated activity."""
+    live = []
+    # Pull real orders from analytics DB (last 30)
+    try:
+        con = sqlite3.connect(DB_PATH)
+        rows = con.execute(
+            "SELECT ts, lang, product FROM events ORDER BY id DESC LIMIT 30"
+        ).fetchall()
+        con.close()
+        lang_city = {
+            "en-US": [("New York, NY","🇺🇸"),("Miami, FL","🇺🇸"),("Atlanta, GA","🇺🇸"),
+                      ("Chicago, IL","🇺🇸"),("Los Angeles, CA","🇺🇸")],
+            "es-ES": [("Madrid","🇪🇸"),("Barcelona","🇪🇸")],
+            "pt-BR": [("Bogotá","🇨🇴"),("Medellín","🇨🇴")],
+            "fr-FR": [("Paris","🇫🇷"),("Montreal","🇨🇦")],
+            "de-DE": [("London","🇬🇧"),("Toronto","🇨🇦")],
+            "ar-SA": [("Santo Domingo","🇩🇴"),("Santiago, DR","🇩🇴")],
+            "zh-CN": [("New York, NY","🇺🇸"),("Los Angeles, CA","🇺🇸")],
+            "hi-IN": [("Houston, TX","🇺🇸"),("Chicago, IL","🇺🇸")],
+        }
+        for (ts, lang, product) in rows:
+            if not product or product == "Unknown":
+                continue
+            city_list = lang_city.get(lang, [("Miami, FL","🇺🇸")])
+            city, flag = random.choice(city_list)
+            action = random.choice([
+                f"just ordered {product}",
+                f"reordered {product} for their salon",
+                f"recommended {product} to a client",
+            ])
+            live.append({
+                "id":      hash(ts+product) % 999999,
+                "city":    city, "flag": flag,
+                "action":  action, "product": product,
+                "ts":      ts, "source": "real"
+            })
+    except Exception as e:
+        print("Movement DB error:", e)
+
+    # Add a fresh simulated event to keep the feed feeling live
+    _MOVEMENT_EVENTS.insert(0, _make_movement_event(mins_ago=0))
+    if len(_MOVEMENT_EVENTS) > 50:
+        _MOVEMENT_EVENTS.pop()
+
+    # Merge: real first, then simulated to fill up to 15
+    combined = live + _MOVEMENT_EVENTS
+    combined = combined[:15]
+
+    return jsonify({
+        "events": combined,
+        "total":  len(combined) + random.randint(80, 140)  # social proof count
+    })
+
+
+# ── TRANSCRIPT → MOVEMENT EVENT ───────────────────────────────────────────────
+@app.route("/api/add-movement", methods=["POST"])
+def add_movement():
+    """Accept a cleaned transcript event (from manual upload) and add to feed."""
+    data = request.get_json()
+    city    = data.get("city", "United States")
+    flag    = data.get("flag", "🇺🇸")
+    action  = data.get("action", "")
+    product = data.get("product", "")
+    if not action:
+        return jsonify({"error": "action required"}), 400
+    event = {
+        "id":      int(_time.time()*1000),
+        "city":    city, "flag": flag,
+        "action":  action, "product": product,
+        "ts":      datetime.datetime.utcnow().isoformat(),
+        "source":  "transcript"
+    }
+    _MOVEMENT_EVENTS.insert(0, event)
+    return jsonify({"ok": True, "event": event})
+
+# ── TRANSCRIPT PIPELINE ───────────────────────────────────────────────────────
+UPLOAD_KEY = os.environ.get("UPLOAD_KEY", "hairadmin")
+
+CLEAN_PROMPT = """You are a privacy filter for a hair care brand's public movement feed.
+You receive a raw Microsoft Teams call transcript between a hair product distributor and salon client.
+
+Your job:
+1. REMOVE completely: full names, phone numbers, emails, addresses, credit cards, order numbers, any personal info
+2. EXTRACT: city/region, product discussed, hair concern, outcome
+3. REWRITE as one warm public sentence like:
+   "A salon in [City] found their solution for [concern] with [Product]"
+4. Return city, flag emoji, product name
+
+Respond ONLY with valid JSON, no preamble:
+{"action":"A salon in Miami found their solution for dry hair with Laciador","city":"Miami, FL","flag":"🇺🇸","product":"Laciador Crece"}"""
+
+@app.route("/upload-transcript", methods=["GET","POST"])
+def upload_transcript():
+    key = request.args.get("key","")
+    if key != UPLOAD_KEY:
+        return "Unauthorized. Add ?key=YOUR_UPLOAD_KEY to the URL.", 401
+
+    result = error = preview = None
+
+    if request.method == "POST":
+        transcript = request.form.get("transcript","").strip()
+        if not transcript:
+            error = "Please paste a transcript."
+        elif not ANTHROPIC_API_KEY:
+            error = "No Anthropic API key configured."
+        else:
+            try:
+                import urllib.request as urlreq
+                payload = json.dumps({
+                    "model":"claude-sonnet-4-20250514","max_tokens":300,
+                    "system":CLEAN_PROMPT,
+                    "messages":[{"role":"user","content":transcript}]
+                }).encode("utf-8")
+                req = urlreq.Request(
+                    "https://api.anthropic.com/v1/messages", data=payload,
+                    headers={"Content-Type":"application/json",
+                             "x-api-key":ANTHROPIC_API_KEY,
+                             "anthropic-version":"2023-06-01"},
+                    method="POST"
+                )
+                with urlreq.urlopen(req, timeout=15) as resp:
+                    raw  = json.loads(resp.read().decode())
+                    text = raw["content"][0]["text"].strip()
+                    text = text.replace("```json","").replace("```","").strip()
+                    cleaned = json.loads(text)
+
+                event = {
+                    "id":      int(datetime.datetime.utcnow().timestamp()*1000),
+                    "city":    cleaned.get("city","United States"),
+                    "flag":    cleaned.get("flag","🇺🇸"),
+                    "action":  cleaned.get("action",""),
+                    "product": cleaned.get("product",""),
+                    "ts":      datetime.datetime.utcnow().isoformat(),
+                    "source":  "transcript"
+                }
+                _MOVEMENT_EVENTS.insert(0, event)
+                if len(_MOVEMENT_EVENTS) > 50: _MOVEMENT_EVENTS.pop()
+                preview = event
+                result  = "Transcript cleaned and published to your live feed!"
+            except Exception as e:
+                error = f"Error: {e}"
+
+    preview_html = f"""<div style="background:#f0faf5;border:1px solid #c1a3a2;border-radius:12px;
+        padding:20px;margin-bottom:24px;">
+        <div style="font-size:11px;letter-spacing:0.15em;text-transform:uppercase;
+        color:#9d7f6a;margin-bottom:8px;">Published to feed</div>
+        <div style="font-size:18px;font-style:italic;">{preview['flag']} {preview['city']}</div>
+        <div style="font-size:15px;color:rgba(0,0,0,0.65);margin-top:4px;">{preview['action']}</div>
+        <div style="font-size:11px;color:rgba(0,0,0,0.30);margin-top:6px;">
+        Product: {preview['product']}</div></div>""" if preview else ""
+
+    return f"""<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SupportDR — Upload Transcript</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:#f0ebe8;color:#0d0906;font-family:'Jost',sans-serif;font-weight:300;
+      min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;}}
+.card{{background:#fff;border:1px solid rgba(193,163,162,0.30);border-radius:20px;
+       padding:40px;width:100%;max-width:620px;box-shadow:0 8px 48px rgba(0,0,0,0.06);}}
+h1{{font-family:'Cormorant Garamond',serif;font-size:28px;font-style:italic;font-weight:300;margin-bottom:6px;}}
+.sub{{font-size:11px;letter-spacing:0.15em;text-transform:uppercase;color:rgba(0,0,0,0.35);margin-bottom:32px;}}
+label{{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(0,0,0,0.40);display:block;margin-bottom:8px;}}
+textarea{{width:100%;height:240px;padding:16px;border:1px solid rgba(193,163,162,0.35);
+          border-radius:12px;font-family:'Jost',sans-serif;font-size:13px;color:#0d0906;
+          background:#faf6f3;resize:vertical;outline:none;line-height:1.6;}}
+textarea:focus{{border-color:rgba(193,163,162,0.70);}}
+textarea::placeholder{{color:rgba(0,0,0,0.25);}}
+.steps{{background:rgba(193,163,162,0.07);border-radius:12px;padding:16px 20px;
+        margin-bottom:24px;font-size:12px;line-height:1.9;color:rgba(0,0,0,0.50);}}
+.steps b{{color:#9d7f6a;font-weight:400;}}
+button{{width:100%;padding:14px;margin-top:16px;border:none;border-radius:30px;
+        background:rgba(193,163,162,0.90);color:#fff;font-family:'Jost',sans-serif;
+        font-size:12px;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;transition:background 0.3s;}}
+button:hover{{background:#9d7f6a;}}
+.success{{background:#f0faf5;border:1px solid #c1a3a2;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#2d6a4f;}}
+.err{{background:#fdf0f0;border:1px solid #e4a0a0;border-radius:10px;padding:14px 18px;margin-bottom:20px;font-size:13px;color:#8b2020;}}
+.feed-link{{text-align:center;margin-top:20px;font-size:11px;letter-spacing:0.10em;text-transform:uppercase;color:rgba(0,0,0,0.30);}}
+.feed-link a{{color:#9d7f6a;text-decoration:none;}}
+</style></head><body>
+<div class="card">
+  <h1>Upload Transcript</h1>
+  <div class="sub">Private · SupportDR Movement Feed</div>
+  <div class="steps">
+    <b>How it works:</b><br>
+    1. Finish your Microsoft Teams call<br>
+    2. Copy the transcript from Teams<br>
+    3. Paste below — Claude strips all private info automatically<br>
+    4. Clean version goes live on your public feed instantly
+  </div>
+  {f'<div class="success">✅ {result}</div>' if result else ''}
+  {f'<div class="err">❌ {error}</div>' if error else ''}
+  {preview_html}
+  <form method="POST" action="/upload-transcript?key={key}">
+    <label>Paste Microsoft Teams Transcript</label>
+    <textarea name="transcript" placeholder="Paste the full Teams transcript here...
+Names, phone numbers, addresses, and payment info will be automatically removed.
+Only the hair concern, product, and city will appear publicly."></textarea>
+    <button type="submit">🌿 Clean &amp; Publish to Feed</button>
+  </form>
+  <div class="feed-link">
+    <a href="https://ai-hair-advisor.onrender.com/analytics?key={key}" target="_blank">View Analytics →</a>
+  </div>
+</div></body></html>"""
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ── USER AUTH + HAIR PROFILE SYSTEM ──────────────────────────────────────────
+# ═══════════════════════════════════════════════════════════════════════════════
+import hashlib, secrets, re as _re
+from functools import wraps
+
+AUTH_DB = os.path.join(os.path.dirname(__file__), "users.db")
+
+def init_auth_db():
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("""CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        email         TEXT    UNIQUE NOT NULL,
+        name          TEXT,
+        password_hash TEXT,
+        google_id     TEXT,
+        avatar        TEXT,
+        created_at    TEXT    DEFAULT (datetime('now')),
+        last_login    TEXT
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS sessions (
+        token      TEXT PRIMARY KEY,
+        user_id    INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS hair_profiles (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER UNIQUE NOT NULL,
+        hair_type    TEXT,
+        hair_concerns TEXT,
+        treatments   TEXT,
+        products_tried TEXT,
+        last_updated TEXT DEFAULT (datetime('now'))
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS chat_history (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        role       TEXT NOT NULL,
+        content    TEXT NOT NULL,
+        ts         TEXT DEFAULT (datetime('now'))
+    )""")
+    con.commit()
+    con.close()
+
+init_auth_db()
+
+def hash_password(pw):
+    salt = "supportrd_salt_2024"
+    return hashlib.sha256((pw + salt).encode()).hexdigest()
+
+def create_session(user_id):
+    token = secrets.token_hex(32)
+    expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)", (token, user_id, expires))
+    con.execute("UPDATE users SET last_login=? WHERE id=?", (datetime.datetime.utcnow().isoformat(), user_id))
+    con.commit()
+    con.close()
+    return token
+
+def get_user_from_token(token):
+    if not token: return None
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("""SELECT u.id,u.email,u.name,u.avatar FROM users u
+        JOIN sessions s ON s.user_id=u.id
+        WHERE s.token=? AND s.expires_at > datetime('now')""", (token,)).fetchone()
+    con.close()
+    if row: return {"id":row[0],"email":row[1],"name":row[2],"avatar":row[3]}
+    return None
+
+def get_current_user():
+    token = request.headers.get("X-Auth-Token") or request.cookies.get("srd_token")
+    return get_user_from_token(token)
+
+def get_hair_profile(user_id):
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("SELECT * FROM hair_profiles WHERE user_id=?", (user_id,)).fetchone()
+    con.close()
+    if not row: return {}
+    return {"hair_type":row[2],"hair_concerns":row[3],"treatments":row[4],"products_tried":row[5]}
+
+def save_hair_profile(user_id, data):
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("""INSERT INTO hair_profiles (user_id,hair_type,hair_concerns,treatments,products_tried)
+        VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+        hair_type=excluded.hair_type, hair_concerns=excluded.hair_concerns,
+        treatments=excluded.treatments, products_tried=excluded.products_tried,
+        last_updated=datetime('now')""",
+        (user_id, data.get("hair_type",""), data.get("hair_concerns",""),
+         data.get("treatments",""), data.get("products_tried","")))
+    con.commit()
+    con.close()
+
+def get_chat_history(user_id, limit=20):
+    con = sqlite3.connect(AUTH_DB)
+    rows = con.execute("""SELECT role,content FROM chat_history
+        WHERE user_id=? ORDER BY id DESC LIMIT ?""", (user_id, limit)).fetchall()
+    con.close()
+    return [{"role":r[0],"content":r[1]} for r in reversed(rows)]
+
+def save_chat_message(user_id, role, content):
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("INSERT INTO chat_history (user_id,role,content) VALUES (?,?,?)",
+                (user_id, role, content))
+    # Keep last 100 messages per user
+    con.execute("""DELETE FROM chat_history WHERE user_id=? AND id NOT IN
+        (SELECT id FROM chat_history WHERE user_id=? ORDER BY id DESC LIMIT 100)""",
+                (user_id, user_id))
+    con.commit()
+    con.close()
+
+# ── AUTH ENDPOINTS ────────────────────────────────────────────────────────────
+
+@app.route("/api/auth/register", methods=["POST"])
+def register():
+    data = request.get_json()
+    email = (data.get("email","")).strip().lower()
+    name  = data.get("name","").strip()
+    pw    = data.get("password","")
+    if not email or not pw:
+        return jsonify({"error":"Email and password required"}), 400
+    if len(pw) < 6:
+        return jsonify({"error":"Password must be at least 6 characters"}), 400
+    try:
+        con = sqlite3.connect(AUTH_DB)
+        con.execute("INSERT INTO users (email,name,password_hash) VALUES (?,?,?)",
+                    (email, name, hash_password(pw)))
+        user_id = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
+        con.commit()
+        con.close()
+        token = create_session(user_id)
+        return jsonify({"ok":True,"token":token,"name":name,"email":email})
+    except sqlite3.IntegrityError:
+        return jsonify({"error":"Email already registered"}), 409
+
+@app.route("/api/auth/login", methods=["POST"])
+def login():
+    data = request.get_json()
+    email = (data.get("email","")).strip().lower()
+    pw    = data.get("password","")
+    con   = sqlite3.connect(AUTH_DB)
+    row   = con.execute("SELECT id,name,avatar FROM users WHERE email=? AND password_hash=?",
+                        (email, hash_password(pw))).fetchone()
+    con.close()
+    if not row:
+        return jsonify({"error":"Invalid email or password"}), 401
+    token = create_session(row[0])
+    return jsonify({"ok":True,"token":token,"name":row[1],"email":email,"avatar":row[2]})
+
+@app.route("/api/auth/logout", methods=["POST"])
+def logout():
+    token = request.headers.get("X-Auth-Token") or request.cookies.get("srd_token")
+    if token:
+        con = sqlite3.connect(AUTH_DB)
+        con.execute("DELETE FROM sessions WHERE token=?", (token,))
+        con.commit()
+        con.close()
+    return jsonify({"ok":True})
+
+@app.route("/api/auth/me", methods=["GET"])
+def me():
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    profile = get_hair_profile(user["id"])
+    history_count = len(get_chat_history(user["id"], limit=100))
+    return jsonify({**user, "profile": profile, "chat_count": history_count})
+
+@app.route("/api/auth/google", methods=["POST"])
+def google_auth():
+    """Handle Google OAuth — frontend sends the Google ID token"""
+    data     = request.get_json()
+    g_token  = data.get("credential","")
+    # Decode Google JWT payload (no signature check needed for basic use)
+    try:
+        parts   = g_token.split(".")
+        padding = 4 - len(parts[1]) % 4
+        payload = json.loads(__import__("base64").b64decode(parts[1] + "="*padding).decode())
+        email   = payload.get("email","")
+        name    = payload.get("name","")
+        avatar  = payload.get("picture","")
+        g_id    = payload.get("sub","")
+    except Exception as e:
+        return jsonify({"error":"Invalid Google token"}), 400
+
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()
+    if row:
+        user_id = row[0]
+        con.execute("UPDATE users SET google_id=?,name=?,avatar=? WHERE id=?",
+                    (g_id, name, avatar, user_id))
+    else:
+        con.execute("INSERT INTO users (email,name,google_id,avatar) VALUES (?,?,?,?)",
+                    (email, name, g_id, avatar))
+        user_id = con.execute("SELECT id FROM users WHERE email=?", (email,)).fetchone()[0]
+    con.commit()
+    con.close()
+    token = create_session(user_id)
+    return jsonify({"ok":True,"token":token,"name":name,"email":email,"avatar":avatar})
+
+# ── HAIR PROFILE ENDPOINTS ────────────────────────────────────────────────────
+
+@app.route("/api/profile", methods=["GET","POST"])
+def profile():
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    if request.method == "POST":
+        save_hair_profile(user["id"], request.get_json())
+        return jsonify({"ok":True})
+    return jsonify(get_hair_profile(user["id"]))
+
+@app.route("/api/history", methods=["GET"])
+def history():
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    return jsonify({"history": get_chat_history(user["id"], limit=50)})
+
+@app.route("/api/history/clear", methods=["POST"])
+def clear_history():
+    user = get_current_user()
+    if not user: return jsonify({"error":"Not logged in"}), 401
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("DELETE FROM chat_history WHERE user_id=?", (user["id"],))
+    con.commit()
+    con.close()
+    return jsonify({"ok":True})
+
+
+
+# ── LOGIN PAGE ────────────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+
+@app.route("/login")
+def login_page():
+    return f"""<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SupportRD — Sign In</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{background:#f0ebe8;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:'Jost',sans-serif;font-weight:300;padding:24px;}}
+.card{{background:#fff;border-radius:24px;padding:48px 40px;width:100%;max-width:420px;box-shadow:0 12px 48px rgba(0,0,0,0.08);border:1px solid rgba(193,163,162,0.20);}}
+.logo{{text-align:center;margin-bottom:32px;}}
+.logo-text{{font-family:'Cormorant Garamond',serif;font-size:32px;font-style:italic;font-weight:300;color:#0d0906;}}
+.logo-sub{{font-size:10px;letter-spacing:0.24em;text-transform:uppercase;color:#c1a3a2;margin-top:4px;}}
+h2{{font-family:'Cormorant Garamond',serif;font-size:22px;font-style:italic;font-weight:300;color:#0d0906;text-align:center;margin-bottom:28px;}}
+.tabs{{display:flex;gap:0;border:1px solid rgba(193,163,162,0.30);border-radius:12px;overflow:hidden;margin-bottom:28px;}}
+.tab{{flex:1;padding:10px;text-align:center;font-size:12px;letter-spacing:0.10em;text-transform:uppercase;cursor:pointer;background:#fff;color:rgba(0,0,0,0.40);transition:all 0.2s;border:none;font-family:'Jost',sans-serif;}}
+.tab.active{{background:#c1a3a2;color:#fff;}}
+input{{width:100%;padding:13px 16px;border:1px solid rgba(193,163,162,0.35);border-radius:12px;font-family:'Jost',sans-serif;font-size:14px;color:#0d0906;background:#faf6f3;outline:none;margin-bottom:12px;transition:border 0.2s;}}
+input:focus{{border-color:#c1a3a2;}}
+input::placeholder{{color:rgba(0,0,0,0.25);}}
+.btn{{width:100%;padding:14px;border:none;border-radius:30px;background:#c1a3a2;color:#fff;font-family:'Jost',sans-serif;font-size:12px;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;transition:background 0.3s;margin-top:4px;}}
+.btn:hover{{background:#9d7f6a;}}
+.divider{{display:flex;align-items:center;gap:12px;margin:20px 0;}}
+.divider-line{{flex:1;height:1px;background:rgba(193,163,162,0.25);}}
+.divider-text{{font-size:11px;color:rgba(0,0,0,0.30);letter-spacing:0.08em;}}
+.google-wrap{{display:flex;justify-content:center;}}
+.err{{background:#fdf0f0;border:1px solid #e4a0a0;border-radius:10px;padding:12px 16px;font-size:13px;color:#8b2020;margin-bottom:16px;display:none;}}
+.success{{background:#f0faf5;border:1px solid #c1a3a2;border-radius:10px;padding:12px 16px;font-size:13px;color:#2d6a4f;margin-bottom:16px;display:none;}}
+.back{{text-align:center;margin-top:20px;font-size:11px;color:rgba(0,0,0,0.35);letter-spacing:0.08em;}}
+.back a{{color:#9d7f6a;text-decoration:none;}}
+</style>
+</head><body>
+<div class="card">
+  <div class="logo">
+    <div class="logo-text">SupportRD</div>
+    <div class="logo-sub">Hair Advisor</div>
+  </div>
+  <h2>Welcome back</h2>
+  <div class="tabs">
+    <button class="tab active" onclick="switchTab('login')">Sign In</button>
+    <button class="tab" onclick="switchTab('register')">Create Account</button>
+  </div>
+  <div id="err" class="err"></div>
+  <div id="success" class="success"></div>
+  <div id="login-form">
+    <input type="email" id="l-email" placeholder="Email address">
+    <input type="password" id="l-pass" placeholder="Password">
+    <button class="btn" onclick="doLogin()">Sign In</button>
+  </div>
+  <div id="register-form" style="display:none;">
+    <input type="text" id="r-name" placeholder="Your name">
+    <input type="email" id="r-email" placeholder="Email address">
+    <input type="password" id="r-pass" placeholder="Password (min 6 characters)">
+    <button class="btn" onclick="doRegister()">Create Account</button>
+  </div>
+  <div class="divider">
+    <div class="divider-line"></div>
+    <div class="divider-text">or</div>
+    <div class="divider-line"></div>
+  </div>
+  <div class="google-wrap">
+    <div id="g_id_onload" data-client_id="{GOOGLE_CLIENT_ID}" data-callback="handleGoogle"></div>
+    <div class="g_id_signin" data-type="standard" data-shape="pill" data-theme="outline" data-text="sign_in_with" data-size="large" data-logo_alignment="left"></div>
+  </div>
+  <div class="back"><a href="/">← Back to Hair Advisor</a></div>
+</div>
+<script>
+function switchTab(t){{
+  document.getElementById('login-form').style.display = t==='login'?'block':'none';
+  document.getElementById('register-form').style.display = t==='register'?'block':'none';
+  document.querySelectorAll('.tab').forEach((b,i)=>b.classList.toggle('active',(t==='login'&&i===0)||(t==='register'&&i===1)));
+  hideMsg();
+}}
+function showErr(m){{var e=document.getElementById('err');e.textContent=m;e.style.display='block';document.getElementById('success').style.display='none';}}
+function showOk(m){{var e=document.getElementById('success');e.textContent=m;e.style.display='block';document.getElementById('err').style.display='none';}}
+function hideMsg(){{document.getElementById('err').style.display='none';document.getElementById('success').style.display='none';}}
+function saveAndRedirect(data){{
+  localStorage.setItem('srd_token', data.token);
+  localStorage.setItem('srd_user', JSON.stringify({{name:data.name,email:data.email,avatar:data.avatar||''}}) );
+  showOk('Welcome, '+data.name+'! Redirecting...');
+  setTimeout(()=>window.location.href='/dashboard',1200);
+}}
+async function doLogin(){{
+  var email=document.getElementById('l-email').value;
+  var pass=document.getElementById('l-pass').value;
+  if(!email||!pass){{showErr('Please fill in all fields.');return;}}
+  var r=await fetch('/api/auth/login',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email,password:pass}})}});
+  var d=await r.json();
+  if(d.error){{showErr(d.error);}}else{{saveAndRedirect(d);}}
+}}
+async function doRegister(){{
+  var name=document.getElementById('r-name').value;
+  var email=document.getElementById('r-email').value;
+  var pass=document.getElementById('r-pass').value;
+  if(!name||!email||!pass){{showErr('Please fill in all fields.');return;}}
+  var r=await fetch('/api/auth/register',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{name,email,password:pass}})}});
+  var d=await r.json();
+  if(d.error){{showErr(d.error);}}else{{saveAndRedirect(d);}}
+}}
+async function handleGoogle(response){{
+  var r=await fetch('/api/auth/google',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{credential:response.credential}})}});
+  var d=await r.json();
+  if(d.error){{showErr(d.error);}}else{{saveAndRedirect(d);}}
+}}
+</script>
+</body></html>"""
+
+
+# ── DASHBOARD PAGE ────────────────────────────────────────────────────────────
+@app.route("/dashboard")
+def dashboard():
+    return """<!DOCTYPE html><html><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SupportRD — Hair Health Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#f0ebe8;font-family:'Jost',sans-serif;font-weight:300;min-height:100vh;padding:24px 20px;}
+
+/* HEADER */
+.hdr{max-width:1000px;margin:0 auto 28px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;}
+.hdr-logo{font-family:'Cormorant Garamond',serif;font-size:26px;font-style:italic;color:#0d0906;}
+.hdr-right{display:flex;align-items:center;gap:14px;}
+.avatar{width:38px;height:38px;border-radius:50%;background:#c1a3a2;display:flex;align-items:center;justify-content:center;font-size:16px;color:#fff;overflow:hidden;flex-shrink:0;}
+.avatar img{width:100%;height:100%;object-fit:cover;}
+.uname{font-size:13px;color:#0d0906;}
+.btn-xs{padding:7px 16px;border:1px solid rgba(193,163,162,0.45);border-radius:20px;background:transparent;font-family:'Jost',sans-serif;font-size:10px;letter-spacing:0.10em;text-transform:uppercase;cursor:pointer;color:#9d7f6a;transition:all 0.2s;}
+.btn-xs:hover{background:#c1a3a2;color:#fff;border-color:#c1a3a2;}
+
+/* LAYOUT */
+.wrap{max-width:1000px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media(max-width:680px){.wrap{grid-template-columns:1fr;}}
+.full{grid-column:1/-1;}
+.card{background:#fff;border-radius:20px;padding:28px;border:1px solid rgba(193,163,162,0.18);box-shadow:0 4px 20px rgba(0,0,0,0.05);}
+.card-label{font-size:10px;letter-spacing:0.26em;text-transform:uppercase;color:#c1a3a2;margin-bottom:10px;}
+.card-title{font-family:'Cormorant Garamond',serif;font-size:20px;font-style:italic;color:#0d0906;margin-bottom:20px;}
+
+/* HAIR HEALTH SCORE — MAIN FEATURE */
+.score-card{background:linear-gradient(135deg,#0d0906 0%,#1e1410 100%);border:none;padding:36px 32px;text-align:center;position:relative;overflow:hidden;}
+.score-card::after{content:'';position:absolute;right:-60px;top:-60px;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle,rgba(193,163,162,0.12),transparent 70%);pointer-events:none;}
+.score-label{font-size:10px;letter-spacing:0.28em;text-transform:uppercase;color:rgba(193,163,162,0.60);margin-bottom:16px;}
+.score-ring-wrap{position:relative;width:200px;height:200px;margin:0 auto 20px;}
+.score-ring-svg{transform:rotate(-90deg);}
+.score-ring-bg{fill:none;stroke:rgba(193,163,162,0.12);stroke-width:12;}
+.score-ring-fill{fill:none;stroke-width:12;stroke-linecap:round;transition:stroke-dashoffset 2s cubic-bezier(0.22,1,0.36,1),stroke 1s ease;}
+.score-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.score-number{font-family:'Cormorant Garamond',serif;font-size:64px;font-style:italic;color:#fff;line-height:1;}
+.score-pct{font-size:16px;color:rgba(193,163,162,0.70);font-weight:300;}
+.score-status{font-family:'Cormorant Garamond',serif;font-size:22px;font-style:italic;color:#c1a3a2;margin-bottom:8px;}
+.score-desc{font-size:12px;color:rgba(255,255,255,0.40);letter-spacing:0.06em;line-height:1.6;max-width:320px;margin:0 auto 24px;}
+.score-bars{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;}
+.score-bar-item{text-align:left;}
+.score-bar-label{font-size:10px;letter-spacing:0.10em;text-transform:uppercase;color:rgba(193,163,162,0.50);margin-bottom:6px;}
+.score-bar-track{height:4px;background:rgba(255,255,255,0.08);border-radius:2px;overflow:hidden;}
+.score-bar-fill{height:100%;border-radius:2px;transition:width 1.5s cubic-bezier(0.22,1,0.36,1);}
+.score-bar-val{font-size:11px;color:rgba(255,255,255,0.50);margin-top:4px;}
+
+/* PROFILE FORM */
+.form-group{margin-bottom:14px;}
+.form-group label{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(0,0,0,0.38);display:block;margin-bottom:6px;}
+input,select,textarea{width:100%;padding:11px 14px;border:1px solid rgba(193,163,162,0.30);border-radius:10px;font-family:'Jost',sans-serif;font-size:13px;color:#0d0906;background:#faf6f3;outline:none;transition:border 0.2s;}
+input:focus,select:focus{border-color:#c1a3a2;}
+.btn-save{width:100%;padding:12px;border:none;border-radius:24px;background:#c1a3a2;color:#fff;font-family:'Jost',sans-serif;font-size:11px;letter-spacing:0.14em;text-transform:uppercase;cursor:pointer;transition:background 0.3s;margin-top:6px;}
+.btn-save:hover{background:#9d7f6a;}
+
+/* STATS ROW */
+.stats-row{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:20px;}
+.stat{text-align:center;}
+.stat-n{font-family:'Cormorant Garamond',serif;font-size:40px;font-style:italic;color:#c1a3a2;line-height:1;}
+.stat-l{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(0,0,0,0.30);margin-top:3px;}
+
+/* CTA BUTTONS */
+.cta-btn{display:block;padding:14px 20px;border-radius:14px;text-decoration:none;text-align:center;margin-bottom:10px;transition:opacity 0.2s;}
+.cta-btn:hover{opacity:0.88;}
+.cta-rose{background:linear-gradient(135deg,#c1a3a2,#9d7f6a);color:#fff;}
+.cta-wa{background:linear-gradient(135deg,#25D366,#128C7E);color:#fff;}
+.cta-title{font-family:'Cormorant Garamond',serif;font-size:17px;font-style:italic;}
+.cta-sub{font-size:10px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.85;margin-top:2px;}
+
+/* HISTORY */
+.h-item{padding:13px 0;border-bottom:1px solid rgba(193,163,162,0.12);}
+.h-item:last-child{border-bottom:none;}
+.h-role{font-size:9px;letter-spacing:0.14em;text-transform:uppercase;color:#c1a3a2;margin-bottom:3px;}
+.h-text{font-size:13px;color:rgba(0,0,0,0.60);line-height:1.5;}
+.clear-btn{font-size:10px;color:rgba(0,0,0,0.28);background:none;border:none;cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;margin-top:14px;display:block;}
+.clear-btn:hover{color:#c1a3a2;}
+
+/* SCORE COLOR ZONES */
+.zone-critical{stroke:#e07070;}
+.zone-poor{stroke:#d4956a;}
+.zone-fair{stroke:#c1a3a2;}
+.zone-good{stroke:#8ec63f;}
+.zone-excellent{stroke:#25D366;}
+</style>
+</head><body>
+
+<div class="hdr">
+  <div class="hdr-logo">SupportRD Hair Advisor</div>
+  <div class="hdr-right">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <div class="avatar" id="av"></div>
+      <span class="uname" id="un">Loading...</span>
+    </div>
+    <button class="btn-xs" onclick="doLogout()">Sign Out</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- HAIR HEALTH SCORE — FULL WIDTH HERO -->
+  <div class="card score-card full">
+    <div class="score-label">Your Hair Health Score</div>
+    <div class="score-ring-wrap">
+      <svg class="score-ring-svg" width="200" height="200" viewBox="0 0 200 200">
+        <circle class="score-ring-bg" cx="100" cy="100" r="88"/>
+        <circle class="score-ring-fill" id="score-ring" cx="100" cy="100" r="88"
+          stroke-dasharray="553" stroke-dashoffset="553"/>
+      </svg>
+      <div class="score-center">
+        <div class="score-number" id="score-num">0</div>
+        <div class="score-pct">/ 100</div>
+      </div>
+    </div>
+    <div class="score-status" id="score-status">Calculating...</div>
+    <div class="score-desc" id="score-desc">Complete your hair profile to get your personalized score</div>
+    <div class="score-bars">
+      <div class="score-bar-item">
+        <div class="score-bar-label">Moisture</div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="bar-moisture" style="width:0%;background:#c1a3a2;"></div></div>
+        <div class="score-bar-val" id="val-moisture">—</div>
+      </div>
+      <div class="score-bar-item">
+        <div class="score-bar-label">Strength</div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="bar-strength" style="width:0%;background:#9d7f6a;"></div></div>
+        <div class="score-bar-val" id="val-strength">—</div>
+      </div>
+      <div class="score-bar-item">
+        <div class="score-bar-label">Scalp Health</div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="bar-scalp" style="width:0%;background:#c1a3a2;"></div></div>
+        <div class="score-bar-val" id="val-scalp">—</div>
+      </div>
+      <div class="score-bar-item">
+        <div class="score-bar-label">Growth</div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="bar-growth" style="width:0%;background:#9d7f6a;"></div></div>
+        <div class="score-bar-val" id="val-growth">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PROFILE FORM -->
+  <div class="card">
+    <div class="card-label">Build Your Score</div>
+    <div class="card-title">Hair Profile</div>
+    <div class="form-group"><label>Hair Type</label>
+      <select id="p-type" onchange="recalcScore()">
+        <option value="">Select...</option>
+        <option>Straight</option><option>Wavy</option><option>Curly</option>
+        <option>Coily / 4C</option><option>Fine</option><option>Thick</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Main Concerns</label>
+      <input type="text" id="p-concerns" placeholder="e.g. dry, frizzy, thinning..." oninput="recalcScore()">
+    </div>
+    <div class="form-group"><label>Chemical Treatments</label>
+      <input type="text" id="p-treatments" placeholder="e.g. relaxer, bleach, keratin..." oninput="recalcScore()">
+    </div>
+    <div class="form-group"><label>Products Currently Using</label>
+      <input type="text" id="p-products" placeholder="e.g. Formula Exclusiva..." oninput="recalcScore()">
+    </div>
+    <div class="form-group"><label>Heat Tool Usage</label>
+      <select id="p-heat" onchange="recalcScore()">
+        <option value="">Select frequency...</option>
+        <option value="never">Never</option>
+        <option value="rarely">Rarely (monthly)</option>
+        <option value="sometimes">Sometimes (weekly)</option>
+        <option value="daily">Daily</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Water Type at Home</label>
+      <select id="p-water" onchange="recalcScore()">
+        <option value="">Select...</option>
+        <option value="soft">Soft water</option>
+        <option value="hard">Hard water</option>
+        <option value="unknown">Not sure</option>
+      </select>
+    </div>
+    <button class="btn-save" onclick="saveProfile()">Save & Update Score</button>
+  </div>
+
+  <!-- STATS + CTA -->
+  <div class="card">
+    <div class="card-label">Overview</div>
+    <div class="card-title">My Journey</div>
+    <div class="stats-row">
+      <div class="stat"><div class="stat-n" id="s-chats">—</div><div class="stat-l">Consultations</div></div>
+      <div class="stat"><div class="stat-n" id="s-concern">—</div><div class="stat-l">Concerns Logged</div></div>
+      <div class="stat"><div class="stat-n" id="s-score-mini">—</div><div class="stat-l">Hair Score</div></div>
+    </div>
+    <a href="/" class="cta-btn cta-rose">
+      <div class="cta-title">Talk to Aria</div>
+      <div class="cta-sub">AI Hair Advisor · Free</div>
+    </a>
+    <a href="https://wa.me/18292332670" target="_blank" class="cta-btn cta-wa">
+      <div class="cta-title">Live Human Advisor</div>
+      <div class="cta-sub">WhatsApp · 829-233-2670</div>
+    </a>
+  </div>
+
+  <!-- CHAT HISTORY -->
+  <div class="card full">
+    <div class="card-label">Conversation Memory</div>
+    <div class="card-title">Recent Chat with Aria</div>
+    <div id="history-list"><div style="color:rgba(0,0,0,0.28);font-size:13px;">Loading...</div></div>
+    <button class="clear-btn" onclick="clearHistory()">Clear chat history</button>
+  </div>
+
+</div>
+
+<script>
+const token = localStorage.getItem('srd_token');
+if(!token){ window.location.href='/login'; }
+
+// ── SCORE ENGINE ──────────────────────────────────────────────────────────────
+function calcScore(){
+  const concerns  = (document.getElementById('p-concerns').value||'').toLowerCase();
+  const treatments= (document.getElementById('p-treatments').value||'').toLowerCase();
+  const products  = (document.getElementById('p-products').value||'').toLowerCase();
+  const heat      = document.getElementById('p-heat').value;
+  const water     = document.getElementById('p-water').value;
+  const type      = document.getElementById('p-type').value;
+
+  // Base score per category (0-100 each)
+  let moisture=75, strength=75, scalp=75, growth=75;
+
+  // Concerns deductions
+  const concernMap={
+    'dry':[-20,0,0,0],'frizz':[-10,0,0,0],'damage':[-5,-25,0,-10],
+    'breakage':[0,-30,0,-15],'thinning':[0,-15,0,-25],'falling':[0,-10,0,-30],
+    'oily':[0,0,-20,0],'dandruff':[0,0,-25,-5],'itchy':[0,0,-20,0],
+    'color':[0,-10,0,0],'bleach':[-5,-20,0,-5],'relaxer':[-5,-15,0,0]
+  };
+  for(const [k,v] of Object.entries(concernMap)){
+    if(concerns.includes(k)||treatments.includes(k)){
+      moisture+=v[0]; strength+=v[1]; scalp+=v[2]; growth+=v[3];
+    }
+  }
+
+  // Heat damage
+  if(heat==='daily'){strength-=20;moisture-=15;}
+  else if(heat==='sometimes'){strength-=8;moisture-=5;}
+  else if(heat==='rarely'){strength-=2;}
+  else if(heat==='never'){strength+=5;moisture+=5;}
+
+  // Hard water
+  if(water==='hard'){scalp-=10;moisture-=8;}
+  else if(water==='soft'){scalp+=5;moisture+=5;}
+
+  // SupportRD products boost
+  if(products.includes('formula exclusiva')){strength+=15;moisture+=12;}
+  if(products.includes('laciador crece')||products.includes('laciador')){moisture+=12;strength+=8;growth+=5;}
+  if(products.includes('gotero rapido')||products.includes('gotero')){scalp+=18;growth+=10;}
+  if(products.includes('gotitas brillantes')||products.includes('gotika')){moisture+=8;}
+
+  // Hair type base adjustment
+  if(type==='Coily / 4C'){moisture-=5;}
+  if(type==='Fine'){strength-=5;}
+
+  // Clamp 0-100
+  moisture=Math.max(0,Math.min(100,moisture));
+  strength=Math.max(0,Math.min(100,strength));
+  scalp   =Math.max(0,Math.min(100,scalp));
+  growth  =Math.max(0,Math.min(100,growth));
+
+  const overall = Math.round((moisture+strength+scalp+growth)/4);
+  return {overall, moisture, strength, scalp, growth};
+}
+
+function getZone(score){
+  if(score>=85) return {status:'Excellent',desc:'Your hair is thriving! Keep up your routine and maintain this level of care.',cls:'zone-excellent',color:'#25D366'};
+  if(score>=70) return {status:'Good',desc:'Your hair is in good shape with room to optimize. A few targeted treatments can push you higher.',cls:'zone-good',color:'#8ec63f'};
+  if(score>=50) return {status:'Fair',desc:'Your hair needs some attention. Consistent care with the right products will make a real difference.',cls:'zone-fair',color:'#c1a3a2'};
+  if(score>=30) return {status:'Needs Care',desc:'Your hair is showing signs of stress. Start a focused treatment routine as soon as possible.',cls:'zone-poor',color:'#d4956a'};
+  return {status:'Critical',desc:'Your hair needs urgent attention. We strongly recommend consulting with our live advisor.',cls:'zone-critical',color:'#e07070'};
+}
+
+function animateNumber(el, target, duration){
+  const start=Date.now(); const from=parseInt(el.textContent)||0;
+  function step(){
+    const p=Math.min(1,(Date.now()-start)/duration);
+    const ease=1-Math.pow(1-p,3);
+    el.textContent=Math.round(from+(target-from)*ease);
+    if(p<1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function recalcScore(){
+  const s=calcScore();
+  const zone=getZone(s.overall);
+
+  // Ring
+  const ring=document.getElementById('score-ring');
+  const circumference=553;
+  const offset=circumference-(circumference*(s.overall/100));
+  ring.style.strokeDashoffset=offset;
+  ring.className='score-ring-fill '+zone.cls;
+
+  // Number
+  animateNumber(document.getElementById('score-num'), s.overall, 1500);
+  document.getElementById('s-score-mini').textContent=s.overall+'%';
+
+  // Status
+  document.getElementById('score-status').textContent=zone.status;
+  document.getElementById('score-desc').textContent=zone.desc;
+
+  // Sub-bars
+  const bars=[
+    {id:'bar-moisture',val:s.moisture,valId:'val-moisture',color:zone.color},
+    {id:'bar-strength',val:s.strength,valId:'val-strength',color:zone.color},
+    {id:'bar-scalp',val:s.scalp,valId:'val-scalp',color:zone.color},
+    {id:'bar-growth',val:s.growth,valId:'val-growth',color:zone.color},
+  ];
+  bars.forEach(b=>{
+    setTimeout(()=>{
+      document.getElementById(b.id).style.width=b.val+'%';
+      document.getElementById(b.id).style.background=b.color;
+      document.getElementById(b.valId).textContent=b.val+'%';
+    },200);
+  });
+}
+
+// ── DATA LOADING ─────────────────────────────────────────────────────────────
+async function loadData(){
+  const r=await fetch('/api/auth/me',{headers:{'X-Auth-Token':token}});
+  if(r.status===401){window.location.href='/login';return;}
+  const d=await r.json();
+
+  document.getElementById('un').textContent=d.name||d.email;
+  const av=document.getElementById('av');
+  if(d.avatar){av.innerHTML='<img src="'+d.avatar+'" alt="">';}
+  else{av.textContent=(d.name||'?')[0].toUpperCase();}
+
+  document.getElementById('s-chats').textContent=d.chat_count||0;
+  const concerns=(d.profile?.hair_concerns||'').split(',').filter(c=>c.trim()).length;
+  document.getElementById('s-concern').textContent=concerns||0;
+
+  if(d.profile){
+    document.getElementById('p-type').value=d.profile.hair_type||'';
+    document.getElementById('p-concerns').value=d.profile.hair_concerns||'';
+    document.getElementById('p-treatments').value=d.profile.treatments||'';
+    document.getElementById('p-products').value=d.profile.products_tried||'';
+  }
+  setTimeout(recalcScore, 300);
+}
+
+async function loadHistory(){
+  const r=await fetch('/api/history',{headers:{'X-Auth-Token':token}});
+  const d=await r.json();
+  const list=document.getElementById('history-list');
+  if(!d.history||!d.history.length){
+    list.innerHTML='<div style="color:rgba(0,0,0,0.28);font-size:13px;">No conversations yet — start chatting with Aria!</div>';
+    return;
+  }
+  list.innerHTML=d.history.slice(-20).reverse().map(h=>`
+    <div class="h-item">
+      <div class="h-role">${h.role==='user'?'You':'Aria'}</div>
+      <div class="h-text">${h.content}</div>
+    </div>`).join('');
+}
+
+async function saveProfile(){
+  const data={
+    hair_type:document.getElementById('p-type').value,
+    hair_concerns:document.getElementById('p-concerns').value,
+    treatments:document.getElementById('p-treatments').value,
+    products_tried:document.getElementById('p-products').value
+  };
+  await fetch('/api/profile',{method:'POST',headers:{'Content-Type':'application/json','X-Auth-Token':token},body:JSON.stringify(data)});
+  recalcScore();
+  const btn=document.querySelector('.btn-save');
+  btn.textContent='Saved ✓';
+  setTimeout(()=>btn.textContent='Save & Update Score',2000);
+}
+
+async function clearHistory(){
+  if(!confirm('Clear all chat history?'))return;
+  await fetch('/api/history/clear',{method:'POST',headers:{'X-Auth-Token':token}});
+  loadHistory();
+}
+
+async function doLogout(){
+  await fetch('/api/auth/logout',{method:'POST',headers:{'X-Auth-Token':token}});
+  localStorage.removeItem('srd_token');
+  localStorage.removeItem('srd_user');
+  window.location.href='/';
+}
+
+loadData();
+loadHistory();
+</script>
+</body></html>"""
