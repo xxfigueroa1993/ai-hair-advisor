@@ -1920,11 +1920,23 @@ def shopify_proxy():
 
 
 
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        from flask import make_response
+        resp = make_response("", 200)
+        resp.headers["Access-Control-Allow-Origin"]  = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token, X-Session-Id"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, DELETE"
+        resp.headers["Access-Control-Max-Age"]       = "3600"
+        return resp
+
 @app.after_request
-def add_headers(response):
+def add_cors_headers(response):
     response.headers["Access-Control-Allow-Origin"]  = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token, X-Session-Id"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, DELETE"
+    response.headers["Access-Control-Max-Age"]       = "3600"
     return response
 
 @app.route("/api/ping", methods=["GET"])
