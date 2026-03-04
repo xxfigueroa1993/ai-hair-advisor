@@ -1787,29 +1787,13 @@ def add_headers(response):
     response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
-@app.route("/api/auth/register", methods=["OPTIONS"])
-@app.route("/api/auth/login", methods=["OPTIONS"])
-@app.route("/api/auth/google", methods=["OPTIONS"])
-@app.route("/api/auth/me", methods=["OPTIONS"])
-@app.route("/api/profile", methods=["OPTIONS"])
-@app.route("/api/history", methods=["OPTIONS"])
-@app.route("/api/history/clear", methods=["OPTIONS"])
-@app.route("/api/auth/shopify", methods=["OPTIONS"])
-@app.route("/api/auth/shopify-verify", methods=["OPTIONS"])
-@app.route("/api/rate-experience", methods=["OPTIONS"])
-@app.route("/api/recommend", methods=["OPTIONS"])
-@app.route("/api/subscription/status", methods=["OPTIONS"])
-@app.route("/api/subscription/checkout", methods=["OPTIONS"])
-def options_handler():
+@app.route("/api/<path:dummy>", methods=["OPTIONS"])
+def options_handler(dummy):
     return "", 200
 
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({"ok": True, "status": "awake"})
-    response.headers["X-Frame-Options"]              = "ALLOWALL"
-    response.headers["Content-Security-Policy"]      = "frame-ancestors *"
-    response.headers["Permissions-Policy"]           = "microphone=*, camera=()"
-    return response
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
