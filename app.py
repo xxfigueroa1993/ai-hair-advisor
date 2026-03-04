@@ -1994,7 +1994,7 @@ def _make_movement_event(source="simulated", mins_ago=None):
 # Seed 15 simulated events on startup (so the feed is never empty)
 _MOVEMENT_EVENTS = [_make_movement_event(mins_ago=random.randint(1,55)) for _ in range(15)]
 
-@app.route("/api/movement", methods=["GET"])
+@app.route("/api/movement", methods=["GET","OPTIONS"])
 def movement():
     """Return recent movement events — mix of real orders + simulated activity."""
     live = []
@@ -2051,7 +2051,7 @@ def movement():
 
 
 # ── TRANSCRIPT → MOVEMENT EVENT ───────────────────────────────────────────────
-@app.route("/api/add-movement", methods=["POST"])
+@app.route("/api/add-movement", methods=["POST","OPTIONS"])
 def add_movement():
     """Accept a cleaned transcript event (from manual upload) and add to feed."""
     data = request.get_json()
