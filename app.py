@@ -1555,15 +1555,17 @@ document.getElementById("contactBtn").addEventListener("click", () => {
   const cached = localStorage.getItem('srd_user');
   if(!token) return; // show sign in button (default)
 
-  // Show user chip immediately from cache — don't wait for API
+  // Hide sign in button immediately if we have a token — show chip from cache or placeholder
+  document.getElementById('authBtn').style.display = 'none';
   if(cached){
     try{
       const u = JSON.parse(cached);
       showUserChip(u.name, u.avatar);
-    }catch(e){}
+    }catch(e){
+      showUserChip('Member', '');
+    }
   } else {
-    // No cache but have token — hide sign in button optimistically
-    document.getElementById('authBtn').style.display = 'none';
+    showUserChip('Member', '');
   }
 
   // Verify token + load profile for welcome banner
