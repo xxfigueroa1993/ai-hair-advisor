@@ -1547,7 +1547,7 @@ async function goUpgrade(){
 # ── API: RECOMMEND (WITH SUBSCRIPTION GATING) ────────────────────────────────
 FREE_SYSTEM_PROMPT = """You are Aria, a hair care advisor for SupportRD. Give ONE brief, helpful product recommendation in 2 sentences max. Mention the product name and price. End every response with: "For deeper hair analysis, personalized advice, and your full hair health score, upgrade to SupportRD Premium — start free for 7 days." Keep it warm and helpful."""
 
-@app.route("/api/recommend", methods=["POST"])
+@app.route("/api/recommend", methods=["POST","OPTIONS"])
 def recommend():
     data       = request.get_json()
     user_text  = data.get("text", "")
@@ -1779,21 +1779,28 @@ def analytics():
 def shopify_proxy():
     return index()
 
+@app.before_request
+def handle_options():
+    if request.method == "OPTIONS":
+        from flask import Response
+        r = Response("")
+        r.headers["Access-Control-Allow-Origin"]  = "*"
+        r.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token, X-Session-Id"
+        r.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, DELETE"
+        return r
+
 @app.after_request
 def add_headers(response):
     response.headers["Access-Control-Allow-Origin"]  = "*"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token, X-Session-Id"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, DELETE"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
-@app.route("/api/<path:dummy>", methods=["OPTIONS"])
-def options_handler(dummy):
-    return "", 200
+
 
 # ── KEEP-ALIVE SELF PING (prevents Render free tier sleep) ───────────────────
 import threading
@@ -2183,7 +2190,7 @@ def save_chat_message(user_id, role, content):
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────────────────────
 
-@app.route("/api/auth/register", methods=["POST"])
+@app.route("/api/auth/register", methods=["POST","OPTIONS"])
 def register():
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -2209,7 +2216,7 @@ def register():
     except Exception as e:
         return jsonify({"error":"Registration failed: " + str(e)}), 500
 
-@app.route("/api/auth/login", methods=["POST"])
+@app.route("/api/auth/login", methods=["POST","OPTIONS"])
 def login():
     try:
         data  = request.get_json(force=True, silent=True) or {}
@@ -2228,7 +2235,7 @@ def login():
     except Exception as e:
         return jsonify({"error":"Login failed: " + str(e)}), 500
 
-@app.route("/api/auth/logout", methods=["POST"])
+@app.route("/api/auth/logout", methods=["POST","OPTIONS"])
 def logout():
     token = request.headers.get("X-Auth-Token") or request.cookies.get("srd_token")
     if token:
@@ -2238,7 +2245,7 @@ def logout():
         con.close()
     return jsonify({"ok":True})
 
-@app.route("/api/auth/me", methods=["GET"])
+@app.route("/api/auth/me", methods=["GET","OPTIONS"])
 def me():
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
@@ -2246,7 +2253,7 @@ def me():
     history_count = len(get_chat_history(user["id"], limit=100))
     return jsonify({**user, "profile": profile, "chat_count": history_count})
 
-@app.route("/api/auth/google", methods=["POST"])
+@app.route("/api/auth/google", methods=["POST","OPTIONS"])
 def google_auth():
     """Handle Google OAuth — frontend sends the Google ID token"""
     data     = request.get_json()
@@ -2280,7 +2287,7 @@ def google_auth():
 
 # ── HAIR PROFILE ENDPOINTS ────────────────────────────────────────────────────
 
-@app.route("/api/profile", methods=["GET","POST"])
+@app.route("/api/profile", methods=["GET","POST","OPTIONS"])
 def profile():
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
@@ -2289,13 +2296,13 @@ def profile():
         return jsonify({"ok":True})
     return jsonify(get_hair_profile(user["id"]))
 
-@app.route("/api/history", methods=["GET"])
+@app.route("/api/history", methods=["GET","OPTIONS"])
 def history():
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
     return jsonify({"history": get_chat_history(user["id"], limit=50)})
 
-@app.route("/api/history/clear", methods=["POST"])
+@app.route("/api/history/clear", methods=["POST","OPTIONS"])
 def clear_history():
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
@@ -2837,7 +2844,7 @@ def get_or_create_user_by_shopify(shopify_customer_id, email, name, avatar=""):
     token = create_session(user_id)
     return token, user_id
 
-@app.route("/api/auth/shopify", methods=["POST"])
+@app.route("/api/auth/shopify", methods=["POST","OPTIONS"])
 def shopify_auth():
     """
     Called from Shopify page with customer info injected via Liquid.
@@ -2856,7 +2863,7 @@ def shopify_auth():
     return jsonify({"ok":True,"token":token,"name":name,"email":email,
                     "user_id":user_id,"profile":profile,"chat_count":history_count})
 
-@app.route("/api/auth/shopify-verify", methods=["POST"])
+@app.route("/api/auth/shopify-verify", methods=["POST","OPTIONS"])
 def shopify_verify():
     """Verify a session token and return full profile — called on every dashboard load."""
     user = get_current_user()
@@ -2889,7 +2896,7 @@ def get_recommendation_history(user_id):
                 break
     return recs[:20]
 
-@app.route("/api/rate-experience", methods=["POST"])
+@app.route("/api/rate-experience", methods=["POST","OPTIONS"])
 def rate_experience():
     """Save a website experience rating from the dashboard."""
     user = get_current_user()
@@ -3004,7 +3011,7 @@ def increment_session_count(session_id, user_id=None):
     con.close()
 
 # ── SUBSCRIPTION STATUS ENDPOINT ──────────────────────────────────────────────
-@app.route("/api/subscription/status", methods=["GET"])
+@app.route("/api/subscription/status", methods=["GET","OPTIONS"])
 def subscription_status():
     user = get_current_user()
     session_id = request.headers.get("X-Session-Id","anon")
@@ -3034,7 +3041,7 @@ def subscription_status():
         })
 
 # ── STRIPE CHECKOUT ───────────────────────────────────────────────────────────
-@app.route("/api/subscription/checkout", methods=["POST"])
+@app.route("/api/subscription/checkout", methods=["POST","OPTIONS"])
 def create_checkout():
     """Create a Stripe checkout session with 7-day free trial."""
     user = get_current_user()
