@@ -4,6 +4,111 @@ from flask import Flask, request, jsonify, Response
 app = Flask(__name__)
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
+AUTH_DB = os.path.join(os.path.dirname(__file__), "users.db")
+
+def init_auth_db():
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("""CREATE TABLE IF NOT EXISTS users (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        email         TEXT    UNIQUE NOT NULL,
+        name          TEXT,
+        password_hash TEXT,
+        google_id     TEXT,
+        avatar        TEXT,
+        created_at    TEXT    DEFAULT (datetime('now')),
+        last_login    TEXT
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS sessions (
+        token      TEXT PRIMARY KEY,
+        user_id    INTEGER NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS hair_profiles (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id      INTEGER UNIQUE NOT NULL,
+        hair_type    TEXT,
+        hair_concerns TEXT,
+        treatments   TEXT,
+        products_tried TEXT,
+        last_updated TEXT DEFAULT (datetime('now'))
+    )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS chat_history (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id    INTEGER NOT NULL,
+        role       TEXT NOT NULL,
+        content    TEXT NOT NULL,
+        ts         TEXT DEFAULT (datetime('now'))
+    )""")
+    con.commit()
+    con.close()
+
+init_auth_db()
+
+def hash_password(pw):
+    salt = "supportrd_salt_2024"
+    return hashlib.sha256((pw + salt).encode()).hexdigest()
+
+def create_session(user_id):
+    token = secrets.token_hex(32)
+    expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)", (token, user_id, expires))
+    con.execute("UPDATE users SET last_login=? WHERE id=?", (datetime.datetime.utcnow().isoformat(), user_id))
+    con.commit()
+    con.close()
+    return token
+
+def get_user_from_token(token):
+    if not token: return None
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("""SELECT u.id,u.email,u.name,u.avatar FROM users u
+        JOIN sessions s ON s.user_id=u.id
+        WHERE s.token=? AND s.expires_at > datetime('now')""", (token,)).fetchone()
+    con.close()
+    if row: return {"id":row[0],"email":row[1],"name":row[2],"avatar":row[3]}
+    return None
+
+def get_current_user():
+    token = request.headers.get("X-Auth-Token") or request.cookies.get("srd_token")
+    return get_user_from_token(token)
+
+def get_hair_profile(user_id):
+    con = sqlite3.connect(AUTH_DB)
+    row = con.execute("SELECT * FROM hair_profiles WHERE user_id=?", (user_id,)).fetchone()
+    con.close()
+    if not row: return {}
+    return {"hair_type":row[2],"hair_concerns":row[3],"treatments":row[4],"products_tried":row[5]}
+
+def save_hair_profile(user_id, data):
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("""INSERT INTO hair_profiles (user_id,hair_type,hair_concerns,treatments,products_tried)
+        VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
+        hair_type=excluded.hair_type, hair_concerns=excluded.hair_concerns,
+        treatments=excluded.treatments, products_tried=excluded.products_tried,
+        last_updated=datetime('now')""",
+        (user_id, data.get("hair_type",""), data.get("hair_concerns",""),
+         data.get("treatments",""), data.get("products_tried","")))
+    con.commit()
+    con.close()
+
+def get_chat_history(user_id, limit=20):
+    con = sqlite3.connect(AUTH_DB)
+    rows = con.execute("""SELECT role,content FROM chat_history
+        WHERE user_id=? ORDER BY id DESC LIMIT ?""", (user_id, limit)).fetchall()
+    con.close()
+    return [{"role":r[0],"content":r[1]} for r in reversed(rows)]
+
+def save_chat_message(user_id, role, content):
+    con = sqlite3.connect(AUTH_DB)
+    con.execute("INSERT INTO chat_history (user_id,role,content) VALUES (?,?,?)",
+                (user_id, role, content))
+    con.execute("""DELETE FROM chat_history WHERE user_id=? AND id NOT IN
+        (SELECT id FROM chat_history WHERE user_id=? ORDER BY id DESC LIMIT 100)""",
+                (user_id, user_id))
+    con.commit()
+    con.close()
+
 # ── ANALYTICS DB ─────────────────────────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(__file__), "analytics.db")
 
@@ -2101,112 +2206,6 @@ Only the hair concern, product, and city will appear publicly."></textarea>
 # ═══════════════════════════════════════════════════════════════════════════════
 # ── USER AUTH + HAIR PROFILE SYSTEM ──────────────────────────────────────────
 # ═══════════════════════════════════════════════════════════════════════════════
-
-AUTH_DB = os.path.join(os.path.dirname(__file__), "users.db")
-
-def init_auth_db():
-    con = sqlite3.connect(AUTH_DB)
-    con.execute("""CREATE TABLE IF NOT EXISTS users (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        email         TEXT    UNIQUE NOT NULL,
-        name          TEXT,
-        password_hash TEXT,
-        google_id     TEXT,
-        avatar        TEXT,
-        created_at    TEXT    DEFAULT (datetime('now')),
-        last_login    TEXT
-    )""")
-    con.execute("""CREATE TABLE IF NOT EXISTS sessions (
-        token      TEXT PRIMARY KEY,
-        user_id    INTEGER NOT NULL,
-        created_at TEXT DEFAULT (datetime('now')),
-        expires_at TEXT NOT NULL
-    )""")
-    con.execute("""CREATE TABLE IF NOT EXISTS hair_profiles (
-        id           INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id      INTEGER UNIQUE NOT NULL,
-        hair_type    TEXT,
-        hair_concerns TEXT,
-        treatments   TEXT,
-        products_tried TEXT,
-        last_updated TEXT DEFAULT (datetime('now'))
-    )""")
-    con.execute("""CREATE TABLE IF NOT EXISTS chat_history (
-        id         INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id    INTEGER NOT NULL,
-        role       TEXT NOT NULL,
-        content    TEXT NOT NULL,
-        ts         TEXT DEFAULT (datetime('now'))
-    )""")
-    con.commit()
-    con.close()
-
-init_auth_db()
-
-def hash_password(pw):
-    salt = "supportrd_salt_2024"
-    return hashlib.sha256((pw + salt).encode()).hexdigest()
-
-def create_session(user_id):
-    token = secrets.token_hex(32)
-    expires = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
-    con = sqlite3.connect(AUTH_DB)
-    con.execute("INSERT INTO sessions (token,user_id,expires_at) VALUES (?,?,?)", (token, user_id, expires))
-    con.execute("UPDATE users SET last_login=? WHERE id=?", (datetime.datetime.utcnow().isoformat(), user_id))
-    con.commit()
-    con.close()
-    return token
-
-def get_user_from_token(token):
-    if not token: return None
-    con = sqlite3.connect(AUTH_DB)
-    row = con.execute("""SELECT u.id,u.email,u.name,u.avatar FROM users u
-        JOIN sessions s ON s.user_id=u.id
-        WHERE s.token=? AND s.expires_at > datetime('now')""", (token,)).fetchone()
-    con.close()
-    if row: return {"id":row[0],"email":row[1],"name":row[2],"avatar":row[3]}
-    return None
-
-def get_current_user():
-    token = request.headers.get("X-Auth-Token") or request.cookies.get("srd_token")
-    return get_user_from_token(token)
-
-def get_hair_profile(user_id):
-    con = sqlite3.connect(AUTH_DB)
-    row = con.execute("SELECT * FROM hair_profiles WHERE user_id=?", (user_id,)).fetchone()
-    con.close()
-    if not row: return {}
-    return {"hair_type":row[2],"hair_concerns":row[3],"treatments":row[4],"products_tried":row[5]}
-
-def save_hair_profile(user_id, data):
-    con = sqlite3.connect(AUTH_DB)
-    con.execute("""INSERT INTO hair_profiles (user_id,hair_type,hair_concerns,treatments,products_tried)
-        VALUES (?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET
-        hair_type=excluded.hair_type, hair_concerns=excluded.hair_concerns,
-        treatments=excluded.treatments, products_tried=excluded.products_tried,
-        last_updated=datetime('now')""",
-        (user_id, data.get("hair_type",""), data.get("hair_concerns",""),
-         data.get("treatments",""), data.get("products_tried","")))
-    con.commit()
-    con.close()
-
-def get_chat_history(user_id, limit=20):
-    con = sqlite3.connect(AUTH_DB)
-    rows = con.execute("""SELECT role,content FROM chat_history
-        WHERE user_id=? ORDER BY id DESC LIMIT ?""", (user_id, limit)).fetchall()
-    con.close()
-    return [{"role":r[0],"content":r[1]} for r in reversed(rows)]
-
-def save_chat_message(user_id, role, content):
-    con = sqlite3.connect(AUTH_DB)
-    con.execute("INSERT INTO chat_history (user_id,role,content) VALUES (?,?,?)",
-                (user_id, role, content))
-    # Keep last 100 messages per user
-    con.execute("""DELETE FROM chat_history WHERE user_id=? AND id NOT IN
-        (SELECT id FROM chat_history WHERE user_id=? ORDER BY id DESC LIMIT 100)""",
-                (user_id, user_id))
-    con.commit()
-    con.close()
 
 # ── AUTH ENDPOINTS ────────────────────────────────────────────────────────────
 
