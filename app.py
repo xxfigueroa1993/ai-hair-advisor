@@ -1918,15 +1918,7 @@ def analytics():
 def shopify_proxy():
     return index()
 
-@app.before_request
-def handle_options():
-    if request.method == "OPTIONS":
-        from flask import Response
-        r = Response("")
-        r.headers["Access-Control-Allow-Origin"]  = "*"
-        r.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token, X-Session-Id"
-        r.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, DELETE"
-        return r
+
 
 @app.after_request
 def add_headers(response):
@@ -2913,7 +2905,7 @@ def shopify_auth():
     return jsonify({"ok":True,"token":token,"name":name,"email":email,
                     "user_id":user_id,"profile":profile,"chat_count":history_count})
 
-@app.route("/api/auth/shopify-verify", methods=["POST","OPTIONS"])
+@app.route("/api/auth/shopify-verify", methods=["GET","POST","OPTIONS"])
 def shopify_verify():
     """Verify a session token and return full profile — called on every dashboard load."""
     user = get_current_user()
