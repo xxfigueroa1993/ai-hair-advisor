@@ -1787,13 +1787,13 @@ def add_headers(response):
     response.headers["Access-Control-Allow-Credentials"] = "true"
     return response
 
-@app.route("/api/<path:dummy>", methods=["OPTIONS"])
-def options_handler(dummy):
-    return "", 200
-
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({"ok": True, "status": "awake"})
+
+@app.route("/api/<path:dummy>", methods=["OPTIONS"])
+def options_handler(dummy):
+    return "", 200
 
 # ── KEEP-ALIVE SELF PING (prevents Render free tier sleep) ───────────────────
 import threading
