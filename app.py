@@ -759,6 +759,72 @@ body {
 </head>
 <body>
 
+<!-- ── PAGE LOADER ── -->
+<style>
+  #srd-loader{position:fixed;inset:0;background:#f0ebe8;z-index:99999;display:flex;align-items:center;justify-content:center;}
+  #srd-loader-canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .srd-logo-wrap{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:18px;opacity:0;animation:srdLogoReveal 1.2s cubic-bezier(0.22,1,0.36,1) 0.4s forwards;}
+  .srd-emblem{width:72px;height:72px;}
+  .srd-divider-line{width:48px;height:1px;background:linear-gradient(90deg,transparent,#c1a3a2,transparent);opacity:0;animation:srdFadeIn 0.8s ease 1.0s forwards;}
+  .srd-brand-script{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;font-size:clamp(13px,2vw,16px);letter-spacing:0.32em;text-transform:uppercase;color:#9d7f6a;opacity:0;animation:srdFadeUp 0.8s ease 1.1s forwards;}
+  .srd-dot-row{position:absolute;bottom:44px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:3;opacity:0;animation:srdFadeUp 0.6s ease 1.3s forwards;}
+  .srd-dot{width:4px;height:4px;border-radius:50%;background:rgba(193,163,162,0.25);transition:background 0.3s ease,transform 0.3s ease;}
+  .srd-dot.active{background:#c1a3a2;transform:scale(1.4);}
+  #srd-loader.srd-exit{animation:srdDissolve 0.9s cubic-bezier(0.4,0,0.2,1) forwards;}
+  @keyframes srdLogoReveal{0%{opacity:0;transform:scale(0.92)}100%{opacity:1;transform:scale(1)}}
+  @keyframes srdFadeIn{to{opacity:1}}
+  @keyframes srdFadeUp{0%{opacity:0;transform:translateY(6px)}100%{opacity:1;transform:translateY(0)}}
+  @keyframes srdDissolve{0%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1.04)}}
+</style>
+<div id="srd-loader">
+  <canvas id="srd-loader-canvas"></canvas>
+  <div class="srd-logo-wrap">
+    <svg class="srd-emblem" viewBox="0 0 72 72" fill="none">
+      <circle cx="36" cy="36" r="34" stroke="#c1a3a2" stroke-width="0.6" opacity="0.5"/>
+      <circle cx="36" cy="36" r="26" stroke="#c1a3a2" stroke-width="0.4" opacity="0.3"/>
+      <path d="M28 14 C26 22,32 28,30 36 C28 44,22 48,24 58" stroke="#c1a3a2" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.9"/>
+      <path d="M36 12 C35 20,39 26,37 36 C35 46,31 50,33 60" stroke="#9d7f6a" stroke-width="1.4" stroke-linecap="round" fill="none"/>
+      <path d="M44 14 C46 22,40 28,42 36 C44 44,50 48,48 58" stroke="#c1a3a2" stroke-width="1.2" stroke-linecap="round" fill="none" opacity="0.9"/>
+      <path d="M31 13 C29 21,34 27,33 35 C32 43,27 47,28 57" stroke="#d4b8b4" stroke-width="0.5" stroke-linecap="round" fill="none" opacity="0.5"/>
+      <path d="M41 13 C43 21,38 27,39 35 C40 43,45 47,44 57" stroke="#d4b8b4" stroke-width="0.5" stroke-linecap="round" fill="none" opacity="0.5"/>
+      <circle cx="36" cy="8" r="1.2" fill="#c1a3a2" opacity="0.6"/>
+      <circle cx="36" cy="64" r="1.2" fill="#c1a3a2" opacity="0.6"/>
+      <circle cx="8" cy="36" r="0.8" fill="#c1a3a2" opacity="0.4"/>
+      <circle cx="64" cy="36" r="0.8" fill="#c1a3a2" opacity="0.4"/>
+    </svg>
+    <div class="srd-divider-line"></div>
+    <div class="srd-brand-script">Professional Hair Care</div>
+  </div>
+  <div class="srd-dot-row">
+    <div class="srd-dot" id="srd-d0"></div>
+    <div class="srd-dot" id="srd-d1"></div>
+    <div class="srd-dot" id="srd-d2"></div>
+    <div class="srd-dot" id="srd-d3"></div>
+    <div class="srd-dot" id="srd-d4"></div>
+  </div>
+</div>
+<script>
+(function(){
+  var cv=document.getElementById('srd-loader-canvas'),ctx=cv.getContext('2d');
+  function rsz(){cv.width=window.innerWidth;cv.height=window.innerHeight;}rsz();
+  window.addEventListener('resize',rsz);
+  function S(){this.i();}
+  S.prototype.i=function(){this.x=Math.random()*cv.width;this.y=-60-Math.random()*200;this.len=100+Math.random()*200;this.wave=(Math.random()-.5)*40;this.spd=.18+Math.random()*.35;this.w=.3+Math.random()*.8;this.a=.04+Math.random()*.10;this.off=Math.random()*Math.PI*2;this.dr=(Math.random()-.5)*.3;var c=[[193,163,162],[157,127,106],[210,185,178],[180,155,145]];this.rgb=c[Math.floor(Math.random()*c.length)];};
+  S.prototype.u=function(){this.y+=this.spd;this.x+=this.dr;if(this.y>cv.height+60)this.i();};
+  S.prototype.d=function(t){var n=20;ctx.beginPath();ctx.moveTo(this.x,this.y);for(var i=1;i<=n;i++){var p=i/n;ctx.lineTo(this.x+Math.sin(p*Math.PI*2+t*.008+this.off)*this.wave*p,this.y+p*this.len);}ctx.strokeStyle='rgba('+this.rgb[0]+','+this.rgb[1]+','+this.rgb[2]+','+this.a+')';ctx.lineWidth=this.w;ctx.lineCap='round';ctx.stroke();};
+  var ss=[];for(var i=0;i<55;i++){var s=new S();s.y=Math.random()*cv.height;ss.push(s);}
+  var t=0;function ani(){t++;ctx.clearRect(0,0,cv.width,cv.height);ss.forEach(function(s){s.u();s.d(t);});requestAnimationFrame(ani);}ani();
+  var ds=[0,1,2,3,4].map(function(i){return document.getElementById('srd-d'+i);});
+  var st=0;[600,1200,1900,2800,3800].forEach(function(ms){setTimeout(function(){ds.forEach(function(d){d.classList.remove('active');});if(ds[st])ds[st].classList.add('active');st++;},ms);});
+  var ex=false;
+  function doExit(){if(ex)return;ex=true;ds.forEach(function(d){d.classList.add('active');});setTimeout(function(){var el=document.getElementById('srd-loader');el.classList.add('srd-exit');setTimeout(function(){el.style.display='none';},900);},200);}
+  window.addEventListener('load',function(){setTimeout(doExit,1200);});
+  setTimeout(doExit,4500);
+})();
+</script>
+<!-- ── END PAGE LOADER ── -->
+
+
 <!-- ── WELCOME BACK BANNER ── -->
 <div id="welcomeBanner">
   <div class="wb-name" id="wb-name">Welcome back!</div>
