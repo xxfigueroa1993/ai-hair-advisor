@@ -1832,6 +1832,93 @@ def add_cors_headers(response):
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
+@app.route("/admin-codes")
+def admin_codes_page():
+    admin_key = request.args.get("key","")
+    if admin_key != os.environ.get("ADMIN_KEY","srd_admin_2024"):
+        return "<h2>Unauthorized</h2>", 401
+    return """<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>SupportRD — Premium Codes</title>
+<style>
+body{font-family:'Helvetica Neue',sans-serif;max-width:700px;margin:40px auto;padding:20px;background:#faf9f8;color:#0d0906;}
+h1{font-size:22px;color:#c1a3a2;margin-bottom:4px;}
+p{font-size:13px;color:rgba(0,0,0,0.4);margin-bottom:30px;}
+button{padding:12px 28px;background:#c1a3a2;color:#fff;border:none;border-radius:24px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;}
+button:hover{background:#9d7f6a;}
+#result{margin-top:20px;padding:16px;background:#fff;border:1px solid rgba(193,163,162,0.3);border-radius:12px;display:none;}
+#code-display{font-size:28px;font-weight:bold;color:#c1a3a2;letter-spacing:0.1em;margin:8px 0;}
+#copy-btn{padding:8px 20px;font-size:11px;margin-top:8px;}
+table{width:100%;border-collapse:collapse;margin-top:30px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 8px rgba(0,0,0,0.06);}
+th{background:#c1a3a2;color:#fff;padding:10px 14px;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;text-align:left;}
+td{padding:10px 14px;font-size:13px;border-bottom:1px solid rgba(0,0,0,0.05);}
+.used{color:#aaa;text-decoration:line-through;}
+.unused{color:#25D366;font-weight:bold;}
+</style></head>
+<body>
+<h1>✦ SupportRD Premium Codes</h1>
+<p>Generate a code for each customer who purchases Hair Advisor Premium.</p>
+<button onclick="generateCode()">Generate New Code</button>
+<div id="result">
+  <div style="font-size:12px;color:rgba(0,0,0,0.4);">New Premium Code</div>
+  <div id="code-display"></div>
+  <button id="copy-btn" onclick="copyCode()">Copy Code</button>
+  <div style="font-size:11px;color:rgba(0,0,0,0.3);margin-top:8px;">Send this to the customer via email after their purchase.</div>
+</div>
+<div id="codes-table"></div>
+<script>
+var ADMIN_KEY = new URLSearchParams(window.location.search).get('key');
+var API = 'https://ai-hair-advisor.onrender.com';
+var lastCode = '';
+
+function generateCode(){
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', API+'/api/admin/generate-code', true);
+  xhr.setRequestHeader('X-Admin-Key', ADMIN_KEY);
+  xhr.setRequestHeader('Content-Type','application/json');
+  xhr.onload = function(){
+    var d = JSON.parse(xhr.responseText);
+    if(d.ok){
+      lastCode = d.code;
+      document.getElementById('code-display').textContent = d.code;
+      document.getElementById('result').style.display = 'block';
+      loadCodes();
+    }
+  };
+  xhr.send('{}');
+}
+
+function copyCode(){
+  navigator.clipboard.writeText(lastCode).then(function(){
+    document.getElementById('copy-btn').textContent = 'Copied!';
+    setTimeout(function(){ document.getElementById('copy-btn').textContent='Copy Code'; }, 2000);
+  });
+}
+
+function loadCodes(){
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', API+'/api/admin/list-codes', true);
+  xhr.setRequestHeader('X-Admin-Key', ADMIN_KEY);
+  xhr.onload = function(){
+    var d = JSON.parse(xhr.responseText);
+    var codes = d.codes || [];
+    if(!codes.length){ document.getElementById('codes-table').innerHTML='<p style="color:rgba(0,0,0,0.3);margin-top:20px;">No codes generated yet.</p>'; return; }
+    var html = '<table><tr><th>Code</th><th>Status</th><th>Used At</th></tr>';
+    codes.forEach(function(c){
+      html += '<tr><td>'+(c.used?'<span class="used">'+c.code+'</span>':'<span class="unused">'+c.code+'</span>')+'</td>';
+      html += '<td>'+(c.used?'Used':'Available')+'</td>';
+      html += '<td>'+(c.used_at||'—')+'</td></tr>';
+    });
+    html += '</table>';
+    document.getElementById('codes-table').innerHTML = html;
+  };
+  xhr.send();
+}
+
+loadCodes();
+</script>
+</body></html>"""
+
 @app.route("/api/debug-shopify", methods=["GET"])
 def debug_shopify():
     import urllib.request as urlreq
@@ -3164,20 +3251,25 @@ def mark_code_used(code, user_id):
 
 @app.route("/api/subscription/activate-shopify", methods=["POST","OPTIONS"])
 def activate_shopify():
-    """Activate premium using a purchase code sent after Shopify order."""
+    """Activate premium — checks webhook pending activations first."""
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
-    data = request.get_json(force=True, silent=True) or {}
-    code = data.get("code","").strip().upper()
 
-    verified, message = verify_access_code(code)
-    if not verified:
-        return jsonify({"error": message, "verified": False}), 403
+    email = user["email"].strip().lower()
 
-    # Mark code as used
-    mark_code_used(code, user["id"])
+    # Check if webhook already recorded a purchase for this email
+    pending = db_execute("SELECT id FROM premium_codes WHERE code=?",
+                         ("PENDING_" + email,), fetchone=True)
+    if pending:
+        # Clear the pending record
+        db_execute("DELETE FROM premium_codes WHERE code=?", ("PENDING_" + email,))
+    else:
+        # No webhook record — deny
+        return jsonify({
+            "error": "No purchase found for " + email + ". Please buy at supportrd.com/products/hair-advisor-premium then try again.",
+            "verified": False
+        }), 403
 
-    # Activate premium
     period_end = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
     row = db_execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],), fetchone=True)
     if row:
@@ -3189,7 +3281,65 @@ def activate_shopify():
             VALUES (?,'active','premium',?)""", (user["id"], period_end))
     return jsonify({"ok": True, "plan": "premium"})
 
-@app.route("/api/admin/generate-code", methods=["POST"])
+
+@app.route("/api/shopify-order-webhook", methods=["POST"])
+def shopify_order_webhook():
+    """Automatically activate premium when a Shopify order is paid."""
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+
+        # Check order is paid
+        financial_status = data.get("financial_status","")
+        if financial_status not in ("paid", "partially_paid"):
+            return jsonify({"ok": True, "skipped": "not paid"})
+
+        # Check if this order contains the premium product
+        line_items = data.get("line_items", [])
+        is_premium = False
+        for item in line_items:
+            title = (item.get("title","") or "").lower()
+            sku   = (item.get("sku","") or "").lower()
+            if "hair advisor" in title or "premium" in title or "hair-advisor" in sku:
+                is_premium = True
+                break
+
+        if not is_premium:
+            return jsonify({"ok": True, "skipped": "not premium product"})
+
+        # Get customer email
+        email = ""
+        if data.get("email"):
+            email = data["email"].strip().lower()
+        elif data.get("customer",{}).get("email"):
+            email = data["customer"]["email"].strip().lower()
+
+        if not email:
+            return jsonify({"ok": True, "skipped": "no email"})
+
+        # Find user by email and activate premium
+        row = db_execute("SELECT id FROM users WHERE email=?", (email,), fetchone=True)
+        if not row:
+            # Store pending activation — user may not have signed up yet
+            db_execute("""INSERT OR REPLACE INTO premium_codes (code, used)
+                VALUES (?, 0)""", ("PENDING_" + email,))
+            return jsonify({"ok": True, "status": "pending — user not registered yet"})
+
+        user_id = row[0]
+        period_end = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
+        existing = db_execute("SELECT id FROM subscriptions WHERE user_id=?", (user_id,), fetchone=True)
+        if existing:
+            db_execute("""UPDATE subscriptions SET status='active', plan='premium',
+                current_period_end=?, updated_at=datetime('now') WHERE user_id=?""",
+                (period_end, user_id))
+        else:
+            db_execute("""INSERT INTO subscriptions (user_id, status, plan, current_period_end)
+                VALUES (?, 'active', 'premium', ?)""", (user_id, period_end))
+
+        return jsonify({"ok": True, "status": "premium activated", "email": email})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/api/admin/generate-code", methods=["POST","OPTIONS"])
 def generate_code():
     """Generate a premium access code — call this after a Shopify order."""
     admin_key = request.headers.get("X-Admin-Key","")
@@ -3199,7 +3349,7 @@ def generate_code():
     db_execute("INSERT INTO premium_codes (code) VALUES (?)", (code,))
     return jsonify({"ok": True, "code": code})
 
-@app.route("/api/admin/list-codes", methods=["GET"])
+@app.route("/api/admin/list-codes", methods=["GET","OPTIONS"])
 def list_codes():
     """List all generated codes and their status."""
     admin_key = request.headers.get("X-Admin-Key","")
