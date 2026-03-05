@@ -690,51 +690,7 @@ body {
 #footer span:hover { color: var(--brand-accent); }
 
 /* ── AUTH BAR ── */
-#authBar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-#authBtn {
-  padding: 8px 20px;
-  border: 1px solid #c1a3a2;
-  border-radius: 20px;
-  background: #c1a3a2;
-  font-family: 'Jost', sans-serif;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-  color: #fff;
-  transition: all 0.2s;
-  text-decoration: none;
-  display: none;
-  align-items: center;
-  gap: 6px;
-  font-weight: 400;
-  box-shadow: 0 2px 12px rgba(193,163,162,0.40);
-}
-#authBtn:hover { background: #9d7f6a; border-color: #9d7f6a; }
-#userChip {
-  display: none;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255,255,255,0.92);
-  border: 1px solid rgba(193,163,162,0.40);
-  border-radius: 20px;
-  padding: 4px 12px 4px 5px;
-}
-#userAvatar {
-  width: 26px; height: 26px;
-  border-radius: 50%;
-  background: #c1a3a2;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 12px; color: #fff; overflow: hidden; flex-shrink: 0;
-}
-#userAvatar img { width: 100%; height: 100%; object-fit: cover; }
-#userName { font-size: 11px; color: #0d0906; font-family: 'Jost', sans-serif; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#dashLink { font-size: 10px; color: #9d7f6a; text-decoration: none; letter-spacing: 0.08em; text-transform: uppercase; border-left: 1px solid rgba(193,163,162,0.30); padding-left: 8px; margin-left: 2px; }
-#dashLink:hover { color: #c1a3a2; }
+
 
 /* ── WELCOME BACK BANNER ── */
 #welcomeBanner {
@@ -817,14 +773,7 @@ body {
     <option value="zh-CN">中文</option>
     <option value="hi-IN">हिن्दी</option>
   </select>
-  <div id="authBar">
-    <a href="/login" id="authBtn">✦ Sign In</a>
-    <div id="userChip">
-      <div id="userAvatar"></div>
-      <span id="userName"></span>
-      <a href="/dashboard" id="dashLink">Dashboard</a>
-    </div>
-  </div>
+  <a href="https://supportrd.com/pages/hair-dashboard" style="padding:7px 16px;border:1px solid rgba(193,163,162,0.5);border-radius:20px;font-family:'Jost',sans-serif;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:#c1a3a2;text-decoration:none;">My Dashboard</a>
 </div>
 
 <div class="sphere-wrap"><div id="halo"></div></div>
@@ -1548,82 +1497,6 @@ document.getElementById("contactBtn").addEventListener("click", () => {
   const msg = CONTACT_MSGS[langSelect.value]||CONTACT_MSGS["en-US"];
   responseBox.textContent = msg; speak(msg, false);
 });
-
-// ── AUTH + USER STATE ─────────────────────────────────────────────────────────
-(function initAuth(){
-  const token = localStorage.getItem('srd_token');
-  const cached = localStorage.getItem('srd_user');
-  if(!token){ document.getElementById('authBtn').style.display='inline-flex'; return; }
-
-  // Token exists — show user chip from cache or placeholder
-  if(cached){
-    try{
-      const u = JSON.parse(cached);
-      showUserChip(u.name, u.avatar);
-    }catch(e){
-      showUserChip('Member', '');
-    }
-  } else {
-    showUserChip('Member', '');
-  }
-
-  // Verify token + load profile for welcome banner
-  fetch('/api/auth/me', {headers:{'X-Auth-Token':token}})
-    .then(r => r.ok ? r.json() : null)
-    .then(d => {
-      if(!d){ 
-        // Token invalid — but don't clear it, just keep sign in hidden if we had cache
-        if(!cached){ document.getElementById('authBtn').style.display = 'block'; }
-        return; 
-      }
-      showUserChip(d.name, d.avatar);
-      localStorage.setItem('srd_user', JSON.stringify({name:d.name,email:d.email,avatar:d.avatar||''}));
-
-      // Calc hair score from profile
-      let score = '—';
-      if(d.profile && (d.profile.hair_concerns || d.profile.hair_type)){
-        const concerns = (d.profile.hair_concerns||'').toLowerCase();
-        const treatments = (d.profile.treatments||'').toLowerCase();
-        const products = (d.profile.products_tried||'').toLowerCase();
-        let s = 75;
-        if(concerns.includes('dry')) s -= 10;
-        if(concerns.includes('damage')) s -= 15;
-        if(concerns.includes('breakage')) s -= 20;
-        if(concerns.includes('thinning')) s -= 15;
-        if(concerns.includes('oily')) s -= 8;
-        if(treatments.includes('bleach')) s -= 10;
-        if(treatments.includes('relaxer')) s -= 8;
-        if(products.includes('formula exclusiva')) s += 12;
-        if(products.includes('laciador crece')||products.includes('laciador')) s += 10;
-        if(products.includes('gotero rapido')||products.includes('gotero')) s += 8;
-        if(products.includes('gotitas brillantes')||products.includes('gotika')) s += 6;
-        s = Math.max(0, Math.min(100, s));
-        score = s + '%';
-      }
-
-      // Show welcome banner for 6 seconds
-      document.getElementById('wb-name').textContent = 'Welcome back, ' + (d.name||'').split(' ')[0] + '!';
-      document.getElementById('wb-score').textContent = score;
-      const banner = document.getElementById('welcomeBanner');
-      banner.style.display = 'block';
-      setTimeout(()=>{ banner.style.opacity='0'; banner.style.transition='opacity 0.5s'; setTimeout(()=>banner.style.display='none',500); }, 6000);
-
-      // Pass token to recommend calls
-      window._srd_token = token;
-      window._srd_user = d;
-    })
-    .catch(()=>{});
-})();
-
-function showUserChip(name, avatar){
-  document.getElementById('authBtn').style.display = 'none';
-  const chip = document.getElementById('userChip');
-  chip.style.display = 'flex';
-  document.getElementById('userName').textContent = (name||'').split(' ')[0];
-  const av = document.getElementById('userAvatar');
-  if(avatar){ av.innerHTML = '<img src="'+avatar+'" alt="">'; }
-  else { av.textContent = (name||'?')[0].toUpperCase(); }
-}
 
 // ── PAYWALL + SUBSCRIPTION SYSTEM ────────────────────────────────────────────
 let _paywallDismissed = false;
