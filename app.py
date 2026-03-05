@@ -2878,6 +2878,9 @@ STRIPE_TRIAL_DAYS      = 7
 FREE_RESPONSE_LIMIT    = 3
 SUBSCRIPTION_PRICE_USD = 80
 APP_BASE_URL           = os.environ.get("APP_BASE_URL", "https://ai-hair-advisor.onrender.com")
+SHOPIFY_STORE          = os.environ.get("SHOPIFY_STORE", "supportrd.myshopify.com")
+SHOPIFY_ADMIN_TOKEN    = os.environ.get("SHOPIFY_ADMIN_TOKEN", "")
+SHOPIFY_PRODUCT_HANDLE = "hair-advisor-premium"
 
 def init_subscription_db():
     con = get_db()
@@ -3113,13 +3116,54 @@ def stripe_webhook():
     return jsonify({"ok":True})
 
 # ── SHOPIFY SUBSCRIPTION (manual activation for Shopify flow) ─────────────────
+def verify_shopify_purchase(email):
+    """Check if email has a paid order containing hair-advisor-premium."""
+    if not SHOPIFY_ADMIN_TOKEN:
+        return False, "Shopify API not configured"
+    try:
+        import urllib.request as urlreq
+        import urllib.parse
+        # Search orders by email
+        query = urllib.parse.urlencode({"email": email, "status": "any", "limit": 50})
+        url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/orders.json?{query}"
+        req = urlreq.Request(url, headers={
+            "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
+            "Content-Type": "application/json"
+        })
+        resp = urlreq.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        orders = data.get("orders", [])
+        for order in orders:
+            # Check order is paid
+            if order.get("financial_status") not in ("paid", "partially_paid"):
+                continue
+            for item in order.get("line_items", []):
+                handle = (item.get("handle","") or "").lower()
+                title  = (item.get("title","") or "").lower()
+                sku    = (item.get("sku","") or "").lower()
+                if (SHOPIFY_PRODUCT_HANDLE in handle or
+                    "hair advisor" in title or
+                    "premium" in title or
+                    "hair-advisor" in sku):
+                    return True, "Purchase verified"
+        return False, "No paid order found for this product"
+    except Exception as e:
+        return False, f"Verification error: {str(e)}"
+
 @app.route("/api/subscription/activate-shopify", methods=["POST","OPTIONS"])
 def activate_shopify():
-    """Activate premium after Shopify purchase — no Stripe needed."""
+    """Activate premium only after verifying Shopify purchase."""
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
-    data   = request.get_json(force=True, silent=True) or {}
-    sub_id = data.get("shopify_sub_id", "shopify_" + secrets.token_hex(8))
+
+    # Verify the user actually purchased the product
+    verified, message = verify_shopify_purchase(user["email"])
+    if not verified:
+        return jsonify({"error": message, "verified": False}), 403
+
+    # Purchase confirmed — activate premium
+    data      = request.get_json(force=True, silent=True) or {}
+    sub_id    = data.get("shopify_sub_id", "shopify_" + secrets.token_hex(8))
     period_end = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
     row = db_execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],), fetchone=True)
     if row:
@@ -3131,6 +3175,7 @@ def activate_shopify():
             VALUES (?,?,'active','premium',?)""",
             (user["id"], sub_id, period_end))
     return jsonify({"ok": True, "plan": "premium", "status": "active"})
+
 
 @app.route("/subscription/success")
 def subscription_success():
