@@ -73,6 +73,14 @@ def init_auth_db():
         content    TEXT NOT NULL,
         ts         TEXT DEFAULT (datetime('now'))
     )""")
+    con.execute("""CREATE TABLE IF NOT EXISTS premium_codes (
+        id       INTEGER PRIMARY KEY AUTOINCREMENT,
+        code     TEXT UNIQUE NOT NULL,
+        used     INTEGER DEFAULT 0,
+        used_by  INTEGER,
+        used_at  TEXT,
+        created_at TEXT DEFAULT (datetime('now'))
+    )""")
     con.commit()
     con.close()
 
@@ -3128,71 +3136,78 @@ def stripe_webhook():
     return jsonify({"ok":True})
 
 # ── SHOPIFY SUBSCRIPTION (manual activation for Shopify flow) ─────────────────
-def verify_shopify_purchase(email):
-    """Check if email has a paid order containing hair-advisor-premium."""
-    if not SHOPIFY_ADMIN_TOKEN:
-        return False, "Shopify API not configured"
-    import urllib.request as urlreq
-    import urllib.parse
+# ── PREMIUM ACCESS CODES ─────────────────────────────────────────────────────
+# You generate these and send to customers after purchase
+# Add/remove codes here or use the /api/admin/generate-code endpoint
+PREMIUM_ACCESS_CODES = set(os.environ.get("PREMIUM_CODES", "").split(",")) - {""}
 
-    headers = {
-        "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
-        "Content-Type": "application/json"
-    }
+def verify_access_code(code):
+    """Check if a code is valid and unused."""
+    code = code.strip().upper()
+    if not code:
+        return False, "Please enter an access code"
+    # Check static env codes
+    if code in PREMIUM_ACCESS_CODES:
+        return True, "Code verified"
+    # Check DB codes
+    row = db_execute("SELECT id,used FROM premium_codes WHERE code=?", (code,), fetchone=True)
+    if not row:
+        return False, "Invalid code. Please check your email or contact support."
+    if row[1]:
+        return False, "This code has already been used."
+    return True, "Code verified"
 
-    # Try multiple API versions
-    for api_version in ["2024-01", "2023-10", "2023-04", "2022-10"]:
-        try:
-            encoded_email = urllib.parse.quote(email)
-            url = f"https://{SHOPIFY_STORE}/admin/api/{api_version}/orders.json?email={encoded_email}&status=any&limit=50"
-            req = urlreq.Request(url, headers=headers)
-            resp = urlreq.urlopen(req, timeout=10)
-            data = json.loads(resp.read())
-            orders = data.get("orders", [])
-            for order in orders:
-                if order.get("financial_status") not in ("paid", "partially_paid"):
-                    continue
-                for item in order.get("line_items", []):
-                    title = (item.get("title","") or "").lower()
-                    sku   = (item.get("sku","") or "").lower()
-                    if ("hair advisor" in title or "premium" in title or "hair-advisor" in sku):
-                        return True, "Purchase verified"
-            return False, "No purchase found for this email"
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                continue  # Try next API version
-            body = e.read().decode() if hasattr(e, 'read') else ''
-            return False, f"Shopify error {e.code}: {body[:150]}"
-        except Exception as e:
-            return False, f"Error: {str(e)}"
-
-    return False, "Could not connect to Shopify store. Check SHOPIFY_STORE env var."
+def mark_code_used(code, user_id):
+    code = code.strip().upper()
+    db_execute("UPDATE premium_codes SET used=1, used_by=?, used_at=datetime('now') WHERE code=?",
+               (user_id, code))
 
 @app.route("/api/subscription/activate-shopify", methods=["POST","OPTIONS"])
 def activate_shopify():
-    """Activate premium only after verifying Shopify purchase."""
+    """Activate premium using a purchase code sent after Shopify order."""
     user = get_current_user()
     if not user: return jsonify({"error":"Not logged in"}), 401
+    data = request.get_json(force=True, silent=True) or {}
+    code = data.get("code","").strip().upper()
 
-    # Verify the user actually purchased the product
-    verified, message = verify_shopify_purchase(user["email"])
+    verified, message = verify_access_code(code)
     if not verified:
         return jsonify({"error": message, "verified": False}), 403
 
-    # Purchase confirmed — activate premium
-    data      = request.get_json(force=True, silent=True) or {}
-    sub_id    = data.get("shopify_sub_id", "shopify_" + secrets.token_hex(8))
+    # Mark code as used
+    mark_code_used(code, user["id"])
+
+    # Activate premium
     period_end = (datetime.datetime.utcnow() + datetime.timedelta(days=30)).isoformat()
     row = db_execute("SELECT id FROM subscriptions WHERE user_id=?", (user["id"],), fetchone=True)
     if row:
-        db_execute("""UPDATE subscriptions SET shopify_sub_id=?,status='active',plan='premium',
+        db_execute("""UPDATE subscriptions SET status='active',plan='premium',
             current_period_end=?,updated_at=datetime('now') WHERE user_id=?""",
-            (sub_id, period_end, user["id"]))
+            (period_end, user["id"]))
     else:
-        db_execute("""INSERT INTO subscriptions (user_id,shopify_sub_id,status,plan,current_period_end)
-            VALUES (?,?,'active','premium',?)""",
-            (user["id"], sub_id, period_end))
-    return jsonify({"ok": True, "plan": "premium", "status": "active"})
+        db_execute("""INSERT INTO subscriptions (user_id,status,plan,current_period_end)
+            VALUES (?,'active','premium',?)""", (user["id"], period_end))
+    return jsonify({"ok": True, "plan": "premium"})
+
+@app.route("/api/admin/generate-code", methods=["POST"])
+def generate_code():
+    """Generate a premium access code — call this after a Shopify order."""
+    admin_key = request.headers.get("X-Admin-Key","")
+    if admin_key != os.environ.get("ADMIN_KEY","srd_admin_2024"):
+        return jsonify({"error":"Unauthorized"}), 401
+    code = "SRD-" + secrets.token_hex(4).upper()
+    db_execute("INSERT INTO premium_codes (code) VALUES (?)", (code,))
+    return jsonify({"ok": True, "code": code})
+
+@app.route("/api/admin/list-codes", methods=["GET"])
+def list_codes():
+    """List all generated codes and their status."""
+    admin_key = request.headers.get("X-Admin-Key","")
+    if admin_key != os.environ.get("ADMIN_KEY","srd_admin_2024"):
+        return jsonify({"error":"Unauthorized"}), 401
+    rows = db_execute("SELECT code,used,used_at FROM premium_codes ORDER BY id DESC", fetchall=True)
+    codes = [{"code":r[0],"used":bool(r[1]),"used_at":r[2]} for r in (rows or [])]
+    return jsonify({"codes": codes})
 
 
 @app.route("/subscription/success")
