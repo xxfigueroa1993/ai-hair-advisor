@@ -1824,6 +1824,18 @@ def add_cors_headers(response):
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
+@app.route("/api/debug-shopify", methods=["GET"])
+def debug_shopify():
+    import urllib.request as urlreq
+    try:
+        url = f"https://{SHOPIFY_STORE}/admin/api/2023-10/shop.json"
+        req = urlreq.Request(url, headers={"X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN})
+        resp = urlreq.urlopen(req, timeout=10)
+        data = json.loads(resp.read())
+        return jsonify({"ok": True, "shop": data.get("shop",{}).get("name"), "token_set": bool(SHOPIFY_ADMIN_TOKEN)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "store": SHOPIFY_STORE, "token_set": bool(SHOPIFY_ADMIN_TOKEN)})
+
 @app.route("/api/debug-stripe", methods=["GET"])
 def debug_stripe():
     return jsonify({
@@ -3120,35 +3132,41 @@ def verify_shopify_purchase(email):
     """Check if email has a paid order containing hair-advisor-premium."""
     if not SHOPIFY_ADMIN_TOKEN:
         return False, "Shopify API not configured"
-    try:
-        import urllib.request as urlreq
-        import urllib.parse
-        # Search orders by email
-        query = urllib.parse.urlencode({"email": email, "status": "any", "limit": 50})
-        url = f"https://{SHOPIFY_STORE}/admin/api/2024-01/orders.json?{query}"
-        req = urlreq.Request(url, headers={
-            "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
-            "Content-Type": "application/json"
-        })
-        resp = urlreq.urlopen(req, timeout=10)
-        data = json.loads(resp.read())
-        orders = data.get("orders", [])
-        for order in orders:
-            # Check order is paid
-            if order.get("financial_status") not in ("paid", "partially_paid"):
-                continue
-            for item in order.get("line_items", []):
-                handle = (item.get("handle","") or "").lower()
-                title  = (item.get("title","") or "").lower()
-                sku    = (item.get("sku","") or "").lower()
-                if (SHOPIFY_PRODUCT_HANDLE in handle or
-                    "hair advisor" in title or
-                    "premium" in title or
-                    "hair-advisor" in sku):
-                    return True, "Purchase verified"
-        return False, "No paid order found for this product"
-    except Exception as e:
-        return False, f"Verification error: {str(e)}"
+    import urllib.request as urlreq
+    import urllib.parse
+
+    headers = {
+        "X-Shopify-Access-Token": SHOPIFY_ADMIN_TOKEN,
+        "Content-Type": "application/json"
+    }
+
+    # Try multiple API versions
+    for api_version in ["2024-01", "2023-10", "2023-04", "2022-10"]:
+        try:
+            encoded_email = urllib.parse.quote(email)
+            url = f"https://{SHOPIFY_STORE}/admin/api/{api_version}/orders.json?email={encoded_email}&status=any&limit=50"
+            req = urlreq.Request(url, headers=headers)
+            resp = urlreq.urlopen(req, timeout=10)
+            data = json.loads(resp.read())
+            orders = data.get("orders", [])
+            for order in orders:
+                if order.get("financial_status") not in ("paid", "partially_paid"):
+                    continue
+                for item in order.get("line_items", []):
+                    title = (item.get("title","") or "").lower()
+                    sku   = (item.get("sku","") or "").lower()
+                    if ("hair advisor" in title or "premium" in title or "hair-advisor" in sku):
+                        return True, "Purchase verified"
+            return False, "No purchase found for this email"
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                continue  # Try next API version
+            body = e.read().decode() if hasattr(e, 'read') else ''
+            return False, f"Shopify error {e.code}: {body[:150]}"
+        except Exception as e:
+            return False, f"Error: {str(e)}"
+
+    return False, "Could not connect to Shopify store. Check SHOPIFY_STORE env var."
 
 @app.route("/api/subscription/activate-shopify", methods=["POST","OPTIONS"])
 def activate_shopify():
