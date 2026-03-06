@@ -294,8 +294,8 @@ def pwa_manifest():
 def service_worker():
     sw = r"""
 /* Aria PWA Service Worker v5 — Network-first with offline fallback */
-const CACHE = "aria-v6";
-const SHELL = ["/", "/dashboard", "/login", "/manifest.json", "/static/icon-192.png"];
+const CACHE = "aria-v7";
+const SHELL = ["/manifest.json", "/static/icon-192.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(
@@ -1609,9 +1609,8 @@ function askAria(text) {
 function startSpeechRec() {
   if (!SR) { startMediaRec(); return; }
 
-  // Reset accumulators ONCE before starting
   finalTxt = ''; interimTxt = '';
-  var submitted = false; // guard against double-submit
+  var submitted = false;
 
   navigator.mediaDevices.getUserMedia({audio:true,video:false})
     .then(function(s){ startViz(s); })
@@ -1619,7 +1618,7 @@ function startSpeechRec() {
 
   recognition = new SR();
   recognition.lang            = langSel.value;
-  recognition.continuous      = false;
+  recognition.continuous      = true;   // keep listening — we stop it manually
   recognition.interimResults  = true;
   recognition.maxAlternatives = 1;
 
@@ -1627,52 +1626,56 @@ function startSpeechRec() {
     setSphereState('listening');
     stLbl.textContent   = 'Listening\u2026';
     respBox.textContent = 'Listening\u2026';
+    // Stop if no speech at all after 8s
     noSpeechTmr = setTimeout(function() {
       if (STATE !== 'listening') return;
       try { recognition.stop(); } catch(e) {}
-      if (failCount < 2) { failCount++; setTimeout(startSpeechRec, 400); }
+      if (failCount < 2) { failCount++; setTimeout(startSpeechRec, 300); }
       else { failCount=0; useFallback=true; setIdle('Mic not responding \u2014 use typing.'); activateManual(); }
-    }, 9000);
+    }, 8000);
   };
 
   recognition.onresult = function(ev) {
     clearTimeout(noSpeechTmr); clearTimeout(silTimer);
     failCount = 0;
 
-    // Rebuild from ALL results on EVERY event (SpeechRecognition accumulates)
-    var newFinal = ''; var newInterim = '';
+    // Rebuild full transcript from all results
+    var f = ''; var interim = '';
     for (var i = 0; i < ev.results.length; i++) {
-      if (ev.results[i].isFinal) newFinal   += ev.results[i][0].transcript;
-      else                        newInterim += ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) f       += ev.results[i][0].transcript + ' ';
+      else                        interim += ev.results[i][0].transcript;
     }
-    // Only update — never shrink what we already have
-    if (newFinal.length   > finalTxt.length)   finalTxt   = newFinal;
-    if (newInterim.length > 0)                 interimTxt = newInterim;
+    if (f.length > finalTxt.length) finalTxt = f;
+    interimTxt = interim;
 
-    var combined = (finalTxt + ' ' + interimTxt).trim();
-    if (combined) respBox.textContent = combined;
+    var display = (finalTxt + interimTxt).trim();
+    if (display) respBox.textContent = display;
 
-    // Got a solid final result — submit now without waiting for silence
-    if (finalTxt.trim().length > 1 && !submitted) {
-      submitted = true;
-      clearTimeout(silTimer);
-      try { recognition.stop(); } catch(e) {}
-    } else if (!submitted) {
-      silTimer = setTimeout(function(){ try{recognition.stop();}catch(e){} }, 2000);
-    }
+    // After 1.6s silence, submit whatever we have
+    silTimer = setTimeout(function() {
+      if (submitted) return;
+      var got = (finalTxt + interimTxt).trim();
+      if (got.length > 1) {
+        submitted = true;
+        try { recognition.stop(); } catch(e) {}
+        askAria(got);
+      } else {
+        try { recognition.stop(); } catch(e) {}
+      }
+    }, 1600);
   };
 
   recognition.onend = function() {
     clearTimeout(silTimer); clearTimeout(noSpeechTmr);
     stopViz();
-    if (submitted) return; // already handled in onresult
+    if (submitted) return;
     if (STATE !== 'listening') return;
-    var got = (finalTxt + ' ' + interimTxt).trim();
+    var got = (finalTxt + interimTxt).trim();
     if (got.length > 1) {
       submitted = true; failCount = 0;
       askAria(got);
     } else {
-      setIdle("Tap and speak clearly \u2014 try again.");
+      setIdle('Tap and speak \u2014 try again.');
     }
   };
 
@@ -1680,14 +1683,13 @@ function startSpeechRec() {
     clearTimeout(silTimer); clearTimeout(noSpeechTmr);
     stopViz();
     if (ev.error === 'no-speech') {
-      setIdle('No speech detected \u2014 tap to try again.');
+      setIdle('No speech \u2014 tap to try again.');
     } else if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
       setIdle('Mic blocked \u2014 use typing mode.');
       activateManual();
     } else if (ev.error === 'network') {
-      // Network error — fall back to recording
       useFallback = true;
-      setIdle('Network error \u2014 tap to try again.');
+      startMediaRec();
     } else {
       setIdle('Mic error \u2014 try typing.');
     }
