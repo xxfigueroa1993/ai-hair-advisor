@@ -1350,28 +1350,51 @@ function sfxChime() {
   tone(1318, 0.34, 0.08, 'sine', 0.26);
 }
 
+var ambRunning = false;
+var ambOsc2 = null;
+
 function startAmbient() {
-  if (ambOsc) return;
+  if (ambRunning) return;
+  ambRunning = true;
   try {
     var ctx = getCtx();
+    if (ambOsc)  { try { ambOsc.stop();  } catch(e) {} ambOsc  = null; }
+    if (ambOsc2) { try { ambOsc2.stop(); } catch(e) {} ambOsc2 = null; }
     ambGain = ctx.createGain();
     ambGain.gain.setValueAtTime(0, ctx.currentTime);
-    ambGain.gain.linearRampToValueAtTime(0.020, ctx.currentTime + 3.5);
+    ambGain.gain.linearRampToValueAtTime(0.032, ctx.currentTime + 4.0);
     ambGain.connect(ctx.destination);
+    // 174 Hz base tone (healing frequency)
     ambOsc = ctx.createOscillator();
     ambOsc.type = 'sine';
     ambOsc.frequency.value = 174;
     ambOsc.connect(ambGain);
     ambOsc.start();
-  } catch(e) {}
+    // Soft 3rd harmonic for richness
+    var g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.012, ctx.currentTime);
+    g2.connect(ctx.destination);
+    ambOsc2 = ctx.createOscillator();
+    ambOsc2.type = 'sine';
+    ambOsc2.frequency.value = 522; // 3x 174
+    ambOsc2.connect(g2);
+    ambOsc2.start();
+  } catch(e) { ambRunning = false; }
 }
 
 function stopAmbient() {
-  if (!ambOsc || !_actx) return;
+  ambRunning = false;
+  if (!_actx) return;
   try {
-    var o = ambOsc; ambOsc = null;
-    ambGain.gain.linearRampToValueAtTime(0, _actx.currentTime + 0.8);
-    setTimeout(function(){ try{o.stop();}catch(e){} }, 900);
+    if (ambGain) {
+      ambGain.gain.linearRampToValueAtTime(0, _actx.currentTime + 1.2);
+    }
+    var o1 = ambOsc; var o2 = ambOsc2;
+    ambOsc = null; ambOsc2 = null; ambGain = null;
+    setTimeout(function(){
+      try{if(o1)o1.stop();}catch(e){}
+      try{if(o2)o2.stop();}catch(e){}
+    }, 1300);
   } catch(e) {}
 }
 
@@ -1578,30 +1601,48 @@ function startSpeechRec() {
 
   recognition.onresult = function(ev) {
     clearTimeout(noSpeechTmr); clearTimeout(silTimer);
-    failCount=0; finalTxt=''; interimTxt='';
+    failCount=0;
+    // Accumulate — do NOT reset on each event (Android fires multiple result events)
+    finalTxt = ''; interimTxt = '';
     for (var i=0; i<ev.results.length; i++) {
-      if (ev.results[i].isFinal) finalTxt  += ev.results[i][0].transcript+' ';
+      if (ev.results[i].isFinal) finalTxt  += ev.results[i][0].transcript + ' ';
       else                        interimTxt += ev.results[i][0].transcript;
     }
-    var combined = (finalTxt+interimTxt).trim();
-    respBox.textContent = combined || 'Listening\u2026';
+    var combined = (finalTxt + interimTxt).trim();
+    if (combined) respBox.textContent = combined;
     if (!vizStream) {
-      var sc = Math.min(1.24, 1+combined.split(' ').length*0.015);
       sphere.style.transition = 'transform 0.18s ease-out';
-      sphere.style.transform  = 'scale('+sc+')';
+      sphere.style.transform  = 'scale(1.12)';
       clearTimeout(sphere._pr);
-      sphere._pr = setTimeout(function(){ sphere.style.transform=''; }, 280);
+      sphere._pr = setTimeout(function(){ sphere.style.transform=''; }, 300);
     }
-    silTimer = setTimeout(function(){ try{recognition.stop();}catch(e){} }, 1900);
+    // If we got a final result, submit immediately — don't wait for silence
+    if (finalTxt.trim().length > 1) {
+      clearTimeout(silTimer);
+      try { recognition.stop(); } catch(e) {}
+    } else {
+      // Still getting interim — wait for silence
+      silTimer = setTimeout(function(){ try{recognition.stop();}catch(e){} }, 2200);
+    }
   };
 
   recognition.onend = function() {
     clearTimeout(silTimer); clearTimeout(noSpeechTmr);
     stopViz();
     if (STATE !== 'listening') return;
-    var got = (finalTxt+interimTxt).trim();
-    if (got.length > 1) { failCount=0; askAria(got); }
-    else setIdle("Didn\u2019t catch that \u2014 tap to try again.");
+    var got = (finalTxt + interimTxt).trim();
+    if (got.length > 1) {
+      failCount = 0;
+      askAria(got);
+    } else {
+      // Android sometimes fires onend before onresult on slow connections
+      // Wait 400ms then check one more time
+      setTimeout(function() {
+        var late = (finalTxt + interimTxt).trim();
+        if (late.length > 1) { failCount=0; askAria(late); }
+        else setIdle("Didn\u2019t catch that \u2014 tap to try again.");
+      }, 400);
+    }
   };
 
   recognition.onerror = function(ev) {
