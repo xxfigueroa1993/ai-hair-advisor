@@ -380,7 +380,7 @@ def transcribe():
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode())
             text = result.get("text", "").strip()
-            return jsonify({"text": text}) if text else jsonify({"text": "", "fallback": True, "error": "Empty"})
+            return jsonify({"text": text}) if text else jsonify({"text": "", "retry": True})
     except urllib.error.HTTPError as e:
         return jsonify({"text": "", "fallback": True, "error": "Whisper: " + e.read().decode()[:100]})
     except Exception as e:
@@ -471,7 +471,7 @@ Reference this naturally."""
         max_tokens = 180
 
     if not user_text:
-        return jsonify({"recommendation": None, "error": "Empty message — please speak again"}), 400
+        return jsonify({"recommendation": None, "retry": True}), 200
     if not ANTHROPIC_API_KEY:
         return jsonify({"recommendation": None, "error": "No API key configured"}), 500
 
@@ -1841,11 +1841,9 @@ function startMediaRec() {
               respBox.textContent = d.text.trim();
               askAria(d.text.trim());
             } else {
-              respBox.textContent = d.error ? ('Error: ' + d.error) : 'Could not hear \u2014 please type.';
-              setIdle('');
-              stLbl.textContent = 'Type below \u2193';
-              activateManual();
-              setTimeout(function(){ manInput.focus(); }, 200);
+              // Nothing heard — return to idle silently
+              respBox.textContent = '';
+              setIdle('Tap to speak');
             }
           })
           .catch(function(e){
