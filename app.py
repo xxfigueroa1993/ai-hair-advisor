@@ -1203,7 +1203,7 @@ html, body {
     <button id="mode-btn">Type Instead</button>
     <div id="manual-row">
       <input id="manual-input" type="text" inputmode="text"
-        placeholder="Describe your hair concern…" autocomplete="off">
+        placeholder="Type your hair question here…" autocomplete="off">
       <button id="manual-send">
         <svg viewBox="0 0 24 24"><path d="M2 12L22 2 16 22 11 13z"/></svg>
       </button>
@@ -1358,43 +1358,48 @@ function startAmbient() {
   ambRunning = true;
   try {
     var ctx = getCtx();
+    // Clean up any leftover oscillators
     if (ambOsc)  { try { ambOsc.stop();  } catch(e) {} ambOsc  = null; }
     if (ambOsc2) { try { ambOsc2.stop(); } catch(e) {} ambOsc2 = null; }
+
     ambGain = ctx.createGain();
     ambGain.gain.setValueAtTime(0, ctx.currentTime);
-    ambGain.gain.linearRampToValueAtTime(0.032, ctx.currentTime + 4.0);
+    ambGain.gain.linearRampToValueAtTime(0.030, ctx.currentTime + 3.5);
     ambGain.connect(ctx.destination);
-    // 174 Hz base tone (healing frequency)
+
     ambOsc = ctx.createOscillator();
     ambOsc.type = 'sine';
     ambOsc.frequency.value = 174;
     ambOsc.connect(ambGain);
     ambOsc.start();
-    // Soft 3rd harmonic for richness
+
+    // Soft harmonic
     var g2 = ctx.createGain();
-    g2.gain.setValueAtTime(0.012, ctx.currentTime);
+    g2.gain.value = 0.010;
     g2.connect(ctx.destination);
     ambOsc2 = ctx.createOscillator();
     ambOsc2.type = 'sine';
-    ambOsc2.frequency.value = 522; // 3x 174
+    ambOsc2.frequency.value = 348;
     ambOsc2.connect(g2);
     ambOsc2.start();
   } catch(e) { ambRunning = false; }
 }
 
 function stopAmbient() {
+  if (!ambRunning) return;
   ambRunning = false;
-  if (!_actx) return;
+  var o1 = ambOsc; var o2 = ambOsc2; var g = ambGain;
+  ambOsc = null; ambOsc2 = null; ambGain = null;
   try {
-    if (ambGain) {
-      ambGain.gain.linearRampToValueAtTime(0, _actx.currentTime + 1.2);
+    if (g && _actx) {
+      g.gain.cancelScheduledValues(_actx.currentTime);
+      g.gain.setValueAtTime(g.gain.value, _actx.currentTime);
+      g.gain.linearRampToValueAtTime(0, _actx.currentTime + 0.4);
     }
-    var o1 = ambOsc; var o2 = ambOsc2;
-    ambOsc = null; ambOsc2 = null; ambGain = null;
     setTimeout(function(){
       try{if(o1)o1.stop();}catch(e){}
       try{if(o2)o2.stop();}catch(e){}
-    }, 1300);
+    }, 500);
   } catch(e) {}
 }
 
@@ -1550,11 +1555,23 @@ function askAria(text) {
     headers:{'Content-Type':'application/json','X-Auth-Token':token,'X-Session-Id':sessionId},
     body:JSON.stringify({text:text.trim(), lang:langSel.value, history:chatHistory.slice(-8)})
   })
-  .then(function(r){ return r.json(); })
+  .then(function(r){
+    if (!r.ok) {
+      return r.text().then(function(t){ throw new Error('HTTP '+r.status+': '+t.slice(0,200)); });
+    }
+    return r.json();
+  })
   .then(function(d){
     clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
     respBox.classList.remove('thinking');
-    if (d.error) { sfxError(); setIdle('Something went wrong. Tap to retry.'); return; }
+    if (d.error) {
+      sfxError();
+      // Show the actual error so we can diagnose
+      respBox.textContent = 'Error: ' + d.error;
+      setIdle('');
+      stLbl.textContent = 'Error — tap to retry';
+      return;
+    }
     var reply = d.recommendation || d.response || '';
     if (!reply) { sfxError(); setIdle('No response. Tap to retry.'); return; }
     chatHistory.push({role:'user',content:text});
@@ -1567,24 +1584,31 @@ function askAria(text) {
   .catch(function(e){
     clearTimeout(t1); clearTimeout(t2); clearTimeout(t3);
     respBox.classList.remove('thinking');
-    if (e.name==='AbortError') { sfxError(); setIdle('Timed out. Tap to retry.'); }
-    else { sfxError(); setIdle('Connection error. Tap to retry.'); }
+    var msg = e.name==='AbortError' ? 'Timed out (45s) \u2014 tap to retry.' : ('Network error: ' + e.message);
+    respBox.textContent = msg;
+    sfxError();
+    STATE = 'idle';
+    stLbl.textContent = 'Tap to retry';
+    stLbl.classList.remove('lit');
   });
 }
 
 // ── SPEECH RECOGNITION ───────────────────────────────
 function startSpeechRec() {
   if (!SR) { startMediaRec(); return; }
+
+  // Reset accumulators ONCE before starting
   finalTxt = ''; interimTxt = '';
+  var submitted = false; // guard against double-submit
 
   navigator.mediaDevices.getUserMedia({audio:true,video:false})
     .then(function(s){ startViz(s); })
     .catch(function(){});
 
   recognition = new SR();
-  recognition.lang           = langSel.value;
-  recognition.continuous     = false;
-  recognition.interimResults = true;
+  recognition.lang            = langSel.value;
+  recognition.continuous      = false;
+  recognition.interimResults  = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = function() {
@@ -1595,62 +1619,66 @@ function startSpeechRec() {
       if (STATE !== 'listening') return;
       try { recognition.stop(); } catch(e) {}
       if (failCount < 2) { failCount++; setTimeout(startSpeechRec, 400); }
-      else { failCount=0; useFallback=true; setIdle('Mic not responding. Type instead.'); activateManual(); }
+      else { failCount=0; useFallback=true; setIdle('Mic not responding \u2014 use typing.'); activateManual(); }
     }, 9000);
   };
 
   recognition.onresult = function(ev) {
     clearTimeout(noSpeechTmr); clearTimeout(silTimer);
-    failCount=0;
-    // Accumulate — do NOT reset on each event (Android fires multiple result events)
-    finalTxt = ''; interimTxt = '';
-    for (var i=0; i<ev.results.length; i++) {
-      if (ev.results[i].isFinal) finalTxt  += ev.results[i][0].transcript + ' ';
-      else                        interimTxt += ev.results[i][0].transcript;
+    failCount = 0;
+
+    // Rebuild from ALL results on EVERY event (SpeechRecognition accumulates)
+    var newFinal = ''; var newInterim = '';
+    for (var i = 0; i < ev.results.length; i++) {
+      if (ev.results[i].isFinal) newFinal   += ev.results[i][0].transcript;
+      else                        newInterim += ev.results[i][0].transcript;
     }
-    var combined = (finalTxt + interimTxt).trim();
+    // Only update — never shrink what we already have
+    if (newFinal.length   > finalTxt.length)   finalTxt   = newFinal;
+    if (newInterim.length > 0)                 interimTxt = newInterim;
+
+    var combined = (finalTxt + ' ' + interimTxt).trim();
     if (combined) respBox.textContent = combined;
-    if (!vizStream) {
-      sphere.style.transition = 'transform 0.18s ease-out';
-      sphere.style.transform  = 'scale(1.12)';
-      clearTimeout(sphere._pr);
-      sphere._pr = setTimeout(function(){ sphere.style.transform=''; }, 300);
-    }
-    // If we got a final result, submit immediately — don't wait for silence
-    if (finalTxt.trim().length > 1) {
+
+    // Got a solid final result — submit now without waiting for silence
+    if (finalTxt.trim().length > 1 && !submitted) {
+      submitted = true;
       clearTimeout(silTimer);
       try { recognition.stop(); } catch(e) {}
-    } else {
-      // Still getting interim — wait for silence
-      silTimer = setTimeout(function(){ try{recognition.stop();}catch(e){} }, 2200);
+    } else if (!submitted) {
+      silTimer = setTimeout(function(){ try{recognition.stop();}catch(e){} }, 2000);
     }
   };
 
   recognition.onend = function() {
     clearTimeout(silTimer); clearTimeout(noSpeechTmr);
     stopViz();
+    if (submitted) return; // already handled in onresult
     if (STATE !== 'listening') return;
-    var got = (finalTxt + interimTxt).trim();
+    var got = (finalTxt + ' ' + interimTxt).trim();
     if (got.length > 1) {
-      failCount = 0;
+      submitted = true; failCount = 0;
       askAria(got);
     } else {
-      // Android sometimes fires onend before onresult on slow connections
-      // Wait 400ms then check one more time
-      setTimeout(function() {
-        var late = (finalTxt + interimTxt).trim();
-        if (late.length > 1) { failCount=0; askAria(late); }
-        else setIdle("Didn\u2019t catch that \u2014 tap to try again.");
-      }, 400);
+      setIdle("Tap and speak clearly \u2014 try again.");
     }
   };
 
   recognition.onerror = function(ev) {
     clearTimeout(silTimer); clearTimeout(noSpeechTmr);
     stopViz();
-    if      (ev.error==='no-speech') setIdle('No speech \u2014 tap to try again.');
-    else if (ev.error==='not-allowed'||ev.error==='service-not-allowed') { setIdle('Mic blocked \u2014 use typing.'); activateManual(); }
-    else setIdle('Mic error \u2014 try typing.');
+    if (ev.error === 'no-speech') {
+      setIdle('No speech detected \u2014 tap to try again.');
+    } else if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+      setIdle('Mic blocked \u2014 use typing mode.');
+      activateManual();
+    } else if (ev.error === 'network') {
+      // Network error — fall back to recording
+      useFallback = true;
+      setIdle('Network error \u2014 tap to try again.');
+    } else {
+      setIdle('Mic error \u2014 try typing.');
+    }
   };
 
   try { recognition.start(); }
