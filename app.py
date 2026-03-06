@@ -1362,10 +1362,10 @@ function tone(freq, dur, vol, type, delay) {
 }
 
 function sfxTap() {
-  // Same ascending chime as end, but one octave higher and shorter decay
-  tone(1174, 0.4, 0.10, 'sine', 0.00);
-  tone(1480, 0.4, 0.08, 'sine', 0.09);
-  tone(1760, 0.4, 0.06, 'sine', 0.18);
+  // Exact same as end chime
+  tone(1046, 0.25, 0.10, 'sine', 0.00);
+  tone(1319, 0.25, 0.08, 'sine', 0.08);
+  tone(1568, 0.25, 0.06, 'sine', 0.16);
 }
 function sfxError() { tone(220, 0.22, 0.09, 'triangle'); }
 
