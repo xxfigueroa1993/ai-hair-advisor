@@ -950,7 +950,8 @@ def dashboard():
 
 @app.route("/login")
 def login_page():
-    return Response(LOGIN_PAGE, mimetype="text/html")
+    page = LOGIN_PAGE.replace('%GOOGLE_CLIENT_ID%', GOOGLE_CLIENT_ID or '')
+    return Response(page, mimetype="text/html")
 
 @app.route("/subscription/success")
 def subscription_success():
@@ -1757,19 +1758,103 @@ function setIdle(msg) {
   respBox.classList.remove('loading');
 }
 
+// ── SOUND EFFECTS ─────────────────────────────────────────
+function playTone(freq, dur, vol, type) {
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, ctx.currentTime + dur);
+    gain.gain.setValueAtTime(vol || 0.18, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + dur);
+    setTimeout(function(){ ctx.close(); }, (dur + 0.1) * 1000);
+  } catch(e) {}
+}
+function playTap()  { playTone(520, 0.08, 0.15, 'sine'); }
+function playDone() { playTone(680, 0.12, 0.14, 'sine'); setTimeout(function(){ playTone(820, 0.10, 0.12, 'sine'); }, 80); }
+function playError(){ playTone(280, 0.18, 0.12, 'triangle'); }
+
 // ── SPEECH SYNTHESIS ──────────────────────────────────────
+// Mobile fix: pre-warm synthesis engine, then speak on a 1ms timeout
+// to keep it inside the original user gesture trust chain.
+var _speakQueue = [];
+var _speakReady = false;
+
+// Pre-warm speech engine on first user interaction
+function warmSpeech() {
+  if (_speakReady) return;
+  _speakReady = true;
+  try {
+    var utt = new SpeechSynthesisUtterance('');
+    speechSynthesis.speak(utt);
+    speechSynthesis.cancel();
+  } catch(e) {}
+}
+
 function speak(text) {
-  if (!text || !window.speechSynthesis) return;
-  speechSynthesis.cancel();
-  var utt   = new SpeechSynthesisUtterance(text);
-  utt.lang  = langSel.value;
-  utt.rate  = 0.91;
-  utt.pitch = 1.05;
-  utt.onend = function() { setIdle(); };
-  utt.onerror = function() { setIdle(); };
+  if (!text) { setIdle(); return; }
+  if (!window.speechSynthesis) { setIdle(); return; }
+
   setState('speaking');
   stateLbl.textContent = 'Speaking…';
-  speechSynthesis.speak(utt);
+
+  // Cancel any current speech
+  try { speechSynthesis.cancel(); } catch(e) {}
+
+  // Small delay to let cancel() clear, then speak
+  setTimeout(function() {
+    try {
+      var utt   = new SpeechSynthesisUtterance(text);
+      utt.lang  = langSel.value;
+      utt.rate  = 0.91;
+      utt.pitch = 1.05;
+      utt.volume = 1.0;
+
+      utt.onstart = function() {
+        playDone();
+        setState('speaking');
+        stateLbl.textContent = 'Speaking…';
+      };
+      utt.onend = function() {
+        setIdle();
+      };
+      utt.onerror = function(e) {
+        console.log('TTS error:', e.error);
+        // On mobile, try once more after resuming AudioContext
+        if (audioCtx && audioCtx.state === 'suspended') {
+          audioCtx.resume().then(function() {
+            try { speechSynthesis.speak(utt); } catch(e2) { setIdle(); }
+          });
+        } else {
+          setIdle();
+        }
+      };
+
+      // iOS Safari: voices may not be loaded yet
+      var voices = speechSynthesis.getVoices();
+      if (voices.length === 0) {
+        // Wait for voices then retry
+        speechSynthesis.onvoiceschanged = function() {
+          speechSynthesis.onvoiceschanged = null;
+          try { speechSynthesis.speak(utt); } catch(e) { setIdle(); }
+        };
+        // Fallback: try anyway
+        setTimeout(function() {
+          try { speechSynthesis.speak(utt); } catch(e) { setIdle(); }
+        }, 200);
+      } else {
+        speechSynthesis.speak(utt);
+      }
+    } catch(e) {
+      console.log('speak() error:', e);
+      setIdle();
+    }
+  }, 50);
 }
 
 // ── MIC REACTIVE ANIMATION ────────────────────────────────
@@ -1812,10 +1897,21 @@ function stopMicViz() {
 // ── PROCESS TEXT → ARIA ───────────────────────────────────
 function processText(text) {
   if (!text || text.trim().length < 2) { setIdle("Didn't catch that — tap to try again."); return; }
+
+  // Show what user said, enter thinking state
   respBox.textContent = text;
   respBox.classList.add('loading');
-  setState('speaking');
+  STATE = 'thinking'; // distinct from speaking so halo doesn't pulse wrong
+  halo.classList.remove('listening','speaking');
   stateLbl.textContent = 'Thinking…';
+
+  // Timeout safety net — if API takes >20s, reset
+  var safetyTimer = setTimeout(function() {
+    if (STATE === 'thinking') {
+      playError();
+      setIdle('Taking too long — please try again.');
+    }
+  }, 20000);
 
   fetch('/api/recommend', {
     method: 'POST',
@@ -1832,18 +1928,27 @@ function processText(text) {
   })
   .then(function(r){ return r.json(); })
   .then(function(d) {
+    clearTimeout(safetyTimer);
     respBox.classList.remove('loading');
-    if (d.error) { setIdle('Something went wrong. Please try again.'); return; }
+    if (d.error) {
+      playError();
+      setIdle('Something went wrong. Please try again.');
+      return;
+    }
     var reply = d.recommendation || d.response || '';
-    history.push({role:'user', content:text});
-    history.push({role:'assistant', content:reply});
+    if (!reply) { playError(); setIdle('No response — please try again.'); return; }
+    history.push({role:'user',    content: text});
+    history.push({role:'assistant', content: reply});
     if (history.length > 20) history = history.slice(-20);
     respBox.textContent = reply;
-    speak(reply);
+    speak(reply); // speak() sets STATE to 'speaking' internally
     if (d.show_paywall) setTimeout(showPaywall, 1800);
   })
-  .catch(function() {
+  .catch(function(err) {
+    clearTimeout(safetyTimer);
     respBox.classList.remove('loading');
+    console.log('fetch error:', err);
+    playError();
     setIdle('Connection error — please check your internet.');
   });
 }
@@ -2011,6 +2116,8 @@ halo.addEventListener('click', function(e) {
   e.preventDefault();
   if (isManual) return;
   unlockAudio();
+  warmSpeech();
+  playTap();
 
   if (STATE === 'speaking') {
     if (window.speechSynthesis) speechSynthesis.cancel();
@@ -2227,6 +2334,26 @@ input:focus,select:focus{border-color:var(--brand);}
 .hi-t{font-size:11px;color:var(--muted);line-height:1.5;}
 .clr{font-size:9px;color:var(--muted);background:none;border:none;cursor:pointer;letter-spacing:0.08em;text-transform:uppercase;margin-top:10px;font-family:'Jost',sans-serif;}
 
+/* Chip field */
+.chip-field{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:42px;padding:9px 12px;border:1px solid rgba(193,163,162,0.2);border-radius:10px;background:#faf6f3;cursor:pointer;position:relative;transition:border .2s;}
+.chip-field:active{border-color:var(--brand);}
+.chip-placeholder{font-size:12px;color:rgba(0,0,0,0.28);}
+.chip-wrap{display:flex;flex-wrap:wrap;gap:4px;flex:1;}
+.chip{display:inline-flex;align-items:center;gap:4px;background:var(--brand);color:#fff;border-radius:12px;padding:3px 9px;font-size:10px;letter-spacing:0.04em;}
+.chip-x{font-size:13px;line-height:1;cursor:pointer;opacity:0.7;}
+.chip-arrow{font-size:18px;color:rgba(0,0,0,0.25);flex-shrink:0;margin-left:auto;}
+
+/* Picker modal */
+#picker-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:600;align-items:flex-end;justify-content:center;}
+#picker-sheet{background:var(--card);border-radius:24px 24px 0 0;width:100%;max-width:500px;padding:0 0 calc(20px + env(safe-area-inset-bottom,0px));animation:shet .3s cubic-bezier(.32,.72,0,1);}
+@keyframes shet{from{transform:translateY(100%)}to{transform:translateY(0)}}
+#picker-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid var(--border);}
+#picker-title{font-family:'Cormorant Garamond',serif;font-size:20px;font-style:italic;color:var(--text);}
+#picker-done{background:var(--brand);color:#fff;border:none;border-radius:18px;padding:7px 18px;font-family:'Jost',sans-serif;font-size:10px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;}
+#picker-list{padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px;max-height:60vh;overflow-y:auto;}
+.pick-opt{padding:9px 16px;border:1px solid var(--border);border-radius:20px;font-size:12px;color:var(--muted);cursor:pointer;transition:all .15s;background:#faf6f3;}
+.pick-opt.sel{background:var(--brand);color:#fff;border-color:var(--brand);}
+
 /* Payment fullscreen overlay */
 #pay-ov{display:none;position:fixed;inset:0;background:var(--bg);z-index:500;flex-direction:column;overflow-y:auto;padding-top:env(safe-area-inset-top,0px);}
 #pay-hd{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:#0d0906;flex-shrink:0;}
@@ -2296,11 +2423,29 @@ input:focus,select:focus{border-color:var(--brand);}
           <option>Coily / 4C</option><option>Fine</option><option>Thick</option>
         </select></div>
       <div class="fg"><label>Main Concerns</label>
-        <input id="p-con" type="text" placeholder="dry, frizzy, thinning…" oninput="recalc()"></div>
+        <div class="chip-field" id="con-field" onclick="openPicker('concerns')">
+          <span class="chip-placeholder" id="con-ph">Tap to select…</span>
+          <span class="chip-wrap" id="con-chips"></span>
+          <span class="chip-arrow">›</span>
+        </div>
+        <input type="hidden" id="p-con">
+      </div>
       <div class="fg"><label>Chemical Treatments</label>
-        <input id="p-trx" type="text" placeholder="relaxer, bleach, keratin…" oninput="recalc()"></div>
+        <div class="chip-field" id="trx-field" onclick="openPicker('treatments')">
+          <span class="chip-placeholder" id="trx-ph">Tap to select…</span>
+          <span class="chip-wrap" id="trx-chips"></span>
+          <span class="chip-arrow">›</span>
+        </div>
+        <input type="hidden" id="p-trx">
+      </div>
       <div class="fg"><label>Products Using</label>
-        <input id="p-pro" type="text" placeholder="Formula Exclusiva…" oninput="recalc()"></div>
+        <div class="chip-field" id="pro-field" onclick="openPicker('products')">
+          <span class="chip-placeholder" id="pro-ph">Tap to select…</span>
+          <span class="chip-wrap" id="pro-chips"></span>
+          <span class="chip-arrow">›</span>
+        </div>
+        <input type="hidden" id="p-pro">
+      </div>
       <div class="fg"><label>Heat Tools</label>
         <select id="p-heat" onchange="recalc()">
           <option value="">Select…</option>
@@ -2351,6 +2496,17 @@ input:focus,select:focus{border-color:var(--brand);}
   </div>
 </div>
 
+<!-- CHIP PICKER MODAL -->
+<div id="picker-overlay" onclick="if(event.target===this)closePicker()">
+  <div id="picker-sheet">
+    <div id="picker-header">
+      <span id="picker-title">Select</span>
+      <button id="picker-done" onclick="closePicker()">Done</button>
+    </div>
+    <div id="picker-list"></div>
+  </div>
+</div>
+
 <!-- PAYMENT FULLSCREEN -->
 <div id="pay-ov">
   <div id="pay-hd">
@@ -2395,11 +2551,11 @@ fetch('/api/profile', {headers:{'X-Auth-Token':token}})
   .then(function(r){return r.json();})
   .then(function(d){
     if (d.hair_type)      document.getElementById('p-type').value  = d.hair_type;
-    if (d.hair_concerns)  document.getElementById('p-con').value   = d.hair_concerns;
-    if (d.treatments)     document.getElementById('p-trx').value   = d.treatments;
-    if (d.products_tried) document.getElementById('p-pro').value   = d.products_tried;
     if (d.heat_usage)     document.getElementById('p-heat').value  = d.heat_usage;
     if (d.water_type)     document.getElementById('p-water').value = d.water_type;
+    if (d.hair_concerns)  loadChips('concerns', d.hair_concerns);
+    if (d.treatments)     loadChips('treatments', d.treatments);
+    if (d.products_tried) loadChips('products', d.products_tried);
     recalc();
   }).catch(function(){});
 
@@ -2417,6 +2573,87 @@ fetch('/api/history', {headers:{'X-Auth-Token':token}})
   }).catch(function(){});
 
 // ── SCORE ENGINE ──────────────────────────────────────────
+// ── CHIP PICKERS ──────────────────────────────────────────
+var PICKER_OPTIONS = {
+  concerns: [
+    'Dry hair','Oily scalp','Hair loss','Breakage','Thinning',
+    'Frizz','Dull / no shine','Split ends','Slow growth','Dandruff',
+    'Itchy scalp','Heat damage','Color damage','Brittleness','Curl loss'
+  ],
+  treatments: [
+    'No treatments','Relaxer / Perm','Bleach','Hair color / Dye',
+    'Keratin treatment','Brazilian blowout','Japanese straightening',
+    'Highlights / Balayage','Texturizer','Heat styling daily',
+    'Heat styling weekly','No heat ever'
+  ],
+  products: [
+    // SupportRD products (first)
+    'Formula Exclusiva — SupportRD','Laciador Crece — SupportRD',
+    'Gotero Rapido — SupportRD','Gotitas Brillantes — SupportRD',
+    'Mascarilla — SupportRD','Shampoo Aloe & Rosemary — SupportRD',
+    // Top brands
+    'OGX','SheaMoisture','Cantu','Mielle Organics','Carol's Daughter',
+    'Aunt Jackie's','As I Am','DevaCurl','Olaplex','Redken',
+    'Pantene','Head & Shoulders','Garnier Fructis','TRESemmé',
+    'Dove','Herbal Essences','Paul Mitchell','Moroccanoil',
+    'Kérastase','L'Oréal EverPure','Not I Am','Curl Junkie'
+  ]
+};
+var PICKER_LABELS = { concerns:'Main Concerns', treatments:'Chemical Treatments', products:'Products You Use' };
+var pickerKey = null;
+var pickerSel = { concerns:[], treatments:[], products:[] };
+
+function openPicker(key) {
+  pickerKey = key;
+  document.getElementById('picker-title').textContent = PICKER_LABELS[key];
+  var list = document.getElementById('picker-list');
+  list.innerHTML = PICKER_OPTIONS[key].map(function(opt) {
+    var isSel = pickerSel[key].indexOf(opt) > -1;
+    return '<div class="pick-opt'+(isSel?' sel':'')+'" onclick="toggleOpt(this,\''+opt.replace(/'/g,"\'")+'\')">'+opt+'</div>';
+  }).join('');
+  document.getElementById('picker-overlay').style.display = 'flex';
+}
+
+function toggleOpt(el, val) {
+  var idx = pickerSel[pickerKey].indexOf(val);
+  if (idx > -1) { pickerSel[pickerKey].splice(idx,1); el.classList.remove('sel'); }
+  else          { pickerSel[pickerKey].push(val);     el.classList.add('sel');    }
+}
+
+function closePicker() {
+  document.getElementById('picker-overlay').style.display = 'none';
+  renderChips(pickerKey);
+  recalc();
+}
+
+function renderChips(key) {
+  var map = { concerns:['con-chips','con-ph','p-con'], treatments:['trx-chips','trx-ph','p-trx'], products:['pro-chips','pro-ph','p-pro'] };
+  var ids = map[key];
+  var chips = document.getElementById(ids[0]);
+  var ph    = document.getElementById(ids[1]);
+  var inp   = document.getElementById(ids[2]);
+  var sel   = pickerSel[key];
+  ph.style.display = sel.length ? 'none' : '';
+  chips.innerHTML = sel.map(function(v){
+    return '<span class="chip">'+v+'<span class="chip-x" onclick="removeChip(event,\''+key+'\',\''+v.replace(/'/g,"\'")+'\')">×</span></span>';
+  }).join('');
+  inp.value = sel.join(', ');
+}
+
+function removeChip(e, key, val) {
+  e.stopPropagation();
+  var idx = pickerSel[key].indexOf(val);
+  if (idx > -1) pickerSel[key].splice(idx,1);
+  renderChips(key); recalc();
+}
+
+// Pre-populate chips from loaded profile
+function loadChips(key, csvVal) {
+  if (!csvVal) return;
+  pickerSel[key] = csvVal.split(',').map(function(s){return s.trim();}).filter(Boolean);
+  renderChips(key);
+}
+
 function recalc() {
   var concerns   = (document.getElementById('p-con').value||'').toLowerCase();
   var treatments = (document.getElementById('p-trx').value||'').toLowerCase();
@@ -2592,7 +2829,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
       <button class="l-btn" onclick="doLogin()">Sign In</button>
       <div class="l-or"><span>or</span></div>
       <div class="l-google">
-        <div id="g_id_onload" data-client_id="" data-callback="handleGoogle" data-auto_prompt="false"></div>
+        <div id="g_id_onload" data-client_id="%GOOGLE_CLIENT_ID%" data-callback="handleGoogle" data-auto_prompt="false"></div>
         <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="sign_in_with" data-shape="pill" data-logo_alignment="left"></div>
       </div>
       <a href="https://supportrd.com/account/login?return_url=/apps/hair-advisor" class="l-shopify">Sign In with Shopify Account</a>
