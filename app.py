@@ -345,6 +345,9 @@ def debug_env():
         "has_google_id": bool(GOOGLE_CLIENT_ID),
         "google_id_prefix": GOOGLE_CLIENT_ID[:16] + "..." if GOOGLE_CLIENT_ID else "MISSING",
         "google_id_length": len(GOOGLE_CLIENT_ID),
+        "has_openai_key": bool(OPENAI_API_KEY),
+        "openai_key_first10": OPENAI_API_KEY[:10] + "..." if OPENAI_API_KEY else "MISSING",
+        "openai_key_valid_prefix": OPENAI_API_KEY.startswith("sk-") if OPENAI_API_KEY else False,
     })
 
 @app.route("/api/config")
@@ -400,6 +403,47 @@ def transcribe():
         return jsonify({"text": "", "fallback": True, "error": "Whisper: " + e.read().decode()[:100]})
     except Exception as e:
         return jsonify({"text": "", "fallback": True, "error": str(e)})
+
+
+@app.route("/api/test-whisper")
+def test_whisper():
+    """Test Whisper API connectivity and key validity."""
+    if not OPENAI_API_KEY:
+        return jsonify({"ok": False, "error": "OPENAI_API_KEY not set in environment"})
+    # Send a minimal valid WAV (44 bytes of silence) to test the key
+    import base64
+    # Minimal WAV header — 44 bytes, 1 channel, 8kHz, 8-bit, 0 samples
+    wav = bytes([
+        0x52,0x49,0x46,0x46,0x24,0x00,0x00,0x00,0x57,0x41,0x56,0x45,
+        0x66,0x6D,0x74,0x20,0x10,0x00,0x00,0x00,0x01,0x00,0x01,0x00,
+        0x40,0x1F,0x00,0x00,0x40,0x1F,0x00,0x00,0x01,0x00,0x08,0x00,
+        0x64,0x61,0x74,0x61,0x00,0x00,0x00,0x00
+    ])
+    try:
+        boundary = "ariatest"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="test.wav"\r\n'
+            f"Content-Type: audio/wav\r\n\r\n"
+        ).encode() + wav + (
+            f"\r\n--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n'
+            f"--{boundary}--\r\n"
+        ).encode()
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/audio/transcriptions",
+            data=body,
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                     "Content-Type": f"multipart/form-data; boundary={boundary}"}
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read().decode())
+            return jsonify({"ok": True, "result": result})
+    except urllib.error.HTTPError as e:
+        err = e.read().decode()
+        return jsonify({"ok": False, "http_status": e.code, "error": err[:300]})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 @app.route("/api/recommend", methods=["POST","OPTIONS"])
 def recommend():
