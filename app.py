@@ -269,7 +269,15 @@ def index():
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Hair Expert Advisor</title>
+<title>Aria — AI Hair Advisor</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#c1a3a2">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Aria">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<script>if("serviceWorker"in navigator){navigator.serviceWorker.register("/sw.js");}</script>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -1894,6 +1902,405 @@ def add_cors_headers(response):
     response.headers["Access-Control-Max-Age"]       = "3600"
     return response
 
+
+@app.route("/api/auth/forgot-password", methods=["POST","OPTIONS"])
+def forgot_password():
+    data  = request.get_json(silent=True) or {}
+    email = (data.get("email","") or "").strip().lower()
+    if not email:
+        return jsonify({"error":"Email required"}), 400
+
+    user = db_execute("SELECT id, name FROM users WHERE email=?", (email,), fetchone=True)
+    if not user:
+        # Don't reveal if email exists
+        return jsonify({"ok": True})
+
+    import secrets
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.datetime.utcnow() + datetime.timedelta(hours=2)).isoformat()
+
+    db_execute("UPDATE users SET reset_token=?, reset_token_expires=? WHERE id=?",
+               (token, expires, user[0]))
+
+    reset_url = f"{os.environ.get('APP_BASE_URL','https://supportrd.com')}/pages/hair-dashboard?reset_token={token}"
+
+    # Send reset email via simple smtp or just log it for now
+    try:
+        import smtplib
+        from email.mime.text import MIMEText
+        smtp_user = os.environ.get("SMTP_USER","")
+        smtp_pass = os.environ.get("SMTP_PASS","")
+        if smtp_user and smtp_pass:
+            msg = MIMEText(f"""Hi {user[1]},
+
+You requested a password reset for your SupportRD account.
+
+Click the link below to reset your password (valid for 2 hours):
+{reset_url}
+
+If you didn't request this, ignore this email.
+
+— SupportRD Team""")
+            msg["Subject"] = "Reset your SupportRD password"
+            msg["From"]    = smtp_user
+            msg["To"]      = email
+            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+    except Exception as e:
+        print(f"Email send error: {e}")
+        # Still return ok — token is saved
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/reset-password", methods=["POST","OPTIONS"])
+def reset_password():
+    data     = request.get_json(silent=True) or {}
+    token    = (data.get("token","") or "").strip()
+    password = (data.get("password","") or "").strip()
+    if not token or not password or len(password) < 6:
+        return jsonify({"error":"Invalid request"}), 400
+
+    user = db_execute(
+        "SELECT id, reset_token_expires FROM users WHERE reset_token=?",
+        (token,), fetchone=True)
+    if not user:
+        return jsonify({"error":"Invalid or expired reset link"}), 400
+
+    expires = user[1]
+    if expires and datetime.datetime.utcnow().isoformat() > expires:
+        return jsonify({"error":"Reset link has expired. Please request a new one."}), 400
+
+    import hashlib
+    hashed = hashlib.sha256(password.encode()).hexdigest()
+    db_execute("UPDATE users SET password=?, reset_token=NULL, reset_token_expires=NULL WHERE id=?",
+               (hashed, user[0]))
+    return jsonify({"ok": True})
+
+
+    import time
+    def scheduler():
+        while True:
+            now = datetime.datetime.utcnow()
+            # Run at 9:00 AM UTC daily
+            if now.hour == 9 and now.minute == 0:
+                print("⏰ Daily content engine trigger...")
+                try:
+                    from content_engine import run_engine
+                    run_engine()
+                except Exception as e:
+                    print(f"Scheduled engine error: {e}")
+                time.sleep(61)  # Prevent double-run within same minute
+            else:
+                time.sleep(30)
+    thread = threading.Thread(target=scheduler, daemon=True)
+    thread.start()
+    print("✅ Daily content engine scheduler started (runs at 9am UTC)")
+
+
+
+# ── PUBLIC BLOG ───────────────────────────────────────────────────
+import glob
+
+BLOG_DIR = "/tmp/srd_blog"
+
+@app.route("/api/hair-trends")
+def hair_trends():
+    """Scrape trending hair content from multiple platforms."""
+    import re, urllib.request, urllib.parse, random, threading
+    results = []
+    lock = threading.Lock()
+
+    def scrape_reddit():
+        try:
+            url = "https://www.reddit.com/r/Hair+Haircare+NaturalHair+curlyhair/hot.json?limit=12"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                data = json.loads(r.read().decode())
+            posts = data["data"]["children"]
+            for p in posts[:8]:
+                d = p["data"]
+                title = d.get("title","")
+                if any(kw in title.lower() for kw in ["hair","curl","scalp","growth","damage","frizz","moisture"]):
+                    img = d.get("thumbnail","")
+                    if img and img.startswith("http"):
+                        with lock:
+                            results.append({"title": title, "image": img, "source": "reddit", "link": "https://reddit.com" + d.get("permalink","")})
+        except Exception as e:
+            print(f"Reddit scrape error: {e}")
+
+    def scrape_pinterest():
+        try:
+            queries = ["hair care routine", "natural hair", "curly hair tips", "hair growth"]
+            query = random.choice(queries)
+            url = f"https://pinterest.com/search/pins/?q={urllib.parse.quote(query)}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+            images = re.findall(r'"url":"(https://i\.pinimg\.com/[^"]+736[^"]+\.jpg)"', html)
+            titles = re.findall(r'"title":"([^"]{15,100})"', html)
+            hair_titles = [t for t in titles if any(kw in t.lower() for kw in ["hair","curl","scalp","growth","damage","frizz"])]
+            for i, img in enumerate(images[:6]):
+                with lock:
+                    results.append({"title": hair_titles[i] if i < len(hair_titles) else query, "image": img, "source": "pinterest", "link": "https://auto-engine.onrender.com/blog"})
+        except Exception as e:
+            print(f"Pinterest scrape error: {e}")
+
+    def scrape_tumblr():
+        try:
+            tags = ["haircare", "naturalhair", "curlyhair", "hairtransformation"]
+            tag = random.choice(tags)
+            url = f"https://www.tumblr.com/tagged/{tag}"
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as r:
+                html = r.read().decode("utf-8", errors="ignore")
+            images = re.findall(r'"url":"(https://[^"]+tumblr[^"]+_500\.jpg)"', html)
+            for img in images[:4]:
+                with lock:
+                    results.append({"title": tag.replace("_"," ").title() + " inspiration", "image": img, "source": "tumblr", "link": "https://auto-engine.onrender.com/blog"})
+        except Exception as e:
+            print(f"Tumblr scrape error: {e}")
+
+    # Run all scrapers in parallel
+    threads = [
+        threading.Thread(target=scrape_reddit),
+        threading.Thread(target=scrape_pinterest),
+        threading.Thread(target=scrape_tumblr),
+    ]
+    for t in threads: t.start()
+    for t in threads: t.join(timeout=10)
+
+    random.shuffle(results)
+    return jsonify({"ok": True, "items": results[:15]})
+
+@app.route("/api/pinterest-trends")
+def pinterest_trends():
+    """Scrape and return trending Pinterest hair content."""
+    import re, urllib.request, urllib.parse, random
+    queries = ["hair care routine", "hair growth tips", "damaged hair repair", "curly hair", "hair loss treatment"]
+    query = random.choice(queries)
+    pins = []
+    try:
+        url = f"https://pinterest.com/search/pins/?q={urllib.parse.quote(query)}&rs=typed"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9"
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        # Extract image URLs and titles
+        images = re.findall(r'"url"\s*:\s*"(https://i\.pinimg\.com/[^"]+736[^"]+\.jpg)"', html)
+        titles = re.findall(r'"title"\s*:\s*"([^"]{15,100})"', html)
+        hair_titles = [t for t in titles if any(kw in t.lower() for kw in
+            ["hair", "curl", "scalp", "growth", "damage", "frizz", "moisture", "routine"])]
+        for i, img in enumerate(images[:12]):
+            pins.append({
+                "image": img,
+                "title": hair_titles[i] if i < len(hair_titles) else query,
+                "link": f"https://auto-engine.onrender.com/blog"
+            })
+    except Exception as e:
+        print(f"Pinterest scrape error: {e}")
+    return jsonify({"ok": True, "pins": pins, "query": query})
+
+@app.route("/blog")
+def blog_index():
+    try:
+        with open(f"{BLOG_DIR}/index.json","r") as f:
+            posts = json.load(f)
+    except:
+        posts = []
+    
+    cards = ""
+    for p in posts:
+        date = p.get("date","")[:10]
+        cards += f"""
+        <article class="post-card">
+          <a href="/blog/{p['handle']}">
+            <h2>{p['title']}</h2>
+            <p class="meta">{p.get('meta','')}</p>
+            <span class="date">{date}</span>
+          </a>
+        </article>"""
+
+    if not cards:
+        cards = '<p class="empty">No posts yet — check back soon.</p>'
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hair Care Journal — SupportRD</title>
+<meta name="description" content="Expert hair care tips, routines and advice from SupportRD.">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906;min-height:100vh}}
+header{{text-align:center;padding:60px 24px 40px;background:#fff;border-bottom:1px solid rgba(193,163,162,0.2)}}
+header h1{{font-family:'Cormorant Garamond',serif;font-size:42px;font-style:italic;color:#0d0906}}
+header p{{font-size:13px;color:rgba(0,0,0,0.4);margin-top:8px;letter-spacing:0.08em}}
+.container{{max-width:900px;margin:0 auto;padding:40px 24px}}
+.section-label{{font-size:11px;color:#c1a3a2;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px}}
+.section-title{{font-family:'Cormorant Garamond',serif;font-size:30px;font-style:italic;margin-bottom:24px;color:#0d0906}}
+.pin-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:52px}}
+.pin-card{{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);cursor:pointer;transition:transform 0.2s}}
+.pin-card:hover{{transform:translateY(-3px)}}
+.pin-card img{{width:100%;height:190px;object-fit:cover;display:block}}
+.pin-card .pin-title{{padding:10px 12px;font-size:11px;color:rgba(0,0,0,0.55);line-height:1.4}}
+.pin-loading{{text-align:center;padding:40px;color:rgba(0,0,0,0.3);font-size:13px;grid-column:1/-1}}
+.post-card{{background:#fff;border-radius:16px;margin-bottom:20px;transition:transform 0.2s;box-shadow:0 2px 12px rgba(0,0,0,0.06)}}
+.post-card:hover{{transform:translateY(-2px)}}
+.post-card a{{display:block;padding:28px 32px;text-decoration:none;color:inherit}}
+.post-card h2{{font-family:'Cormorant Garamond',serif;font-size:24px;color:#0d0906;margin-bottom:8px;line-height:1.3}}
+.post-card .meta{{font-size:13px;color:rgba(0,0,0,0.45);line-height:1.6;margin-bottom:12px}}
+.post-card .date{{font-size:11px;color:#c1a3a2;letter-spacing:0.08em}}
+.empty{{text-align:center;color:rgba(0,0,0,0.3);padding:60px;font-size:14px}}
+footer{{text-align:center;padding:40px;font-size:12px;color:rgba(0,0,0,0.3)}}
+footer a{{color:#c1a3a2;text-decoration:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Hair Care Journal</h1>
+  <p>Expert tips, routines and advice from SupportRD</p>
+</header>
+<div class="container">
+  <div class="section-label">&#10022; Trending in hair care</div>
+  <div class="section-title">What's Inspiring Us This Week</div>
+  <div class="pin-grid" id="pin-grid"><div class="pin-loading">Loading trending hair inspiration...</div></div>
+  <div class="section-label">&#10022; Expert guides</div>
+  <div class="section-title">Hair Care Journal</div>
+  {cards}
+</div>
+<footer><a href="https://supportrd.com">← Back to SupportRD</a> &nbsp;·&nbsp; <a href="https://ai-hair-advisor.onrender.com">Try Aria AI →</a></footer>
+<script>
+var sourceColors={{'reddit':'#ff4500','pinterest':'#e60023','tumblr':'#35465c'}};
+fetch('/api/hair-trends')
+  .then(function(r){{return r.json();}})
+  .then(function(d){{
+    var grid=document.getElementById('pin-grid');
+    if(!d.items||!d.items.length){{grid.innerHTML='';return;}}
+    grid.innerHTML=d.items.map(function(p){{
+      var color=sourceColors[p.source]||'#c1a3a2';
+      return '<div class="pin-card" onclick="window.open(\''+p.link+'\',\'_blank\')">'+
+        '<img src="'+p.image+'" alt="'+p.title+'" loading="lazy" onerror="this.closest(\\'.pin-card\\').remove()">'+
+        '<div class="pin-title">'+p.title+
+        '<span style="display:block;margin-top:4px;font-size:9px;color:'+color+';text-transform:uppercase;letter-spacing:0.08em">'+p.source+'</span>'+
+        '</div></div>';
+    }}).join('');
+  }})
+  .catch(function(){{document.getElementById('pin-grid').innerHTML='';}});
+</script>
+</body></html>"""
+
+
+@app.route("/blog/<handle>")
+def blog_post(handle):
+    try:
+        with open(f"{BLOG_DIR}/{handle}.json","r") as f:
+            post = json.load(f)
+    except:
+        return "<h2>Post not found</h2>", 404
+
+    date = post.get("date","")[:10]
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{post['title']} — SupportRD</title>
+<meta name="description" content="{post.get('meta','')}">
+<link rel="canonical" href="https://ai-hair-advisor.onrender.com/blog/{handle}">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906}}
+header{{text-align:center;padding:50px 24px 30px;background:#fff;border-bottom:1px solid rgba(193,163,162,0.2)}}
+header a{{font-size:12px;color:#c1a3a2;text-decoration:none;letter-spacing:0.08em}}
+.container{{max-width:720px;margin:0 auto;padding:48px 24px}}
+.post-date{{font-size:11px;color:#c1a3a2;letter-spacing:0.1em;margin-bottom:16px}}
+.post-body{{background:#fff;border-radius:20px;padding:48px;box-shadow:0 2px 20px rgba(0,0,0,0.06);line-height:1.8;font-size:15px}}
+.post-body h1{{font-family:'Cormorant Garamond',serif;font-size:36px;font-style:italic;margin-bottom:24px;line-height:1.2}}
+.post-body h2{{font-family:'Cormorant Garamond',serif;font-size:24px;margin:32px 0 12px}}
+.post-body p{{margin-bottom:16px;color:rgba(0,0,0,0.75)}}
+.post-body a{{color:#c1a3a2}}
+.cta{{background:#c1a3a2;color:#fff;text-align:center;padding:32px;border-radius:16px;margin-top:32px}}
+.cta h3{{font-family:'Cormorant Garamond',serif;font-size:24px;font-style:italic;margin-bottom:8px}}
+.cta a{{display:inline-block;margin-top:16px;padding:12px 28px;background:#fff;color:#c1a3a2;border-radius:30px;text-decoration:none;font-size:11px;letter-spacing:0.12em;text-transform:uppercase}}
+footer{{text-align:center;padding:32px;font-size:12px;color:rgba(0,0,0,0.3)}}
+footer a{{color:#c1a3a2;text-decoration:none}}
+</style>
+</head>
+<body>
+<header><a href="/blog">← Hair Care Journal</a></header>
+<div class="container">
+  <div class="post-date">{date}</div>
+  <div class="post-body">{post['html']}</div>
+  <div class="cta">
+    <h3>Get your personalized hair routine</h3>
+    <p style="font-size:13px;opacity:0.9">Tell Aria about your hair and get expert advice tailored to you.</p>
+    <a href="https://ai-hair-advisor.onrender.com">Chat with Aria Free →</a>
+  </div>
+</div>
+<footer><a href="https://supportrd.com">SupportRD</a> &nbsp;·&nbsp; <a href="/blog">More Articles</a></footer>
+</body></html>"""
+
+
+@app.route("/sitemap.xml")
+def sitemap():
+    import glob
+    BLOG_DIR = "/tmp/srd_blog"
+    base_url = "https://auto-engine.onrender.com"
+    
+    urls = []
+    
+    # Blog index
+    urls.append(f"""  <url>
+    <loc>{base_url}/blog</loc>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>""")
+    
+    # Individual posts
+    try:
+        with open(f"{BLOG_DIR}/index.json","r") as f:
+            posts = json.load(f)
+        for p in posts:
+            date = p.get("date","")[:10]
+            urls.append(f"""  <url>
+    <loc>{base_url}/blog/{p["handle"]}</loc>
+    <lastmod>{date}</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>""")
+    except:
+        pass
+
+    xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{chr(10).join(urls)}
+</urlset>"""
+    
+    return Response(xml, mimetype="application/xml")
+
+
+@app.route("/robots.txt")
+def robots():
+    return Response(f"""User-agent: *
+Allow: /blog
+Disallow: /api
+Disallow: /admin
+
+Sitemap: https://auto-engine.onrender.com/sitemap.xml
+""", mimetype="text/plain")
+
+
+
+@app.route("/google65f6d985572e55c5.html")
+def google_verify():
+    return "google-site-verification: google65f6d985572e55c5.html"
+
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({"ok": True, "status": "awake"})
@@ -1983,7 +2390,132 @@ function loadCodes(){
 
 loadCodes();
 </script>
+
+<hr style="border:none;border-top:1px solid rgba(193,163,162,0.2);margin:48px 0 32px;">
+
+<!-- ── CONTENT ENGINE ── -->
+<h2 style="font-size:18px;color:#c1a3a2;margin-bottom:4px;">⚙️ Auto Content Engine</h2>
+<p>Generates a new SEO blog post, Pinterest pin and Reddit post. Runs automatically at 9am UTC daily. Trigger manually here anytime.</p>
+
+<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
+  <button onclick="runEngine(false)">▶ Run Now</button>
+  <button onclick="runEngine(true)" style="background:#9d7f6a;">🎲 Run at Random Time</button>
+  <span id="engine-status" style="font-size:12px;color:rgba(0,0,0,0.4);"></span>
+</div>
+
+<div id="engine-result" style="display:none;padding:16px;background:#fff;border:1px solid rgba(193,163,162,0.3);border-radius:12px;margin-bottom:20px;">
+  <div style="font-size:12px;color:rgba(0,0,0,0.4);margin-bottom:6px;">Last Trigger</div>
+  <div id="engine-msg" style="font-size:14px;color:#0d0906;"></div>
+</div>
+
+<h3 style="font-size:14px;color:#0d0906;margin-bottom:12px;">Run History</h3>
+<div id="engine-log"></div>
+
+<script>
+var engineRunning = false;
+var randomTimer   = null;
+
+function runEngine(random) {
+  if(engineRunning){ alert('Engine already running!'); return; }
+
+  if(random) {
+    // Pick a random delay between 1 min and 6 hours
+    var delayMs  = Math.floor(Math.random() * (6 * 60 * 60 * 1000 - 60000) + 60000);
+    var delayMin = Math.round(delayMs / 60000);
+    var delayHr  = (delayMs / 3600000).toFixed(1);
+    var label    = delayMin < 60 ? delayMin + ' minutes' : delayHr + ' hours';
+
+    document.getElementById('engine-status').textContent = '⏳ Scheduled to run in ' + label + '...';
+    document.getElementById('engine-result').style.display = 'block';
+    document.getElementById('engine-msg').textContent = 'Random trigger set — will run in ' + label;
+
+    if(randomTimer) clearTimeout(randomTimer);
+    randomTimer = setTimeout(function(){ triggerEngine(); }, delayMs);
+    return;
+  }
+
+  triggerEngine();
+}
+
+function triggerEngine() {
+  engineRunning = true;
+  document.getElementById('engine-status').textContent = '🔄 Running...';
+  document.getElementById('engine-result').style.display = 'block';
+  document.getElementById('engine-msg').textContent = 'Engine started — generating content in background...';
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('POST', API+'/api/content-engine/run', true);
+  xhr.setRequestHeader('X-Admin-Key', ADMIN_KEY);
+  xhr.setRequestHeader('Content-Type','application/json');
+  xhr.onload = function(){
+    var d = JSON.parse(xhr.responseText);
+    engineRunning = false;
+    if(d.ok){
+      document.getElementById('engine-status').textContent = '✅ Started successfully';
+      document.getElementById('engine-msg').innerHTML = '✅ Engine running in background.<br><small style="color:rgba(0,0,0,0.4)">Refresh log in ~30 seconds to see results.</small>';
+      setTimeout(loadEngineLog, 8000);
+    } else {
+      document.getElementById('engine-status').textContent = '❌ Error';
+      document.getElementById('engine-msg').textContent = 'Error: ' + (d.error || 'Unknown');
+    }
+  };
+  xhr.onerror = function(){
+    engineRunning = false;
+    document.getElementById('engine-status').textContent = '❌ Connection error';
+  };
+  xhr.send('{}');
+}
+
+function loadEngineLog(){
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', API+'/api/content-engine/log?admin_key='+ADMIN_KEY, true);
+  xhr.onload = function(){
+    var d = JSON.parse(xhr.responseText);
+    var runs = d.runs || [];
+    if(!runs.length){
+      document.getElementById('engine-log').innerHTML = '<p style="color:rgba(0,0,0,0.3);font-size:13px;">No runs yet.</p>';
+      return;
+    }
+    var html = '<table><tr><th>Date</th><th>Topic</th><th>Shopify</th><th>Pinterest</th><th>Reddit</th><th>Status</th></tr>';
+    runs.forEach(function(r){
+      var date = new Date(r.date).toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      html += '<tr>';
+      html += '<td style="white-space:nowrap">'+date+'</td>';
+      html += '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+r.topic+'">'+r.topic+'</td>';
+      html += '<td>'+(r.shopify_url ? '<a href="'+r.shopify_url+'" target="_blank" style="color:#c1a3a2;">✓ View</a>' : '<span style="color:#aaa">—</span>')+'</td>';
+      html += '<td>'+(r.pinterest ? '✓' : '<span style="color:#aaa">—</span>')+'</td>';
+      html += '<td>'+(r.reddit ? '✓' : '<span style="color:#aaa">—</span>')+'</td>';
+      html += '<td>'+(r.error ? '<span style="color:#c0392b" title="'+r.error+'">❌ Error</span>' : '<span style="color:#27ae60">✓ OK</span>')+'</td>';
+      html += '</tr>';
+    });
+    html += '</table>';
+    document.getElementById('engine-log').innerHTML = html;
+  };
+  xhr.send();
+}
+
+loadEngineLog();
+</script>
 </body></html>"""
+
+@app.route("/api/debug-shopify2", methods=["GET"])
+def debug_shopify2():
+    import requests
+    store = os.environ.get("SHOPIFY_STORE","")
+    token = os.environ.get("SHOPIFY_ADMIN_TOKEN","")
+    url = f"https://{store}/admin/api/2024-01/blogs.json"
+    headers = {"X-Shopify-Access-Token": token}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        return jsonify({
+            "store": store,
+            "token_prefix": token[:12] if token else "NOT SET",
+            "token_length": len(token),
+            "status": resp.status_code,
+            "response": resp.text[:300]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 @app.route("/api/debug-shopify", methods=["GET"])
 def debug_shopify():
@@ -3481,3 +4013,71 @@ body{background:#f0ebe8;min-height:100vh;display:flex;align-items:center;justify
   <a href="/login" class="btn btn-outline">Sign In to Subscribe Later</a>
 </div>
 </body></html>"""
+
+
+
+# ── PWA ICON ROUTES ───────────────────────────────────────────────
+_ICON_192 = "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"
+_ICON_512 = "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"
+
+@app.route("/static/icon-192.png")
+def icon_192():
+    import base64 as b64
+    from flask import Response
+    return Response(b64.b64decode(_ICON_192), mimetype="image/png")
+
+@app.route("/static/icon-512.png")
+def icon_512():
+    import base64 as b64
+    from flask import Response
+    return Response(b64.b64decode(_ICON_512), mimetype="image/png")
+
+# ── PWA ROUTES ────────────────────────────────────────────────────
+import base64 as _b64
+
+@app.route("/manifest.json")
+def pwa_manifest():
+    return jsonify({
+        "name": "Aria — AI Hair Advisor",
+        "short_name": "Aria",
+        "description": "Your personal AI hair advisor. Get expert hair care advice tailored to your hair type.",
+        "start_url": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#f0ebe8",
+        "theme_color": "#c1a3a2",
+        "icons": [
+            {"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+            {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+        ],
+        "categories": ["health", "beauty", "lifestyle"],
+        "lang": "en-US"
+    })
+
+@app.route("/sw.js")
+def service_worker():
+    sw = """const CACHE = "aria-v1";
+const OFFLINE = ["/"];
+self.addEventListener("install", e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(OFFLINE)).then(() => self.skipWaiting()));
+});
+self.addEventListener("activate", e => {
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+  ).then(() => self.clients.claim()));
+});
+self.addEventListener("fetch", e => {
+  if (e.request.method !== "GET") return;
+  e.respondWith(
+    fetch(e.request).then(resp => {
+      const clone = resp.clone();
+      caches.open(CACHE).then(c => c.put(e.request, clone));
+      return resp;
+    }).catch(() => caches.match(e.request).then(r => r || caches.match("/")))
+  );
+});"""
+    from flask import Response
+    return Response(sw, mimetype="application/javascript")
+
+from engine_routes import register_engine_routes
+register_engine_routes(app)
