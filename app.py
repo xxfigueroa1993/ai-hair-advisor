@@ -1359,7 +1359,11 @@ function tone(freq, dur, vol, type, delay) {
   } catch(e) {}
 }
 
-function sfxTap()   { tone(680, 0.05, 0.10, 'sine'); }
+function sfxTap() {
+  // Short soft tap click
+  tone(520, 0.04, 0.08, 'sine');
+  tone(780, 0.03, 0.05, 'sine', 0.02);
+}
 function sfxError() { tone(220, 0.22, 0.09, 'triangle'); }
 
 function sfxChime() {
@@ -1496,6 +1500,9 @@ function setIdle(msg) {
   respBox.classList.remove('thinking');
   if (msg) respBox.textContent = msg;
   stopViz();
+  // Start ambient hum after short delay — only at idle
+  clearTimeout(setIdle._ambTmr);
+  setIdle._ambTmr = setTimeout(startAmbient, 1200);
 }
 
 // ── SPEECH SYNTHESIS ─────────────────────────────────
@@ -1544,7 +1551,7 @@ function _doSpeak(text) {
   } catch(e) {}
 
   utt.onstart = function(){ setSphereState('speaking'); stLbl.textContent = 'Speaking\u2026'; };
-  utt.onend   = function(){ setIdle(); startAmbient(); };
+  utt.onend   = function(){ setIdle(); setTimeout(startAmbient, 800); };
   utt.onerror = function(ev){
     if (ev.error !== 'canceled' && ev.error !== 'cancelled') setIdle();
   };
@@ -1738,48 +1745,98 @@ function startSpeechRec() {
 }
 
 function startMediaRec() {
-  navigator.mediaDevices.getUserMedia({audio:true,video:false})
-    .then(function(stream){
+  // On Android 14, we run SpeechRecognition AND MediaRecorder in parallel.
+  // SR gives us the text; MediaRec keeps the mic stream alive so SR works.
+  // Whichever gives us text first wins.
+  var srText = null;
+  var srDone = false;
+  var recStream = null;
+
+  navigator.mediaDevices.getUserMedia({audio:true, video:false})
+    .then(function(stream) {
+      recStream = stream;
       setSphereState('listening');
-      stLbl.textContent='Listening\u2026';
-      respBox.textContent='Listening\u2026';
+      stLbl.textContent   = 'Listening…';
+      respBox.textContent = 'Listening…';
       startViz(stream);
-      var chunks=[]; isRecording=true;
-      var mime = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4']
-        .find(function(m){ return MediaRecorder.isTypeSupported(m); }) || '';
-      mediaRec = new MediaRecorder(stream, mime?{mimeType:mime}:{});
-      mediaRec.ondataavailable = function(e){ if(e.data&&e.data.size>0) chunks.push(e.data); };
-      mediaRec.onstop = function(){
-        isRecording=false; stopViz();
-        var blob = new Blob(chunks,{type:mime||'audio/webm'});
-        if (blob.size<600){ setIdle('Too short \u2014 tap to try again.'); return; }
-        STATE='thinking';
-        sphere.classList.remove('listening');
-        stLbl.textContent='Processing\u2026';
-        respBox.classList.add('thinking');
-        var fd=new FormData(); fd.append('audio',blob,'rec.webm');
-        fetch('/api/transcribe',{method:'POST',body:fd})
-          .then(function(r){return r.json();})
-          .then(function(d){
-            respBox.classList.remove('thinking');
-            if (d.fallback || !d.text) {
-              // Transcription failed — show error and switch to typing
-              respBox.textContent = d.error ? ('Mic error: ' + d.error) : 'Could not hear you clearly.';
-              setIdle('');
-              stLbl.textContent = 'Use typing mode \u2193';
-              activateManual();
-              setTimeout(function(){ manInput.focus(); }, 300);
-              return;
-            }
-            askAria(d.text.trim());
-          })text.trim());
-          })
-          .catch(function(){ respBox.classList.remove('thinking'); setIdle('Audio error.'); });
-      };
-      mediaRec.start();
-      setTimeout(function(){ if(isRecording) stopMediaRec(); }, 13000);
+      isRecording = true;
+
+      // Try SpeechRecognition on top of the open mic stream
+      if (SR) {
+        var rec2 = new SR();
+        rec2.lang            = langSel.value;
+        rec2.continuous      = false;
+        rec2.interimResults  = true;
+        rec2.maxAlternatives = 1;
+        var f2 = ''; var i2 = '';
+
+        rec2.onresult = function(ev) {
+          f2 = ''; i2 = '';
+          for (var i = 0; i < ev.results.length; i++) {
+            if (ev.results[i].isFinal) f2 += ev.results[i][0].transcript + ' ';
+            else i2 += ev.results[i][0].transcript;
+          }
+          var disp = (f2 + i2).trim();
+          if (disp) respBox.textContent = disp;
+        };
+
+        rec2.onend = function() {
+          if (srDone) return;
+          srDone = true;
+          var got = (f2 + i2).trim();
+          // Stop mic stream
+          try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e){}
+          stopViz(); isRecording = false;
+          if (got.length > 1) {
+            askAria(got);
+          } else {
+            setIdle('Tap and speak — try again.');
+          }
+        };
+
+        rec2.onerror = function(ev) {
+          if (srDone) return;
+          if (ev.error === 'not-allowed') {
+            srDone = true;
+            try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e){}
+            stopViz(); isRecording = false;
+            setIdle('Mic blocked — use typing.');
+            activateManual();
+          }
+          // other errors: just let it end naturally
+        };
+
+        // Auto-stop after 12s
+        var autoStop = setTimeout(function() {
+          if (!srDone) { try { rec2.stop(); } catch(e){} }
+        }, 12000);
+
+        try {
+          rec2.start();
+        } catch(e) {
+          clearTimeout(autoStop);
+          srDone = true;
+          try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e2){}
+          stopViz(); isRecording = false;
+          setIdle('Mic error — use typing.');
+          activateManual();
+        }
+      } else {
+        // No SR at all — just record and tell user to type
+        setTimeout(function() {
+          if (isRecording) {
+            try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e){}
+            stopViz(); isRecording = false;
+            setIdle('Voice not supported — use typing.');
+            activateManual();
+          }
+        }, 200);
+      }
     })
-    .catch(function(){ setIdle('Mic denied \u2014 use typing.'); activateManual(); });
+    .catch(function() {
+      setIdle('Mic denied — use typing.');
+      activateManual();
+    });
 }
 
 function stopMediaRec() {
@@ -1795,37 +1852,31 @@ function stopMediaRec() {
 function handleTap() {
   if (isManual) return;
 
-  // Step 1: Unlock AudioContext (iOS requires gesture to start audio)
+  // Unlock AudioContext (required first on iOS/Android)
   getCtx();
-
-  // Step 2: Prime voice list (iOS needs this called before speak())
   if (window.speechSynthesis) { try { window.speechSynthesis.getVoices(); } catch(e){} }
 
-  // Step 3: Start ambient (safe now, ctx unlocked)
+  // Tap sound + start ambient hum
+  sfxTap();
   startAmbient();
 
-  // Step 4: Tap click sound
-  sfxTap();
-
-  // ── WAITING: has queued reply → speak it NOW ──────
+  // ── WAITING: queued reply → speak it NOW ──────────
   if (pendingReply) {
     var txt = pendingReply;
-    // _doSpeak clears pendingReply internally
     _doSpeak(txt);
     return;
   }
 
-  // ── SPEAKING: tap to stop ─────────────────────────
+  // ── SPEAKING: tap to stop ──────────────────────────
   if (STATE === 'speaking') {
     try { window.speechSynthesis.cancel(); } catch(e) {}
     setIdle();
-    startAmbient();
     return;
   }
 
-  // ── LISTENING: tap to stop ────────────────────────
+  // ── LISTENING: tap to stop ─────────────────────────
   if (STATE === 'listening') {
-    if (recognition) { try { recognition.stop(); } catch(e){} }
+    if (recognition) { try { recognition.abort(); } catch(e){} }
     stopMediaRec();
     clearTimeout(silTimer); clearTimeout(noSpeechTmr);
     stopViz(); setIdle();
@@ -1835,8 +1886,8 @@ function handleTap() {
   // ── THINKING: ignore ──────────────────────────────
   if (STATE === 'thinking') return;
 
-// ── IDLE: start listening ─────────────────────────
-  // Force MediaRecorder on Android 14 (SpeechRecognition broken in PWA mode)
+  // ── IDLE: start listening ─────────────────────────
+  stopAmbient();
   var isAndroid14 = /Android 1[4-9]/.test(navigator.userAgent);
   if (SR && !useFallback && !isAndroid14) startSpeechRec();
   else startMediaRec();
