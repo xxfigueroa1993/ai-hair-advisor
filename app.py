@@ -1784,13 +1784,49 @@ function startMediaRec() {
         .find(function(m){ return MediaRecorder.isTypeSupported(m); }) || '';
       mediaRec = new MediaRecorder(stream, mime ? {mimeType:mime} : {});
       mediaRec.ondataavailable = function(e){ if(e.data && e.data.size > 0) chunks.push(e.data); };
+
+      // ── Silence detection via Web Audio analyser ──────────────────
+      var actx2   = new (window.AudioContext || window.webkitAudioContext)();
+      var src2    = actx2.createMediaStreamSource(stream);
+      var analyser = actx2.createAnalyser();
+      analyser.fftSize = 512;
+      src2.connect(analyser);
+      var silBuf     = new Uint8Array(analyser.frequencyBinCount);
+      var silStart   = null;   // when silence began
+      var hadSpeech  = false;  // did we detect any speech yet?
+      var silTimer2  = setInterval(function() {
+        if (!isRecording) { clearInterval(silTimer2); return; }
+        analyser.getByteFrequencyData(silBuf);
+        var vol = silBuf.reduce(function(a,b){return a+b;}, 0) / silBuf.length;
+        if (vol > 8) {          // speaking
+          hadSpeech = true;
+          silStart  = null;
+          stLbl.textContent = 'Listening\u2026';
+        } else if (hadSpeech) { // was speaking, now silent
+          if (!silStart) silStart = Date.now();
+          var silMs = Date.now() - silStart;
+          // Show countdown dots
+          if (silMs > 600)  stLbl.textContent = 'Done speaking?\u2026';
+          if (silMs > 1500) {  // 1.5s of silence after speech → stop
+            clearInterval(silTimer2);
+            try { actx2.close(); } catch(e) {}
+            stopMediaRec();
+          }
+        }
+      }, 100);
+
       mediaRec.onstop = function() {
+        clearInterval(silTimer2);
+        try { actx2.close(); } catch(e) {}
         isRecording = false;
         stream.getTracks().forEach(function(t){ t.stop(); });
         stopViz();
         var blob = new Blob(chunks, {type: mime || 'audio/webm'});
-        if (blob.size < 500) { setIdle('Too short \u2014 tap and hold while speaking.'); return; }
-        // Send to server for transcription
+        respBox.textContent = 'Got ' + blob.size + ' bytes, transcribing\u2026';
+        if (blob.size < 500) {
+          setIdle('Too short \u2014 tap and speak clearly.');
+          return;
+        }
         STATE = 'thinking';
         sphere.classList.remove('listening');
         stLbl.textContent = 'Transcribing\u2026';
@@ -1805,14 +1841,7 @@ function startMediaRec() {
               respBox.textContent = d.text.trim();
               askAria(d.text.trim());
             } else {
-              var err = d.error || '';
-              if (err.indexOf('OPENAI') > -1 || err.indexOf('No API') > -1) {
-                respBox.textContent = 'Add OPENAI_API_KEY to Render for voice. Using typing mode.';
-              } else if (err) {
-                respBox.textContent = 'Transcription error: ' + err;
-              } else {
-                respBox.textContent = 'Could not hear \u2014 please type your question.';
-              }
+              respBox.textContent = d.error ? ('Error: ' + d.error) : 'Could not hear \u2014 please type.';
               setIdle('');
               stLbl.textContent = 'Type below \u2193';
               activateManual();
@@ -1821,16 +1850,19 @@ function startMediaRec() {
           })
           .catch(function(e){
             respBox.classList.remove('thinking');
-            respBox.textContent = 'Network error \u2014 please type.';
+            respBox.textContent = 'Network error: ' + e.message;
             setIdle(''); activateManual();
           });
       };
-      mediaRec.start(250); // collect data every 250ms
-      // Auto-stop after 13s
-      setTimeout(function(){ if(isRecording) stopMediaRec(); }, 13000);
+
+      mediaRec.start(100); // collect every 100ms for faster response
+      // Hard max 15s
+      setTimeout(function(){ if(isRecording) { clearInterval(silTimer2); stopMediaRec(); } }, 15000);
     })
-    .catch(function() {
-      setIdle('Mic denied \u2014 use typing.');
+    .catch(function(err) {
+      var msg = (err && err.message) ? err.message : String(err);
+      respBox.textContent = 'MIC ERROR: ' + msg;
+      setIdle('Mic error: ' + msg);
       activateManual();
     });
 }
@@ -1884,7 +1916,10 @@ function handleTap() {
 
   // ── IDLE: start listening ─────────────────────────
   stopAmbient();
-  var isAndroid14 = /Android 1[4-9]/.test(navigator.userAgent);
+  var ua = navigator.userAgent;
+  var isAndroid14 = /Android 1[4-9]/.test(ua);
+  var hasSR = !!SR;
+  respBox.textContent = 'Starting mic... SR:' + hasSR + ' A14:' + isAndroid14 + ' FB:' + useFallback;
   if (SR && !useFallback && !isAndroid14) startSpeechRec();
   else startMediaRec();
 }
