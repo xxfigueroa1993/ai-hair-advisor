@@ -293,22 +293,17 @@ def pwa_manifest():
 @app.route("/sw.js")
 def service_worker():
     sw = r"""
-/* Aria PWA Service Worker v5 — Network-first with offline fallback */
-const CACHE = "aria-v7";
-const SHELL = ["/manifest.json", "/static/icon-192.png"];
+/* Aria PWA Service Worker v8 */
+const CACHE = "aria-v8";
 
 self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE)
-      .then(c => Promise.allSettled(SHELL.map(u => c.add(u))))
-      .then(() => self.skipWaiting())
-  );
+  self.skipWaiting();
 });
 
 self.addEventListener("activate", e => {
   e.waitUntil(
     caches.keys()
-      .then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(ks => Promise.all(ks.map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
@@ -316,29 +311,19 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-
-  // Always live for API calls — never cache
+  // Never intercept API calls or external resources
   if (url.pathname.startsWith("/api/")) return;
-  if (url.pathname.startsWith("/blog")) return;
-
+  if (url.origin !== self.location.origin) return;
+  // Network-first: always try server, no caching of HTML pages
   e.respondWith(
-    fetch(e.request)
-      .then(resp => {
-        if (resp.ok && resp.status < 400) {
-          const clone = resp.clone();
-          caches.open(CACHE).then(c => c.put(e.request, clone));
-        }
-        return resp;
-      })
-      .catch(() =>
-        caches.match(e.request)
-          .then(cached => cached || caches.match("/"))
-      )
+    fetch(e.request).catch(() => new Response("Offline — please reconnect.", {
+      status: 503, headers: {"Content-Type": "text/plain"}
+    }))
   );
 });
 """
     return Response(sw.strip(), mimetype="application/javascript",
-                    headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+                    headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache, no-store"})
 
 @app.route("/static/icon-192.png")
 def icon_192():
