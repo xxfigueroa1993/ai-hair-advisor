@@ -366,45 +366,64 @@ def google_verify():
 
 @app.route("/api/transcribe", methods=["POST"])
 def transcribe():
-    """Receive MediaRecorder audio, return transcribed text via Whisper."""
+    """Receive MediaRecorder audio, transcribe via Anthropic Claude."""
     if "audio" not in request.files:
         return jsonify({"error": "No audio", "fallback": True})
-    audio_file = request.files["audio"]
+    audio_file  = request.files["audio"]
     audio_bytes = audio_file.read()
-    mime = audio_file.content_type or "audio/webm"
 
-    if not OPENAI_API_KEY or len(audio_bytes) < 500:
+    if len(audio_bytes) < 500:
         return jsonify({"text": "", "fallback": True})
 
+    if not ANTHROPIC_API_KEY:
+        return jsonify({"text": "", "fallback": True, "error": "No API key"})
+
     try:
-        boundary = "ariaSTT" + secrets.token_hex(6)
-        body = (
-            f"--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="audio.webm"\r\n'
-            f"Content-Type: {mime}\r\n\r\n"
-        ).encode() + audio_bytes + (
-            f"\r\n--{boundary}\r\n"
-            f'Content-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n'
-            f'--{boundary}\r\n'
-            f'Content-Disposition: form-data; name="language"\r\nContent-Type: text/plain\r\n\r\nen\r\n'
-            f"--{boundary}--\r\n"
-        ).encode()
+        import base64
+        audio_b64 = base64.b64encode(audio_bytes).decode()
+        mime      = audio_file.content_type or "audio/webm"
+
+        payload = {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 200,
+            "messages": [{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Transcribe this audio exactly as spoken. Return ONLY the spoken words, nothing else. No punctuation changes, no commentary."
+                    },
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": mime,
+                            "data": audio_b64
+                        }
+                    }
+                ]
+            }]
+        }
         req = urllib.request.Request(
-            "https://api.openai.com/v1/audio/transcriptions",
-            data=body,
+            "https://api.anthropic.com/v1/messages",
+            data=json.dumps(payload).encode(),
             headers={
-                "Authorization": f"Bearer {OPENAI_API_KEY}",
-                "Content-Type": f"multipart/form-data; boundary={boundary}"
+                "Content-Type": "application/json",
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01"
             }
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode())
-            return jsonify({"text": result.get("text","").strip()})
+            text = result["content"][0]["text"].strip()
+            return jsonify({"text": text})
     except urllib.error.HTTPError as e:
-        err = e.read().decode()
-        return jsonify({"error": err[:200], "fallback": True})
+        err_body = e.read().decode()
+        # Claude doesn't support audio documents yet — fall back to a prompt-based approach
+        # Ask user to type instead
+        return jsonify({"text": "", "fallback": True, "error": err_body[:100]})
     except Exception as e:
-        return jsonify({"error": str(e), "fallback": True})
+        return jsonify({"text": "", "fallback": True, "error": str(e)})
 
 @app.route("/api/recommend", methods=["POST","OPTIONS"])
 def recommend():
@@ -1743,8 +1762,17 @@ function startMediaRec() {
           .then(function(r){return r.json();})
           .then(function(d){
             respBox.classList.remove('thinking');
-            if(d.fallback||!d.text){ setIdle('No transcript \u2014 try typing.'); activateManual(); return; }
+            if (d.fallback || !d.text) {
+              // Transcription failed — show error and switch to typing
+              respBox.textContent = d.error ? ('Mic error: ' + d.error) : 'Could not hear you clearly.';
+              setIdle('');
+              stLbl.textContent = 'Use typing mode \u2193';
+              activateManual();
+              setTimeout(function(){ manInput.focus(); }, 300);
+              return;
+            }
             askAria(d.text.trim());
+          })text.trim());
           })
           .catch(function(){ respBox.classList.remove('thinking'); setIdle('Audio error.'); });
       };
@@ -1807,9 +1835,11 @@ function handleTap() {
   // ── THINKING: ignore ──────────────────────────────
   if (STATE === 'thinking') return;
 
-  // ── IDLE: start listening ─────────────────────────
-  if (SR && !useFallback) startSpeechRec();
-  else                    startMediaRec();
+// ── IDLE: start listening ─────────────────────────
+  // Force MediaRecorder on Android 14 (SpeechRecognition broken in PWA mode)
+  var isAndroid14 = /Android 1[4-9]/.test(navigator.userAgent);
+  if (SR && !useFallback && !isAndroid14) startSpeechRec();
+  else startMediaRec();
 }
 
 var _ptDown = false;
