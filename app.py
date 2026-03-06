@@ -17,14 +17,14 @@ from flask import Flask, request, jsonify, Response, redirect
 app = Flask(__name__)
 
 # ── ENVIRONMENT ───────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY      = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_API_KEY      = os.environ.get("ANTHROPIC_API_KEY", "").strip()
 OPENAI_API_KEY         = os.environ.get("OPENAI_API_KEY", "")
 ADMIN_KEY              = os.environ.get("ADMIN_KEY", "srd_admin_2024")
 STRIPE_SECRET          = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PRICE_ID        = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET  = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 APP_BASE_URL           = os.environ.get("APP_BASE_URL", "https://ai-hair-advisor.onrender.com")
-GOOGLE_CLIENT_ID       = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_ID       = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
 SMTP_USER              = os.environ.get("SMTP_USER", "")
 SMTP_PASS              = os.environ.get("SMTP_PASS", "")
 FREE_RESPONSE_LIMIT    = 3
@@ -354,10 +354,12 @@ def icon_512():
 def debug_env():
     return jsonify({
         "has_anthropic_key": bool(ANTHROPIC_API_KEY),
-        "anthropic_key_prefix": ANTHROPIC_API_KEY[:8] + "..." if ANTHROPIC_API_KEY else "MISSING",
+        "anthropic_key_first20": ANTHROPIC_API_KEY[:20] + "..." if ANTHROPIC_API_KEY else "MISSING",
+        "anthropic_key_length": len(ANTHROPIC_API_KEY),
+        "anthropic_key_valid_prefix": ANTHROPIC_API_KEY.startswith("sk-ant-"),
         "has_google_id": bool(GOOGLE_CLIENT_ID),
-        "google_id_prefix": GOOGLE_CLIENT_ID[:12] + "..." if GOOGLE_CLIENT_ID else "MISSING",
-        "google_id_length": len(GOOGLE_CLIENT_ID) if GOOGLE_CLIENT_ID else 0,
+        "google_id_prefix": GOOGLE_CLIENT_ID[:16] + "..." if GOOGLE_CLIENT_ID else "MISSING",
+        "google_id_length": len(GOOGLE_CLIENT_ID),
     })
 
 
