@@ -1823,8 +1823,8 @@ function startMediaRec() {
         stopViz();
         var blob = new Blob(chunks, {type: mime || 'audio/webm'});
         respBox.textContent = 'Got ' + blob.size + ' bytes, transcribing\u2026';
-        if (blob.size < 500) {
-          setIdle('Too short \u2014 tap and speak clearly.');
+        if (blob.size < 200) {
+          setIdle('Too short \u2014 tap and speak.');
           return;
         }
         STATE = 'thinking';
@@ -1915,8 +1915,12 @@ function handleTap() {
 
   // ── IDLE: start listening ─────────────────────────
   stopAmbient();
-  // Delay mic open until chime finishes (~0.7s) to prevent audio interference
-  setTimeout(function() { startMediaRec(); }, 700);
+  // Show ready state during chime — mic opens after chime finishes
+  STATE = 'listening';
+  sphere.classList.add('listening');
+  stLbl.textContent = 'Speak now…';
+  respBox.textContent = '';
+  setTimeout(function() { startMediaRec(); }, 400);
 }
 
 var _ptDown = false;
