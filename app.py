@@ -1362,9 +1362,10 @@ function tone(freq, dur, vol, type, delay) {
 }
 
 function sfxTap() {
-  // Short soft tap click
-  tone(520, 0.04, 0.08, 'sine');
-  tone(780, 0.03, 0.05, 'sine', 0.02);
+  // Crystal bowl tap — three harmonics, soft attack, nice decay
+  tone(432, 0.6, 0.12, 'sine', 0.0);   // fundamental
+  tone(864, 0.4, 0.06, 'sine', 0.0);   // octave harmonic
+  tone(648, 0.3, 0.04, 'sine', 0.01);  // fifth
 }
 function sfxError() { tone(220, 0.22, 0.09, 'triangle'); }
 
@@ -1388,52 +1389,66 @@ function startAmbient() {
     if (ambOsc)  { try { ambOsc.stop();  } catch(e) {} ambOsc  = null; }
     if (ambOsc2) { try { ambOsc2.stop(); } catch(e) {} ambOsc2 = null; }
 
-    // Main gain — fade in over 3s, hold, then gently pulse
+    var now = ctx.currentTime;
+
+    // Crystal bowl strike — sharp attack, very long exponential decay
+    // Like touching a singing bowl: loud tap then spreads and fades over ~6s
     ambGain = ctx.createGain();
-    ambGain.gain.setValueAtTime(0, ctx.currentTime);
-    ambGain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 3.0);
+    ambGain.gain.setValueAtTime(0.001, now);
+    ambGain.gain.linearRampToValueAtTime(0.055, now + 0.08);  // fast attack
+    ambGain.gain.exponentialRampToValueAtTime(0.012, now + 3.0); // spread
+    ambGain.gain.exponentialRampToValueAtTime(0.001, now + 9.0); // fade away
     ambGain.connect(ctx.destination);
 
-    // 174 Hz — Solfeggio healing frequency
+    // 432 Hz — crystal bowl fundamental (A natural tuning)
     ambOsc = ctx.createOscillator();
     ambOsc.type = 'sine';
-    ambOsc.frequency.setValueAtTime(174, ctx.currentTime);
+    ambOsc.frequency.setValueAtTime(432, now);
     ambOsc.connect(ambGain);
-    ambOsc.start();
+    ambOsc.start(now);
+    ambOsc.stop(now + 9.5);
 
-    // 528 Hz — softer harmonic, fades in slightly after
+    // 864 Hz — octave harmonic, softer, slightly delayed like bowl resonance
     var g2 = ctx.createGain();
-    g2.gain.setValueAtTime(0, ctx.currentTime);
-    g2.gain.linearRampToValueAtTime(0.008, ctx.currentTime + 5.0);
+    g2.gain.setValueAtTime(0.001, now);
+    g2.gain.linearRampToValueAtTime(0.018, now + 0.15);
+    g2.gain.exponentialRampToValueAtTime(0.004, now + 4.0);
+    g2.gain.exponentialRampToValueAtTime(0.001, now + 8.0);
     g2.connect(ctx.destination);
     ambOsc2 = ctx.createOscillator();
     ambOsc2.type = 'sine';
-    ambOsc2.frequency.value = 528;
+    ambOsc2.frequency.value = 864;
     ambOsc2.connect(g2);
-    ambOsc2.start();
+    ambOsc2.start(now + 0.05);
+    ambOsc2.stop(now + 8.5);
+
+    // Auto-clear state after sound finishes
+    setTimeout(function() {
+      ambRunning = false;
+      ambOsc = null; ambOsc2 = null; ambGain = null;
+    }, 9500);
   } catch(e) { ambRunning = false; }
 }
 
 function stopAmbient() {
-  if (!ambRunning) return;
   ambRunning = false;
   var o1 = ambOsc; var o2 = ambOsc2; var g = ambGain;
   ambOsc = null; ambOsc2 = null; ambGain = null;
   if (!_actx) return;
   try {
-    // Slow fade out over 3 seconds
     var now = _actx.currentTime;
     if (g) {
       g.gain.cancelScheduledValues(now);
       g.gain.setValueAtTime(g.gain.value, now);
-      g.gain.linearRampToValueAtTime(0, now + 3.0);
+      g.gain.linearRampToValueAtTime(0, now + 0.3);
     }
     setTimeout(function(){
       try{if(o1)o1.stop();}catch(e){}
       try{if(o2)o2.stop();}catch(e){}
-    }, 3100);
+    }, 350);
   } catch(e) {}
 }
+
 
 // ── MIC VISUALIZER ───────────────────────────────────
 function startViz(stream) {
@@ -1509,7 +1524,7 @@ function setIdle(msg) {
   stopViz();
   // Start ambient hum after short delay — only at idle
   clearTimeout(setIdle._ambTmr);
-  setIdle._ambTmr = setTimeout(startAmbient, 400);
+  setIdle._ambTmr = setTimeout(startAmbient, 200);
 }
 
 // ── SPEECH SYNTHESIS ─────────────────────────────────
@@ -1519,11 +1534,9 @@ function setIdle(msg) {
 
 function speak(text) {
   if (!text) { setIdle(); return; }
-  pendingReply = text;
+  // Auto-speak after short delay (lets the UI update first)
   sfxChime();
-  setSphereState('waiting');
-  stLbl.textContent = 'Tap sphere to hear \u25B6';
-  stopAmbient();
+  setTimeout(function() { _doSpeak(text); }, 600);
 }
 
 function _doSpeak(text) {
@@ -1558,7 +1571,7 @@ function _doSpeak(text) {
   } catch(e) {}
 
   utt.onstart = function(){ setSphereState('speaking'); stLbl.textContent = 'Speaking\u2026'; };
-  utt.onend   = function(){ setIdle(); setTimeout(startAmbient, 800); };
+  utt.onend   = function(){ setIdle(); };
   utt.onerror = function(ev){
     if (ev.error !== 'canceled' && ev.error !== 'cancelled') setIdle();
   };
@@ -1866,9 +1879,8 @@ function handleTap() {
   getCtx();
   if (window.speechSynthesis) { try { window.speechSynthesis.getVoices(); } catch(e){} }
 
-  // Tap sound + start ambient hum
   sfxTap();
-  startAmbient();
+  startAmbient(); // gentle hum on touch
 
   // ── WAITING: queued reply → speak it NOW ──────────
   if (pendingReply) {
