@@ -1885,8 +1885,7 @@ function handleTap() {
   if (window.speechSynthesis) { try { window.speechSynthesis.getVoices(); } catch(e){} }
 
   startAmbient(); // gentle hum on touch
-  // Play tap sound with tiny delay so AudioContext is fully ready
-  setTimeout(sfxTap, 30);
+  sfxTap();       // play chime immediately
 
   // ── WAITING: queued reply → speak it NOW ──────────
   if (pendingReply) {
@@ -1916,12 +1915,8 @@ function handleTap() {
 
   // ── IDLE: start listening ─────────────────────────
   stopAmbient();
-  var ua = navigator.userAgent;
-  var isAndroid14 = /Android 1[4-9]/.test(ua);
-  var hasSR = !!SR;
-  respBox.textContent = 'Starting mic... SR:' + hasSR + ' A14:' + isAndroid14 + ' FB:' + useFallback;
-  // Always use MediaRecorder + Whisper — SpeechRecognition is unreliable on Android PWA
-  startMediaRec();
+  // Delay mic open until chime finishes (~0.7s) to prevent audio interference
+  setTimeout(function() { startMediaRec(); }, 700);
 }
 
 var _ptDown = false;
