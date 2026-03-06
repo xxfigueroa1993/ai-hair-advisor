@@ -268,7 +268,7 @@ def index():
 <html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Aria — AI Hair Advisor</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#c1a3a2">
@@ -1462,8 +1462,12 @@ function noHear() {
 /* ── START LISTENING ── */
 function startListening() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { responseBox.textContent = "Please use Chrome or switch to Manual Mode."; return; }
+  if (!SR) { responseBox.textContent = "Speech not supported. Please use Manual Mode."; return; }
+  _doStartListening();
+}
 
+function _doStartListening() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   playAmbient("intro");
   finalText = "";
   setState("listening"); setColor(...LISTEN);
@@ -1507,6 +1511,10 @@ function startListening() {
   recognition.onerror = (e) => {
     clearTimeout(silenceTimer); clearTimeout(noSpeechTimer);
     if (e.error === "no-speech") noHear();
+    else if (e.error === "not-allowed") {
+      responseBox.textContent = "Microphone blocked. Please allow mic access in your browser settings.";
+      setState("idle"); setColor(...IDLE);
+    }
   };
 
   recognition.start();
@@ -1529,7 +1537,14 @@ halo.addEventListener("click", () => {
     stateLabel.textContent = "Tap to begin";
     return;
   }
-  startListening();
+
+  // PWA standalone fix: unlock AudioContext + request mic on same tap gesture
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") {
+    audioCtx.resume().then(() => startListening());
+  } else {
+    startListening();
+  }
 });
 
 /* ── MANUAL ── */
@@ -1620,13 +1635,17 @@ function closePaywall(){
 }
 
 async function goUpgrade(){
+  // Go fullscreen on mobile before payment
+  try {
+    if(document.documentElement.requestFullscreen) await document.documentElement.requestFullscreen();
+    else if(document.documentElement.webkitRequestFullscreen) await document.documentElement.webkitRequestFullscreen();
+  } catch(e) {}
+
   const token = localStorage.getItem('srd_token');
   if(!token){
-    // Not logged in — send to login first
     window.location.href = '/login?next=subscribe';
     return;
   }
-  // Create Stripe checkout
   const r = await fetch('/api/subscription/checkout', {
     method:'POST',
     headers:{'Content-Type':'application/json','X-Auth-Token':token}
@@ -1635,7 +1654,6 @@ async function goUpgrade(){
   if(d.checkout_url){
     window.location.href = d.checkout_url;
   } else if(d.setup_needed){
-    // Stripe not configured yet — send to Shopify subscription page
     window.location.href = 'https://supportrd.com/products/hair-advisor-premium';
   } else {
     alert('Something went wrong. Please try again.');
@@ -3120,7 +3138,7 @@ async function handleGoogle(response){{
 @app.route("/dashboard")
 def dashboard():
     return """<!DOCTYPE html><html><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>SupportRD — Hair Health Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Jost:wght@200;300;400&display=swap" rel="stylesheet">
 <style>
@@ -3306,7 +3324,7 @@ input:focus,select:focus{border-color:#c1a3a2;}
       <div class="stat"><div class="stat-n" id="s-concern">—</div><div class="stat-l">Concerns Logged</div></div>
       <div class="stat"><div class="stat-n" id="s-score-mini">—</div><div class="stat-l">Hair Score</div></div>
     </div>
-    <a href="/" class="cta-btn cta-rose">
+    <a href="/" onclick="if(document.documentElement.requestFullscreen)document.documentElement.requestFullscreen();" class="cta-btn cta-rose">
       <div class="cta-title">Talk to Aria</div>
       <div class="cta-sub">AI Hair Advisor · Free</div>
     </a>
