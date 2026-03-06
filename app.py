@@ -294,7 +294,7 @@ def pwa_manifest():
 def service_worker():
     sw = r"""
 /* Aria PWA Service Worker v5 — Network-first with offline fallback */
-const CACHE = "aria-v5";
+const CACHE = "aria-v6";
 const SHELL = ["/", "/dashboard", "/login", "/manifest.json", "/static/icon-192.png"];
 
 self.addEventListener("install", e => {
@@ -2283,6 +2283,8 @@ select:focus, input[type=text]:focus { border-color: var(--brand); }
   min-height: 44px; padding: 9px 12px;
   border: 1px solid rgba(193,163,162,0.22); border-radius: 10px;
   background: #faf6f3; cursor: pointer; transition: border 0.2s;
+  touch-action: manipulation; -webkit-tap-highlight-color: rgba(193,163,162,0.15);
+  user-select: none; -webkit-user-select: none;
 }
 .chip-field:active { border-color: var(--brand); }
 .chip-placeholder { font-size: 12px; color: rgba(0,0,0,0.26); }
@@ -2515,7 +2517,7 @@ select:focus, input[type=text]:focus { border-color: var(--brand); }
 
       <div class="form-group">
         <label>Main Concerns</label>
-        <div class="chip-field" onclick="openPicker('concerns', event)">
+        <div class="chip-field" id="cf-concerns">
           <span class="chip-placeholder" id="ph-concerns">Tap to select…</span>
           <div class="chip-tags" id="tags-concerns"></div>
           <span class="chip-arrow">›</span>
@@ -2525,7 +2527,7 @@ select:focus, input[type=text]:focus { border-color: var(--brand); }
 
       <div class="form-group">
         <label>Chemical Treatments</label>
-        <div class="chip-field" onclick="openPicker('treatments', event)">
+        <div class="chip-field" id="cf-treatments">
           <span class="chip-placeholder" id="ph-treatments">Tap to select…</span>
           <div class="chip-tags" id="tags-treatments"></div>
           <span class="chip-arrow">›</span>
@@ -2535,7 +2537,7 @@ select:focus, input[type=text]:focus { border-color: var(--brand); }
 
       <div class="form-group">
         <label>Products Being Used</label>
-        <div class="chip-field" onclick="openPicker('products', event)">
+        <div class="chip-field" id="cf-products">
           <span class="chip-placeholder" id="ph-products">Tap to select…</span>
           <div class="chip-tags" id="tags-products"></div>
           <span class="chip-arrow">›</span>
@@ -2736,23 +2738,46 @@ var selected = { concerns: [], treatments: [], products: [] };
 var activeKey = null;
 var filteredOpts = [];
 
-function openPicker(key, evt) {
-  if (evt) { evt.stopPropagation(); evt.preventDefault(); }
+function openPicker(key) {
   activeKey = key;
   filteredOpts = PICKER_DATA[key].slice();
   document.getElementById('pk-title').textContent = PICKER_TITLES[key];
   document.getElementById('pk-search').value = '';
   renderOptions(filteredOpts);
+  document.getElementById('pk-list').scrollTop = 0;
   document.getElementById('picker-backdrop').style.display = 'block';
   document.getElementById('picker-overlay').style.display  = 'flex';
-  // scroll pk-list to top
-  var list = document.getElementById('pk-list');
-  list.scrollTop = 0;
 }
 
-// Close picker — attached in JS to avoid HTML inline event issues on iOS
+// ── ATTACH PICKER TRIGGERS IN JS (more reliable than inline onclick on mobile) ──
+['cf-concerns','cf-treatments','cf-products'].forEach(function(id) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var key = id.replace('cf-','');
+  // Use both click and touchend for max compatibility
+  el.addEventListener('click', function(e) {
+    e.stopPropagation();
+    openPicker(key);
+  });
+  el.addEventListener('touchend', function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    openPicker(key);
+  }, { passive: false });
+});
+
 document.getElementById('picker-backdrop').addEventListener('click', closePicker);
+document.getElementById('picker-backdrop').addEventListener('touchend', function(e) {
+  e.preventDefault();
+  closePicker();
+}, { passive: false });
+
 document.getElementById('pk-done-btn').addEventListener('click', closePicker);
+document.getElementById('pk-done-btn').addEventListener('touchend', function(e) {
+  e.preventDefault();
+  closePicker();
+}, { passive: false });
+
 document.getElementById('pk-search').addEventListener('input', function() {
   filterPicker(this.value);
 });
