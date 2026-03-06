@@ -1920,8 +1920,8 @@ function handleTap() {
   var isAndroid14 = /Android 1[4-9]/.test(ua);
   var hasSR = !!SR;
   respBox.textContent = 'Starting mic... SR:' + hasSR + ' A14:' + isAndroid14 + ' FB:' + useFallback;
-  if (SR && !useFallback && !isAndroid14) startSpeechRec();
-  else startMediaRec();
+  // Always use MediaRecorder + Whisper — SpeechRecognition is unreliable on Android PWA
+  startMediaRec();
 }
 
 var _ptDown = false;
