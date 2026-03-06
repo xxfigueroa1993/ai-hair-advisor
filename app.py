@@ -4117,6 +4117,3 @@ self.addEventListener("fetch", e => {
 });"""
     from flask import Response
     return Response(sw, mimetype="application/javascript")
-
-from engine_routes import register_engine_routes
-register_engine_routes(app)
