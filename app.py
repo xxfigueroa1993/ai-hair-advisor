@@ -470,6 +470,8 @@ Reference this naturally."""
         active_prompt = FREE_SYSTEM_PROMPT + lang_instr
         max_tokens = 180
 
+    if not user_text:
+        return jsonify({"recommendation": None, "error": "Empty message — please speak again"}), 400
     if not ANTHROPIC_API_KEY:
         return jsonify({"recommendation": None, "error": "No API key configured"}), 500
 
@@ -1583,7 +1585,11 @@ function _doSpeak(text) {
 
 // ── API ───────────────────────────────────────────────
 function askAria(text) {
-  if (!text || text.trim().length < 2) { setIdle("Didn't catch that."); return; }
+  if (!text || text.trim().length < 3) {
+    respBox.textContent = 'Nothing heard — please speak clearly after tapping.';
+    setIdle('');
+    return;
+  }
   stopAmbient(); // stop ambient during thinking
   respBox.textContent = text;
   respBox.classList.add('thinking');
@@ -1878,8 +1884,9 @@ function handleTap() {
   getCtx();
   if (window.speechSynthesis) { try { window.speechSynthesis.getVoices(); } catch(e){} }
 
-  sfxTap();
   startAmbient(); // gentle hum on touch
+  // Play tap sound with tiny delay so AudioContext is fully ready
+  setTimeout(sfxTap, 30);
 
   // ── WAITING: queued reply → speak it NOW ──────────
   if (pendingReply) {
