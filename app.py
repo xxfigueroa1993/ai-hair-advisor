@@ -1738,10 +1738,10 @@ var useFallbackSTT = false; // flip to true if Web Speech fails repeatedly
 var speechFailCount = 0;
 
 function unlockAudio() {
-  if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
+  // Use shared context
+  var ctx = getCtx();
+  audioCtx = ctx; // keep audioCtx alias working for micViz
+  startAmbient();
 }
 
 function setState(s) {
@@ -1758,103 +1758,145 @@ function setIdle(msg) {
   respBox.classList.remove('loading');
 }
 
-// ── SOUND EFFECTS ─────────────────────────────────────────
-function playTone(freq, dur, vol, type) {
+// ── SHARED AUDIO CONTEXT ─────────────────────────────────
+var sharedCtx = null;
+function getCtx() {
+  if (!sharedCtx) sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (sharedCtx.state === 'suspended') sharedCtx.resume();
+  return sharedCtx;
+}
+
+// ── AMBIENT HUM (idle sphere) ─────────────────────────────
+var ambientOsc = null, ambientGain = null;
+function startAmbient() {
   try {
-    var ctx = new (window.AudioContext || window.webkitAudioContext)();
-    var osc = ctx.createOscillator();
+    var ctx = getCtx();
+    if (ambientOsc) return;
+    ambientGain = ctx.createGain();
+    ambientGain.gain.setValueAtTime(0, ctx.currentTime);
+    ambientGain.gain.linearRampToValueAtTime(0.04, ctx.currentTime + 2);
+    ambientGain.connect(ctx.destination);
+    ambientOsc = ctx.createOscillator();
+    ambientOsc.type = 'sine';
+    ambientOsc.frequency.value = 174; // healing frequency, very subtle
+    ambientOsc.connect(ambientGain);
+    ambientOsc.start();
+  } catch(e) {}
+}
+function stopAmbient() {
+  try {
+    if (ambientGain) { ambientGain.gain.linearRampToValueAtTime(0, sharedCtx.currentTime + 1); }
+    setTimeout(function() { try { if(ambientOsc){ambientOsc.stop();ambientOsc=null;ambientGain=null;} } catch(e){} }, 1100);
+  } catch(e) {}
+}
+
+// ── SOUND EFFECTS ─────────────────────────────────────────
+function playTone(freq, dur, vol, type, ctx2) {
+  try {
+    var ctx = ctx2 || getCtx();
+    var osc  = ctx.createOscillator();
     var gain = ctx.createGain();
     osc.connect(gain); gain.connect(ctx.destination);
     osc.type = type || 'sine';
     osc.frequency.setValueAtTime(freq, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(freq * 1.5, ctx.currentTime + dur);
-    gain.gain.setValueAtTime(vol || 0.18, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(freq * 1.3, ctx.currentTime + dur * 0.6);
+    gain.gain.setValueAtTime(0, ctx.currentTime);
+    gain.gain.linearRampToValueAtTime(vol || 0.18, ctx.currentTime + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
     osc.start(ctx.currentTime);
     osc.stop(ctx.currentTime + dur);
-    setTimeout(function(){ ctx.close(); }, (dur + 0.1) * 1000);
   } catch(e) {}
 }
-function playTap()  { playTone(520, 0.08, 0.15, 'sine'); }
-function playDone() { playTone(680, 0.12, 0.14, 'sine'); setTimeout(function(){ playTone(820, 0.10, 0.12, 'sine'); }, 80); }
-function playError(){ playTone(280, 0.18, 0.12, 'triangle'); }
-
-// ── SPEECH SYNTHESIS ──────────────────────────────────────
-// Mobile fix: pre-warm synthesis engine, then speak on a 1ms timeout
-// to keep it inside the original user gesture trust chain.
-var _speakQueue = [];
-var _speakReady = false;
-
-// Pre-warm speech engine on first user interaction
-function warmSpeech() {
-  if (_speakReady) return;
-  _speakReady = true;
+// Soft tap click
+function playTap() {
   try {
-    var utt = new SpeechSynthesisUtterance('');
-    speechSynthesis.speak(utt);
-    speechSynthesis.cancel();
+    var ctx = getCtx();
+    playTone(600, 0.06, 0.12, 'sine', ctx);
   } catch(e) {}
 }
+// Two-note chime when Aria responds — warm and airy
+function playChime() {
+  try {
+    var ctx = getCtx();
+    playTone(880, 0.25, 0.13, 'sine', ctx);
+    setTimeout(function(){ playTone(1108, 0.30, 0.10, 'sine', ctx); }, 120);
+    setTimeout(function(){ playTone(1320, 0.35, 0.08, 'sine', ctx); }, 240);
+  } catch(e) {}
+}
+// Error buzz
+function playError() {
+  try { playTone(220, 0.22, 0.10, 'triangle'); } catch(e) {}
+}
 
-function speak(text) {
-  if (!text) { setIdle(); return; }
-  if (!window.speechSynthesis) { setIdle(); return; }
+// ── SPEECH ENGINE ─────────────────────────────────────────
+// KEY INSIGHT: Mobile browsers block speechSynthesis from fetch callbacks.
+// Solution: we queue the reply text, then trigger speech via a
+// hidden button whose .click() IS considered a user-gesture continuation.
+// This is the same technique used by Google Assistant web demos.
+var _pendingReply = null;
+var _uttReady = false;
 
+// Hidden speak trigger — must be an actual DOM button
+// (injected into body so it exists before use)
+var _speakBtn = document.createElement('button');
+_speakBtn.style.cssText = 'position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;';
+_speakBtn.setAttribute('aria-hidden','true');
+document.body.appendChild(_speakBtn);
+
+_speakBtn.addEventListener('click', function() {
+  if (!_pendingReply) return;
+  var text = _pendingReply;
+  _pendingReply = null;
+  _doSpeak(text);
+});
+
+function warmSpeech() {
+  if (_uttReady) return;
+  _uttReady = true;
+  // Pre-load voices
+  if (window.speechSynthesis) speechSynthesis.getVoices();
+}
+
+function _doSpeak(text) {
+  if (!window.speechSynthesis || !text) { setIdle(); return; }
+  try { speechSynthesis.cancel(); } catch(e) {}
+  var utt = new SpeechSynthesisUtterance(text);
+  utt.lang   = langSel ? langSel.value : 'en-US';
+  utt.rate   = 0.92;
+  utt.pitch  = 1.04;
+  utt.volume = 1.0;
+  // Pick a natural female voice if available
+  var voices = speechSynthesis.getVoices();
+  var female = voices.find(function(v){ return /samantha|victoria|karen|female|woman|zira|hazel/i.test(v.name); });
+  if (female) utt.voice = female;
+  utt.onstart = function() {
+    setState('speaking');
+    stateLbl.textContent = 'Speaking…';
+    playChime();
+    stopAmbient();
+  };
+  utt.onend = function() {
+    setIdle();
+    startAmbient();
+  };
+  utt.onerror = function(ev) {
+    console.log('TTS error:', ev.error);
+    setIdle();
+  };
   setState('speaking');
   stateLbl.textContent = 'Speaking…';
+  speechSynthesis.speak(utt);
+}
 
-  // Cancel any current speech
-  try { speechSynthesis.cancel(); } catch(e) {}
-
-  // Small delay to let cancel() clear, then speak
-  setTimeout(function() {
-    try {
-      var utt   = new SpeechSynthesisUtterance(text);
-      utt.lang  = langSel.value;
-      utt.rate  = 0.91;
-      utt.pitch = 1.05;
-      utt.volume = 1.0;
-
-      utt.onstart = function() {
-        playDone();
-        setState('speaking');
-        stateLbl.textContent = 'Speaking…';
-      };
-      utt.onend = function() {
-        setIdle();
-      };
-      utt.onerror = function(e) {
-        console.log('TTS error:', e.error);
-        // On mobile, try once more after resuming AudioContext
-        if (audioCtx && audioCtx.state === 'suspended') {
-          audioCtx.resume().then(function() {
-            try { speechSynthesis.speak(utt); } catch(e2) { setIdle(); }
-          });
-        } else {
-          setIdle();
-        }
-      };
-
-      // iOS Safari: voices may not be loaded yet
-      var voices = speechSynthesis.getVoices();
-      if (voices.length === 0) {
-        // Wait for voices then retry
-        speechSynthesis.onvoiceschanged = function() {
-          speechSynthesis.onvoiceschanged = null;
-          try { speechSynthesis.speak(utt); } catch(e) { setIdle(); }
-        };
-        // Fallback: try anyway
-        setTimeout(function() {
-          try { speechSynthesis.speak(utt); } catch(e) { setIdle(); }
-        }, 200);
-      } else {
-        speechSynthesis.speak(utt);
-      }
-    } catch(e) {
-      console.log('speak() error:', e);
-      setIdle();
-    }
-  }, 50);
+// Public speak() — stores text, then triggers the hidden button
+// which has user-gesture trust on all mobile browsers
+function speak(text) {
+  if (!text) { setIdle(); return; }
+  _pendingReply = text;
+  // Use requestAnimationFrame to stay in the same task frame
+  requestAnimationFrame(function() {
+    _speakBtn.click();
+  });
 }
 
 // ── MIC REACTIVE ANIMATION ────────────────────────────────
@@ -1954,11 +1996,28 @@ function processText(text) {
 }
 
 // ── WEB SPEECH API MODE ───────────────────────────────────
+var _vizStream = null; // mic stream used for visualization only
+
+function stopVizStream() {
+  if (_vizStream) {
+    _vizStream.getTracks().forEach(function(t){ t.stop(); });
+    _vizStream = null;
+  }
+  stopMicViz();
+}
+
 function startSpeechRecognition() {
   if (!SR) { startMediaRecorder(); return; }
 
   finalText   = '';
   lastInterim = '';
+
+  // Get mic stream for sphere visualization (separate from SR)
+  navigator.mediaDevices.getUserMedia({audio:true, video:false})
+    .then(function(stream) {
+      _vizStream = stream;
+      startMicViz(stream);
+    }).catch(function(){});  // silent fail — viz is optional
 
   recognition = new SR();
   recognition.lang            = langSel.value;
@@ -2005,6 +2064,7 @@ function startSpeechRecognition() {
   recognition.onend = function() {
     clearTimeout(silenceTimer);
     clearTimeout(noSpeechTimer);
+    stopVizStream(); // stop mic viz when SR ends
     if (STATE !== 'listening') return;
     var captured = (finalText + lastInterim).trim();
     if (captured.length > 1) {
@@ -2344,7 +2404,7 @@ input:focus,select:focus{border-color:var(--brand);}
 .chip-arrow{font-size:18px;color:rgba(0,0,0,0.25);flex-shrink:0;margin-left:auto;}
 
 /* Picker modal */
-#picker-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:600;align-items:flex-end;justify-content:center;}
+#picker-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);z-index:700;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0px);}
 #picker-sheet{background:var(--card);border-radius:24px 24px 0 0;width:100%;max-width:500px;padding:0 0 calc(20px + env(safe-area-inset-bottom,0px));animation:shet .3s cubic-bezier(.32,.72,0,1);}
 @keyframes shet{from{transform:translateY(100%)}to{transform:translateY(0)}}
 #picker-header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid var(--border);}
@@ -2423,7 +2483,7 @@ input:focus,select:focus{border-color:var(--brand);}
           <option>Coily / 4C</option><option>Fine</option><option>Thick</option>
         </select></div>
       <div class="fg"><label>Main Concerns</label>
-        <div class="chip-field" id="con-field" onclick="openPicker('concerns')">
+        <div class="chip-field" id="con-field" onclick="openPicker('concerns',event)">
           <span class="chip-placeholder" id="con-ph">Tap to select…</span>
           <span class="chip-wrap" id="con-chips"></span>
           <span class="chip-arrow">›</span>
@@ -2431,7 +2491,7 @@ input:focus,select:focus{border-color:var(--brand);}
         <input type="hidden" id="p-con">
       </div>
       <div class="fg"><label>Chemical Treatments</label>
-        <div class="chip-field" id="trx-field" onclick="openPicker('treatments')">
+        <div class="chip-field" id="trx-field" onclick="openPicker('treatments',event)">
           <span class="chip-placeholder" id="trx-ph">Tap to select…</span>
           <span class="chip-wrap" id="trx-chips"></span>
           <span class="chip-arrow">›</span>
@@ -2439,7 +2499,7 @@ input:focus,select:focus{border-color:var(--brand);}
         <input type="hidden" id="p-trx">
       </div>
       <div class="fg"><label>Products Using</label>
-        <div class="chip-field" id="pro-field" onclick="openPicker('products')">
+        <div class="chip-field" id="pro-field" onclick="openPicker('products',event)">
           <span class="chip-placeholder" id="pro-ph">Tap to select…</span>
           <span class="chip-wrap" id="pro-chips"></span>
           <span class="chip-arrow">›</span>
@@ -2497,8 +2557,9 @@ input:focus,select:focus{border-color:var(--brand);}
 </div>
 
 <!-- CHIP PICKER MODAL -->
-<div id="picker-overlay" onclick="if(event.target===this)closePicker()">
-  <div id="picker-sheet">
+<div id="picker-overlay" onclick="closePicker()">
+  <div id="picker-sheet" onclick="event.stopPropagation()">
+    <div style="width:36px;height:4px;background:rgba(0,0,0,0.1);border-radius:2px;margin:12px auto 0;"></div>
     <div id="picker-header">
       <span id="picker-title">Select</span>
       <button id="picker-done" onclick="closePicker()">Done</button>
@@ -2603,15 +2664,21 @@ var PICKER_LABELS = { concerns:'Main Concerns', treatments:'Chemical Treatments'
 var pickerKey = null;
 var pickerSel = { concerns:[], treatments:[], products:[] };
 
-function openPicker(key) {
+function openPicker(key, evt) {
+  if (evt) evt.stopPropagation();
   pickerKey = key;
   document.getElementById('picker-title').textContent = PICKER_LABELS[key];
   var list = document.getElementById('picker-list');
   list.innerHTML = PICKER_OPTIONS[key].map(function(opt) {
+    var safe = opt.replace(/\\/g,'\\\\').replace(/'/g,"\'");
     var isSel = pickerSel[key].indexOf(opt) > -1;
-    return '<div class="pick-opt'+(isSel?' sel':'')+'" onclick="toggleOpt(this,\''+opt.replace(/'/g,"\'")+'\')">'+opt+'</div>';
+    return '<div class="pick-opt'+(isSel?' sel':'')+'" onclick="toggleOpt(this,\''+safe+'\')">'+opt+'</div>';
   }).join('');
-  document.getElementById('picker-overlay').style.display = 'flex';
+  var ov = document.getElementById('picker-overlay');
+  ov.style.display = 'flex';
+  // Force reflow for animation
+  ov.offsetHeight;
+  list.scrollTop = 0;
 }
 
 function toggleOpt(el, val) {
@@ -2811,6 +2878,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
 </style>
 </head>
 <body>
+<input type="hidden" id="gClientId" value="%GOOGLE_CLIENT_ID%">
 <div id="login-app">
   <div class="lcard">
     <div class="l-logo">Aria</div>
@@ -2829,8 +2897,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
       <button class="l-btn" onclick="doLogin()">Sign In</button>
       <div class="l-or"><span>or</span></div>
       <div class="l-google">
-        <div id="g_id_onload" data-client_id="%GOOGLE_CLIENT_ID%" data-callback="handleGoogle" data-auto_prompt="false"></div>
-        <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="sign_in_with" data-shape="pill" data-logo_alignment="left"></div>
+        <div id="google-btn-container"></div>
       </div>
       <a href="https://supportrd.com/account/login?return_url=/apps/hair-advisor" class="l-shopify">Sign In with Shopify Account</a>
     </div>
@@ -2844,7 +2911,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
       <button class="l-btn" onclick="doRegister()">Create Account</button>
       <div class="l-or"><span>or</span></div>
       <div class="l-google">
-        <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="signup_with" data-shape="pill" data-logo_alignment="left"></div>
+        <div id="google-btn-container-2"></div>
       </div>
     </div>
 
@@ -2899,6 +2966,29 @@ async function handleGoogle(response){
     if(d.error){document.getElementById('li-err').textContent=d.error;}else{saveAndGo(d);}
   }catch(e){document.getElementById('li-err').textContent='Google sign-in failed.';}
 }
+
+// Initialize Google Identity Services properly
+function initGoogleLogin() {
+  var clientId = document.getElementById('gClientId') ? document.getElementById('gClientId').value : '';
+  if (!clientId || !window.google) return;
+  try {
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: handleGoogle,
+      auto_select: false,
+      cancel_on_tap_outside: true
+    });
+    var btn1 = document.getElementById('google-btn-container');
+    var btn2 = document.getElementById('google-btn-container-2');
+    var opts = { theme:'outline', size:'large', shape:'pill', width: 300 };
+    if (btn1) google.accounts.id.renderButton(btn1, opts);
+    if (btn2) google.accounts.id.renderButton(btn2, Object.assign({}, opts, {text:'signup_with'}));
+  } catch(e) { console.log('Google init error:', e); }
+}
+
+// Try init now, and again after GSI script loads
+if (window.google) { initGoogleLogin(); }
+window.addEventListener('load', function() { setTimeout(initGoogleLogin, 500); });
 
 // Enter key support
 document.addEventListener('keydown',function(e){
