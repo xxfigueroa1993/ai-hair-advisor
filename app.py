@@ -1642,6 +1642,45 @@ async function goUpgrade(){
   }
 }
 </script>
+
+<!-- PWA Install Banner -->
+<div id="pwa-banner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid rgba(193,163,162,0.3);padding:16px 20px;z-index:9999;box-shadow:0 -4px 24px rgba(0,0,0,0.08);align-items:center;gap:12px;">
+  <img src="/static/icon-192.png" style="width:44px;height:44px;border-radius:10px;flex-shrink:0;">
+  <div style="flex:1;">
+    <div style="font-family:'Jost',sans-serif;font-size:13px;font-weight:500;color:#0d0906;">Install Aria</div>
+    <div style="font-family:'Jost',sans-serif;font-size:11px;color:rgba(0,0,0,0.4);margin-top:2px;">Add to your home screen for quick access</div>
+  </div>
+  <button id="pwa-install-btn" style="background:#c1a3a2;color:#fff;border:none;border-radius:20px;padding:10px 18px;font-family:'Jost',sans-serif;font-size:11px;letter-spacing:0.1em;text-transform:uppercase;cursor:pointer;flex-shrink:0;">Install</button>
+  <button onclick="document.getElementById('pwa-banner').style.display='none';localStorage.setItem('pwa-dismissed','1');" style="background:none;border:none;font-size:18px;color:rgba(0,0,0,0.3);cursor:pointer;padding:4px;flex-shrink:0;">×</button>
+</div>
+
+<script>
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', function(e) {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (!localStorage.getItem('pwa-dismissed') && !window.matchMedia('(display-mode: standalone)').matches) {
+    setTimeout(function() {
+      var banner = document.getElementById('pwa-banner');
+      banner.style.display = 'flex';
+    }, 4000);
+  }
+});
+document.getElementById('pwa-install-btn').addEventListener('click', function() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(function(r) {
+      if (r.outcome === 'accepted') {
+        document.getElementById('pwa-banner').style.display = 'none';
+      }
+      deferredPrompt = null;
+    });
+  }
+});
+window.addEventListener('appinstalled', function() {
+  document.getElementById('pwa-banner').style.display = 'none';
+});
+</script>
 </body>
 </html>"""
 
