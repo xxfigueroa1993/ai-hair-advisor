@@ -1362,20 +1362,19 @@ function tone(freq, dur, vol, type, delay) {
 }
 
 function sfxTap() {
-  // Crystal bowl tap — three harmonics, soft attack, nice decay
-  tone(432, 0.6, 0.12, 'sine', 0.0);   // fundamental
-  tone(864, 0.4, 0.06, 'sine', 0.0);   // octave harmonic
-  tone(648, 0.3, 0.04, 'sine', 0.01);  // fifth
+  // Same ascending chime as end, but higher and shorter
+  tone(1318, 0.12, 0.10, 'sine', 0.00);
+  tone(1661, 0.12, 0.08, 'sine', 0.07);
+  tone(1976, 0.12, 0.06, 'sine', 0.14);
 }
 function sfxError() { tone(220, 0.22, 0.09, 'triangle'); }
 
 function sfxChime() {
-  // Called after API responds — Web Audio needs context unlocked at least once
-  // (which happens on first sphere tap). Safe to call from async after that.
+  // Ascending chime after Aria finishes speaking
   try { getCtx(); } catch(e) {}
-  tone(880,  0.28, 0.13, 'sine', 0.00);
-  tone(1109, 0.30, 0.10, 'sine', 0.13);
-  tone(1318, 0.34, 0.08, 'sine', 0.26);
+  tone(1046, 0.25, 0.10, 'sine', 0.00);
+  tone(1319, 0.25, 0.08, 'sine', 0.08);
+  tone(1568, 0.25, 0.06, 'sine', 0.16);
 }
 
 var ambRunning = false;
