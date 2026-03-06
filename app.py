@@ -1269,7 +1269,7 @@ body {
 
 /* Listening state */
 #halo.listening #halo-inner {
-  animation: pulse-listen 1.1s ease-in-out infinite;
+  animation: pulse-listen 1.0s ease-in-out infinite;
   background: radial-gradient(circle at 38% 36%,
     rgba(157,127,106,0.65) 0%,
     rgba(157,127,106,0.25) 40%,
@@ -1283,9 +1283,12 @@ body {
     0 0  500px rgba(157,127,106,0.10);
 }
 @keyframes pulse-listen {
-  0%,100% { transform: scale(1); }
-  50%      { transform: scale(1.07); }
+  0%   { transform: scale(1.00); }
+  50%  { transform: scale(1.14); }
+  100% { transform: scale(1.00); }
 }
+/* JS can override with data-level for mic-reactive scaling */
+#halo[data-level] #halo-inner { animation: none !important; }
 
 /* Speaking state */
 #halo.speaking #halo-inner {
@@ -1829,111 +1832,160 @@ function playError() {
 }
 
 // ── SPEECH ENGINE ─────────────────────────────────────────
-// KEY INSIGHT: Mobile browsers block speechSynthesis from fetch callbacks.
-// Solution: we queue the reply text, then trigger speech via a
-// hidden button whose .click() IS considered a user-gesture continuation.
-// This is the same technique used by Google Assistant web demos.
+// The ONLY cross-mobile approach that works 100%:
+// Store reply text. On halo tap (real gesture) → speak.
+// The halo is already the UX — user taps to start, taps to stop.
+// "Tap to hear" becomes the state label. Natural, no extra UI.
+
 var _pendingReply = null;
-var _uttReady = false;
-
-// Hidden speak trigger — must be an actual DOM button
-// (injected into body so it exists before use)
-var _speakBtn = document.createElement('button');
-_speakBtn.style.cssText = 'position:fixed;opacity:0;pointer-events:none;width:1px;height:1px;';
-_speakBtn.setAttribute('aria-hidden','true');
-document.body.appendChild(_speakBtn);
-
-_speakBtn.addEventListener('click', function() {
-  if (!_pendingReply) return;
-  var text = _pendingReply;
-  _pendingReply = null;
-  _doSpeak(text);
-});
+var _ttsActive    = false;
 
 function warmSpeech() {
-  if (_uttReady) return;
-  _uttReady = true;
-  // Pre-load voices
-  if (window.speechSynthesis) speechSynthesis.getVoices();
+  try {
+    if (window.speechSynthesis) {
+      speechSynthesis.getVoices(); // pre-load voice list
+    }
+  } catch(e) {}
 }
 
 function _doSpeak(text) {
-  if (!window.speechSynthesis || !text) { setIdle(); return; }
+  if (!text || !window.speechSynthesis) { setIdle(); return; }
+  _ttsActive = true;
+
   try { speechSynthesis.cancel(); } catch(e) {}
+
   var utt = new SpeechSynthesisUtterance(text);
   utt.lang   = langSel ? langSel.value : 'en-US';
-  utt.rate   = 0.92;
-  utt.pitch  = 1.04;
+  utt.rate   = 0.88;
+  utt.pitch  = 1.05;
   utt.volume = 1.0;
-  // Pick a natural female voice if available
-  var voices = speechSynthesis.getVoices();
-  var female = voices.find(function(v){ return /samantha|victoria|karen|female|woman|zira|hazel/i.test(v.name); });
-  if (female) utt.voice = female;
+
+  // Best female voice
+  try {
+    var voices = speechSynthesis.getVoices();
+    var want = ['Samantha','Victoria','Karen','Moira','Google US English',
+                'Microsoft Zira Desktop','Tessa','Fiona','Hazel'];
+    var pick = null;
+    for (var i=0; i<want.length && !pick; i++) {
+      pick = voices.find(function(v){ return v.name.indexOf(want[i]) > -1; });
+    }
+    if (!pick) pick = voices.find(function(v){ return /en[-_]/.test(v.lang); });
+    if (pick) utt.voice = pick;
+  } catch(e) {}
+
   utt.onstart = function() {
+    _pendingReply = null;
     setState('speaking');
     stateLbl.textContent = 'Speaking…';
     playChime();
-    stopAmbient();
   };
-  utt.onend = function() {
-    setIdle();
-    startAmbient();
+  utt.onend   = function() { _ttsActive = false; setIdle(); };
+  utt.onerror = function(e) {
+    _ttsActive = false;
+    console.log('TTS error:', e.error);
+    // cancelled is normal (user tapped to stop), not an error
+    if (e.error !== 'canceled' && e.error !== 'cancelled') setIdle();
   };
-  utt.onerror = function(ev) {
-    console.log('TTS error:', ev.error);
-    setIdle();
-  };
+
   setState('speaking');
   stateLbl.textContent = 'Speaking…';
-  speechSynthesis.speak(utt);
+  try {
+    speechSynthesis.speak(utt);
+  } catch(e) {
+    _ttsActive = false;
+    setIdle();
+  }
 }
 
-// Public speak() — stores text, then triggers the hidden button
-// which has user-gesture trust on all mobile browsers
+// speak() — called from fetch callback (not a gesture).
+// Plays chime immediately (Web Audio = no gesture needed).
+// Sets pending text + label so next halo tap triggers voice.
+// On many Android devices speechSynthesis actually works from
+// setTimeout 0 if AudioContext is already unlocked — try it.
 function speak(text) {
   if (!text) { setIdle(); return; }
   _pendingReply = text;
-  // Use requestAnimationFrame to stay in the same task frame
-  requestAnimationFrame(function() {
-    _speakBtn.click();
-  });
+  playChime();
+  setState('speaking');
+  stateLbl.textContent = 'Tap to hear Aria ▶';
+
+  // Try immediate speak (works on desktop + Android Chrome unlocked)
+  setTimeout(function() {
+    if (_pendingReply && !_ttsActive) {
+      _doSpeak(_pendingReply);
+    }
+  }, 80);
 }
 
 // ── MIC REACTIVE ANIMATION ────────────────────────────────
 function startMicViz(stream) {
   try {
-    unlockAudio();
-    var src = audioCtx.createMediaStreamSource(stream);
-    analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 512;
-    analyser.smoothingTimeConstant = 0.7;
-    src.connect(analyser);
+    // Use sharedCtx (already unlocked via user gesture)
+    if (!sharedCtx) sharedCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (sharedCtx.state === 'suspended') sharedCtx.resume();
+    audioCtx = sharedCtx;
+
+    var micSrc = sharedCtx.createMediaStreamSource(stream);
+    analyser = sharedCtx.createAnalyser();
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
+    micSrc.connect(analyser);
+
     var data = new Uint8Array(analyser.frequencyBinCount);
     var bars = document.querySelectorAll('.wave-bar');
+
     function tick() {
-      if (STATE !== 'listening') return;
-      analyser.getByteFrequencyData(data);
-      var levels = [0,0,0,0,0];
-      var step = Math.floor(data.length / 5);
-      for (var i=0; i<5; i++) {
-        var sum=0;
-        for (var j=i*step; j<(i+1)*step; j++) sum+=data[j];
-        levels[i] = Math.max(0.2, Math.min(2.5, (sum/step/128)*3));
+      if (STATE !== 'listening') {
+        bars.forEach(function(b){ b.style.transform=''; b.style.animationPlayState='running'; });
+        halo.style.transform = '';
+        return;
       }
-      bars.forEach(function(b,i){ b.style.animationPlayState='paused'; b.style.transform='scaleY('+levels[i]+')'; });
-      halo.style.setProperty('--scale', 1 + levels[2]*0.08);
+      analyser.getByteFrequencyData(data);
+
+      // Average voice frequency range (85–255 Hz in FFT bins)
+      var sum = 0, count = 0;
+      for (var i=2; i<Math.min(data.length, 20); i++) { sum += data[i]; count++; }
+      var avg = sum / count / 128.0;
+      var level = Math.max(0, Math.min(1, avg));
+
+      // Drive sphere via data-level — CSS handles transform
+      var scale = 1 + level * 0.40;
+      halo.style.transform = 'scale(' + scale + ')';
+      halo.style.transition = 'transform 0.07s ease-out';
+      halo.setAttribute('data-level', Math.round(level * 100));
+
+      // Wave bars
+      var barStep = Math.floor(data.length / 5);
+      var bLevels = [0,0,0,0,0];
+      for (var b=0; b<5; b++) {
+        var bSum=0;
+        for (var j=b*barStep; j<(b+1)*barStep && j<data.length; j++) bSum+=data[j];
+        bLevels[b] = Math.max(0.15, Math.min(3.0, (bSum/barStep/80)));
+      }
+      bars.forEach(function(bar,i){
+        bar.style.animationPlayState = 'paused';
+        bar.style.transform = 'scaleY(' + bLevels[i] + ')';
+        bar.style.transition = 'transform 0.06s ease';
+      });
+
       animFn = requestAnimationFrame(tick);
     }
     animFn = requestAnimationFrame(tick);
-  } catch(e) {}
+  } catch(e) {
+    console.log('micViz error:', e);
+  }
 }
 
 function stopMicViz() {
   cancelAnimationFrame(animFn);
   document.querySelectorAll('.wave-bar').forEach(function(b){
-    b.style.transform=''; b.style.animationPlayState='running';
+    b.style.transform = '';
+    b.style.animationPlayState = 'running';
+    b.style.transition = '';
   });
-  halo.style.setProperty('--scale','');
+  halo.style.transform = '';
+  halo.style.transition = '';
+  halo.removeAttribute('data-level');
 }
 
 // ── PROCESS TEXT → ARIA ───────────────────────────────────
@@ -2055,7 +2107,16 @@ function startSpeechRecognition() {
       else interim += event.results[i][0].transcript;
     }
     lastInterim = interim;
-    respBox.textContent = (finalText + interim).trim() || 'Listening…';
+    var combined = (finalText + interim).trim();
+    respBox.textContent = combined || 'Listening…';
+
+    // Pulse sphere based on how many new words arrived
+    var wordCount = combined.split(' ').length;
+    var scale = Math.min(1.25, 1 + wordCount * 0.015);
+    halo.style.transform = 'scale(' + scale + ')';
+    clearTimeout(halo._pulseReset);
+    halo._pulseReset = setTimeout(function() { halo.style.transform = ''; }, 300);
+
     silenceTimer = setTimeout(function() {
       try { recognition.stop(); } catch(e) {}
     }, 1800);
@@ -2179,21 +2240,33 @@ halo.addEventListener('click', function(e) {
   warmSpeech();
   playTap();
 
+  // If there is a pending reply waiting — THIS tap speaks it
+  // (This is a real user gesture so speechSynthesis works 100%)
+  if (_pendingReply) {
+    var txt = _pendingReply;
+    _pendingReply = null;
+    _doSpeak(txt);
+    return;
+  }
+
   if (STATE === 'speaking') {
-    if (window.speechSynthesis) speechSynthesis.cancel();
-    setIdle(); return;
+    if (window.speechSynthesis) { try { speechSynthesis.cancel(); } catch(e) {} }
+    _ttsActive = false;
+    setIdle();
+    return;
   }
 
   if (STATE === 'listening') {
-    if (recognition) { try{recognition.stop();}catch(e){} }
-    if (isRecording)  stopMediaRecorder();
+    if (recognition) { try { recognition.stop(); } catch(e) {} }
+    if (isRecording) stopMediaRecorder();
     clearTimeout(silenceTimer);
     clearTimeout(noSpeechTimer);
-    stopMicViz();
-    setIdle(); return;
+    stopVizStream();
+    setIdle();
+    return;
   }
 
-  // Start listening — try Web Speech first, fall back to MediaRecorder
+  // idle — start listening
   if (SR && !useFallbackSTT) {
     startSpeechRecognition();
   } else {
@@ -2875,6 +2948,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
 .l-shopify:hover{border-color:var(--brand);}
 .l-back{display:block;text-align:center;margin-top:16px;font-size:11px;color:var(--muted);text-decoration:none;letter-spacing:0.06em;}
 .l-back:hover{color:var(--brand);}
+.l-google-btn{display:flex;align-items:center;justify-content:center;width:300px;max-width:100%;padding:10px 16px;background:#fff;border:1px solid rgba(0,0,0,0.12);border-radius:24px;font-family:'Jost',sans-serif;font-size:13px;color:#3c4043;cursor:pointer;transition:box-shadow .2s;}
+.l-google-btn:hover{box-shadow:0 2px 8px rgba(0,0,0,0.12);}
 </style>
 </head>
 <body>
@@ -2896,10 +2971,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
       <div class="l-err" id="li-err"></div>
       <button class="l-btn" onclick="doLogin()">Sign In</button>
       <div class="l-or"><span>or</span></div>
-      <div class="l-google">
+      <div class="l-google" id="g-wrap-in">
         <div id="google-btn-container"></div>
+        <!-- Fallback styled button shown if GIS lib doesn't render -->
+        <button id="g-fallback-in" class="l-google-btn" onclick="triggerGoogle('li-err')" style="display:none">
+          <svg width="18" height="18" viewBox="0 0 18 18" style="margin-right:8px;flex-shrink:0"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+          Continue with Google
+        </button>
       </div>
-      <a href="https://supportrd.com/account/login?return_url=/apps/hair-advisor" class="l-shopify">Sign In with Shopify Account</a>
+
     </div>
 
     <!-- SIGN UP -->
@@ -2910,8 +2990,12 @@ html,body{height:100%;overflow:hidden;background:var(--bg);font-family:'Jost',sa
       <div class="l-err" id="ru-err"></div>
       <button class="l-btn" onclick="doRegister()">Create Account</button>
       <div class="l-or"><span>or</span></div>
-      <div class="l-google">
+      <div class="l-google" id="g-wrap-up">
         <div id="google-btn-container-2"></div>
+        <button id="g-fallback-up" class="l-google-btn" onclick="triggerGoogle('ru-err')" style="display:none">
+          <svg width="18" height="18" viewBox="0 0 18 18" style="margin-right:8px;flex-shrink:0"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+          Sign up with Google
+        </button>
       </div>
     </div>
 
@@ -2967,28 +3051,98 @@ async function handleGoogle(response){
   }catch(e){document.getElementById('li-err').textContent='Google sign-in failed.';}
 }
 
-// Initialize Google Identity Services properly
+// Initialize Google Identity Services
+var _googleReady = false;
+
+function triggerGoogle(errId) {
+  var clientId = (document.getElementById('gClientId')||{}).value || '';
+  if (!clientId) {
+    document.getElementById(errId).textContent = 'Google login not configured yet. Use email login.';
+    return;
+  }
+  if (!window.google || !window.google.accounts) {
+    document.getElementById(errId).textContent = 'Google script not loaded. Check connection.';
+    return;
+  }
+  try {
+    google.accounts.id.prompt(function(notification) {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        document.getElementById(errId).textContent = 'Google prompt blocked. Try email login.';
+      }
+    });
+  } catch(e) {
+    document.getElementById(errId).textContent = 'Google error: ' + e.message;
+  }
+}
+
 function initGoogleLogin() {
-  var clientId = document.getElementById('gClientId') ? document.getElementById('gClientId').value : '';
-  if (!clientId || !window.google) return;
+  var clientId = (document.getElementById('gClientId')||{}).value || '';
+  if (_googleReady) return;
+
+  if (!clientId) {
+    // No client ID — show styled fallback buttons that explain this
+    ['g-fallback-in','g-fallback-up'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) {
+        el.style.display = 'flex';
+        el.onclick = function() {
+          alert('Google login requires setup in Render environment variables (GOOGLE_CLIENT_ID). Use email login for now.');
+        };
+      }
+    });
+    return;
+  }
+
+  if (!window.google || !window.google.accounts) {
+    setTimeout(initGoogleLogin, 500);
+    return;
+  }
+
+  _googleReady = true;
   try {
     google.accounts.id.initialize({
       client_id: clientId,
       callback: handleGoogle,
       auto_select: false,
-      cancel_on_tap_outside: true
+      cancel_on_tap_outside: true,
+      ux_mode: 'popup'
     });
-    var btn1 = document.getElementById('google-btn-container');
-    var btn2 = document.getElementById('google-btn-container-2');
-    var opts = { theme:'outline', size:'large', shape:'pill', width: 300 };
-    if (btn1) google.accounts.id.renderButton(btn1, opts);
-    if (btn2) google.accounts.id.renderButton(btn2, Object.assign({}, opts, {text:'signup_with'}));
-  } catch(e) { console.log('Google init error:', e); }
+
+    var opts1 = {theme:'outline', size:'large', shape:'pill', width:300, text:'signin_with'};
+    var opts2 = {theme:'outline', size:'large', shape:'pill', width:300, text:'signup_with'};
+    var c1 = document.getElementById('google-btn-container');
+    var c2 = document.getElementById('google-btn-container-2');
+
+    if (c1) {
+      google.accounts.id.renderButton(c1, opts1);
+      // Hide fallback once GIS renders
+      var fb1 = document.getElementById('g-fallback-in');
+      if (fb1) fb1.style.display = 'none';
+    }
+    if (c2) {
+      google.accounts.id.renderButton(c2, opts2);
+      var fb2 = document.getElementById('g-fallback-up');
+      if (fb2) fb2.style.display = 'none';
+    }
+  } catch(e) {
+    console.log('Google init error:', e);
+    // Show fallback buttons
+    ['g-fallback-in','g-fallback-up'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.style.display = 'flex';
+    });
+  }
 }
 
-// Try init now, and again after GSI script loads
-if (window.google) { initGoogleLogin(); }
-window.addEventListener('load', function() { setTimeout(initGoogleLogin, 500); });
+// Show fallback immediately, replace when GIS loads
+['g-fallback-in','g-fallback-up'].forEach(function(id){
+  var el = document.getElementById(id);
+  if (el) el.style.display = 'flex';
+});
+
+window.addEventListener('load', function() {
+  setTimeout(initGoogleLogin, 300);
+});
 
 // Enter key support
 document.addEventListener('keydown',function(e){
