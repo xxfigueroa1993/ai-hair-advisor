@@ -347,6 +347,11 @@ def debug_env():
         "google_id_length": len(GOOGLE_CLIENT_ID),
     })
 
+@app.route("/api/config")
+def public_config():
+    # Safe to expose — Google client ID is public by design
+    return jsonify({"google_client_id": GOOGLE_CLIENT_ID or ""})
+
 
 def ping():
     return jsonify({"ok": True, "ts": datetime.datetime.utcnow().isoformat()})
@@ -1534,6 +1539,7 @@ function _doSpeak(text) {
 // ── API ───────────────────────────────────────────────
 function askAria(text) {
   if (!text || text.trim().length < 2) { setIdle("Didn't catch that."); return; }
+  stopAmbient(); // stop ambient during thinking
   respBox.textContent = text;
   respBox.classList.add('thinking');
   STATE = 'thinking';
@@ -1596,92 +1602,120 @@ function startSpeechRec() {
 
   finalTxt = ''; interimTxt = '';
   var submitted = false;
+  var gotAnyResult = false;
 
-  navigator.mediaDevices.getUserMedia({audio:true,video:false})
-    .then(function(s){ startViz(s); })
-    .catch(function(){});
+  // Android 14 fix: request mic permission explicitly first
+  navigator.mediaDevices.getUserMedia({audio:true, video:false})
+    .then(function(stream) {
+      startViz(stream);
+      _doStartSpeechRec(stream, onDone);
+    })
+    .catch(function(err) {
+      setIdle('Mic denied — use typing mode.');
+      activateManual();
+    });
 
-  recognition = new SR();
-  recognition.lang            = langSel.value;
-  recognition.continuous      = true;   // keep listening — we stop it manually
-  recognition.interimResults  = true;
-  recognition.maxAlternatives = 1;
-
-  recognition.onstart = function() {
-    setSphereState('listening');
-    stLbl.textContent   = 'Listening\u2026';
-    respBox.textContent = 'Listening\u2026';
-    // Stop if no speech at all after 8s
-    noSpeechTmr = setTimeout(function() {
-      if (STATE !== 'listening') return;
-      try { recognition.stop(); } catch(e) {}
-      if (failCount < 2) { failCount++; setTimeout(startSpeechRec, 300); }
-      else { failCount=0; useFallback=true; setIdle('Mic not responding \u2014 use typing.'); activateManual(); }
-    }, 8000);
-  };
-
-  recognition.onresult = function(ev) {
-    clearTimeout(noSpeechTmr); clearTimeout(silTimer);
-    failCount = 0;
-
-    // Rebuild full transcript from all results
-    var f = ''; var interim = '';
-    for (var i = 0; i < ev.results.length; i++) {
-      if (ev.results[i].isFinal) f       += ev.results[i][0].transcript + ' ';
-      else                        interim += ev.results[i][0].transcript;
-    }
-    if (f.length > finalTxt.length) finalTxt = f;
-    interimTxt = interim;
-
-    var display = (finalTxt + interimTxt).trim();
-    if (display) respBox.textContent = display;
-
-    // After 1.6s silence, submit whatever we have
-    silTimer = setTimeout(function() {
-      if (submitted) return;
-      var got = (finalTxt + interimTxt).trim();
-      if (got.length > 1) {
-        submitted = true;
-        try { recognition.stop(); } catch(e) {}
-        askAria(got);
-      } else {
-        try { recognition.stop(); } catch(e) {}
-      }
-    }, 1600);
-  };
-
-  recognition.onend = function() {
-    clearTimeout(silTimer); clearTimeout(noSpeechTmr);
-    stopViz();
+  function onDone(got) {
     if (submitted) return;
-    if (STATE !== 'listening') return;
-    var got = (finalTxt + interimTxt).trim();
-    if (got.length > 1) {
-      submitted = true; failCount = 0;
-      askAria(got);
+    submitted = true;
+    if (got && got.trim().length > 1) {
+      failCount = 0;
+      askAria(got.trim());
     } else {
       setIdle('Tap and speak \u2014 try again.');
     }
-  };
+  }
 
-  recognition.onerror = function(ev) {
-    clearTimeout(silTimer); clearTimeout(noSpeechTmr);
-    stopViz();
-    if (ev.error === 'no-speech') {
-      setIdle('No speech \u2014 tap to try again.');
-    } else if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
-      setIdle('Mic blocked \u2014 use typing mode.');
-      activateManual();
-    } else if (ev.error === 'network') {
-      useFallback = true;
-      startMediaRec();
-    } else {
-      setIdle('Mic error \u2014 try typing.');
-    }
-  };
+  function _doStartSpeechRec(stream, done) {
+    recognition = new SR();
+    recognition.lang            = langSel.value;
+    recognition.continuous      = false;
+    recognition.interimResults  = true;
+    recognition.maxAlternatives = 1;
 
-  try { recognition.start(); }
-  catch(e) { setIdle('Could not start mic.'); activateManual(); }
+    recognition.onstart = function() {
+      stopAmbient();
+      setSphereState('listening');
+      stLbl.textContent   = 'Listening\u2026';
+      respBox.textContent = 'Listening\u2026';
+
+      noSpeechTmr = setTimeout(function() {
+        if (STATE !== 'listening' || submitted) return;
+        try { recognition.abort(); } catch(e) {}
+        if (!gotAnyResult) {
+          if (failCount < 2) {
+            failCount++;
+            stopViz();
+            // retry
+            submitted = false;
+            navigator.mediaDevices.getUserMedia({audio:true,video:false})
+              .then(function(s){ startViz(s); _doStartSpeechRec(s, done); })
+              .catch(function(){ done(''); });
+          } else {
+            failCount = 0; useFallback = true;
+            stopViz();
+            done('');
+          }
+        }
+      }, 7000);
+    };
+
+    recognition.onresult = function(ev) {
+      clearTimeout(noSpeechTmr); clearTimeout(silTimer);
+      gotAnyResult = true; failCount = 0;
+
+      var f = ''; var interim = '';
+      for (var i = 0; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) f       += ev.results[i][0].transcript + ' ';
+        else                        interim += ev.results[i][0].transcript;
+      }
+      if (f.length > finalTxt.length) finalTxt = f;
+      interimTxt = interim;
+
+      var display = (finalTxt + interimTxt).trim();
+      if (display) respBox.textContent = display;
+
+      // If we have a final result wait a short moment then submit
+      if (finalTxt.trim().length > 0) {
+        clearTimeout(silTimer);
+        silTimer = setTimeout(function() {
+          try { recognition.stop(); } catch(e) {}
+        }, 600);
+      } else {
+        // only interim — wait longer for silence
+        clearTimeout(silTimer);
+        silTimer = setTimeout(function() {
+          try { recognition.stop(); } catch(e) {}
+        }, 1800);
+      }
+    };
+
+    recognition.onend = function() {
+      clearTimeout(silTimer); clearTimeout(noSpeechTmr);
+      stopViz();
+      if (STATE !== 'listening') return;
+      done((finalTxt + interimTxt).trim());
+    };
+
+    recognition.onerror = function(ev) {
+      clearTimeout(silTimer); clearTimeout(noSpeechTmr);
+      stopViz();
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        setIdle('Mic blocked \u2014 use typing.');
+        activateManual();
+      } else if (ev.error === 'network') {
+        useFallback = true;
+        startMediaRec();
+      } else if (ev.error === 'no-speech') {
+        done('');
+      } else {
+        done('');
+      }
+    };
+
+    try { recognition.start(); }
+    catch(e) { stopViz(); done(''); }
+  }
 }
 
 function startMediaRec() {
@@ -2595,8 +2629,17 @@ html,body{height:100%;height:100dvh;overflow:hidden;background:var(--bg);font-fa
 </div>
 <script>
 (function() {
-var GID = '%GOOGLE_CLIENT_ID%';
+var GID = '';
 var nextUrl = new URLSearchParams(location.search).get('next') || '/dashboard';
+
+// Fetch config first (bypasses any caching of the HTML template)
+fetch('/api/config')
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    GID = d.google_client_id || '';
+    if (GID) initGIS();
+  })
+  .catch(function(){});
 
 // Back
 document.getElementById('back-btn').addEventListener('click', function(){ window.location.href='/'; });
@@ -2670,8 +2713,8 @@ window.handleGoogleCred = handleGoogleCred;
 function googleClick(which) {
   var errId = which === 'up' ? 'up-err' : 'in-err';
   var errEl = document.getElementById(errId);
-  if (!GID || GID === '%GOOGLE_CLIENT_ID%' || GID === '') {
-    errEl.textContent = 'Google login not configured — use email login.';
+  if (!GID) {
+    errEl.textContent = 'Google login not available — use email login.';
     return;
   }
   if (!window.google || !window.google.accounts) {
@@ -2696,7 +2739,7 @@ document.getElementById('g-btn-in').addEventListener('click', function(){ google
 document.getElementById('g-btn-up').addEventListener('click', function(){ googleClick('up'); });
 
 function initGIS() {
-  if (!GID || GID === '%GOOGLE_CLIENT_ID%' || GID === '') return;
+  if (!GID) return;
   if (!window.google || !window.google.accounts) { setTimeout(initGIS, 500); return; }
   try {
     window.google.accounts.id.initialize({
@@ -2716,8 +2759,7 @@ function initGIS() {
     document.getElementById('in-err').textContent = 'GIS init error: ' + e.message;
   }
 }
-if (window.google && window.google.accounts) initGIS();
-window.addEventListener('load', function(){ setTimeout(initGIS, 400); });
+// initGIS is called after /api/config fetch above
 
 // Password reset
 var rt = new URLSearchParams(location.search).get('reset_token');
