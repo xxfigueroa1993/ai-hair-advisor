@@ -350,7 +350,17 @@ def icon_512():
     return Response(base64.b64decode(_ICON_512), mimetype="image/png",
                     headers={"Cache-Control": "public, max-age=86400"})
 
-@app.route("/api/ping")
+@app.route("/api/debug-env")
+def debug_env():
+    return jsonify({
+        "has_anthropic_key": bool(ANTHROPIC_API_KEY),
+        "anthropic_key_prefix": ANTHROPIC_API_KEY[:8] + "..." if ANTHROPIC_API_KEY else "MISSING",
+        "has_google_id": bool(GOOGLE_CLIENT_ID),
+        "google_id_prefix": GOOGLE_CLIENT_ID[:12] + "..." if GOOGLE_CLIENT_ID else "MISSING",
+        "google_id_length": len(GOOGLE_CLIENT_ID) if GOOGLE_CLIENT_ID else 0,
+    })
+
+
 def ping():
     return jsonify({"ok": True, "ts": datetime.datetime.utcnow().isoformat()})
 
@@ -2656,53 +2666,69 @@ document.addEventListener('keydown', function(e){
 
 // Google
 function handleGoogleCred(response) {
+  var errEl = document.getElementById('in-err');
+  errEl.textContent = 'Signing in with Google…';
   fetch('/api/auth/google', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:response.credential})})
     .then(function(r){return r.json();})
-    .then(function(d){ if(d.error) document.getElementById('in-err').textContent=d.error; else saveAndRedirect(d); })
-    .catch(function(){ document.getElementById('in-err').textContent='Google sign-in failed.'; });
+    .then(function(d){
+      if (d.error) { errEl.textContent = 'Google error: ' + d.error; }
+      else saveAndRedirect(d);
+    })
+    .catch(function(e){ errEl.textContent = 'Google network error: ' + e.message; });
 }
-// expose for GIS callback
 window.handleGoogleCred = handleGoogleCred;
 
-function googleFallback(errId) {
-  if (!GID || GID === '%GOOGLE_CLIENT_ID%') {
-    document.getElementById(errId).textContent = 'Google login needs GOOGLE_CLIENT_ID in Render env vars. Use email login.';
+function googleClick(which) {
+  var errId = which === 'up' ? 'up-err' : 'in-err';
+  var errEl = document.getElementById(errId);
+  if (!GID || GID === '%GOOGLE_CLIENT_ID%' || GID === '') {
+    errEl.textContent = 'Google login not configured — use email login.';
     return;
   }
   if (!window.google || !window.google.accounts) {
-    document.getElementById(errId).textContent = 'Google not loaded. Try email login.';
+    errEl.textContent = 'Google script still loading — try again in 2 seconds.';
     return;
   }
-  window.google.accounts.id.prompt(function(n){
-    if (n.isNotDisplayed()||n.isSkippedMoment()) {
-      document.getElementById(errId).textContent = 'Google popup blocked. Use email login.';
-    }
-  });
+  // Try prompt first; if blocked, show message
+  try {
+    window.google.accounts.id.prompt(function(notification) {
+      if (notification.isNotDisplayed()) {
+        errEl.textContent = 'Google popup blocked by browser. Try email login or open in Chrome.';
+      } else if (notification.isSkippedMoment()) {
+        errEl.textContent = 'Google popup skipped. Try email login.';
+      }
+    });
+  } catch(e) {
+    errEl.textContent = 'Google error: ' + e.message;
+  }
 }
 
-document.getElementById('g-btn-in').addEventListener('click', function(){ googleFallback('in-err'); });
-document.getElementById('g-btn-up').addEventListener('click', function(){ googleFallback('up-err'); });
+document.getElementById('g-btn-in').addEventListener('click', function(){ googleClick('in'); });
+document.getElementById('g-btn-up').addEventListener('click', function(){ googleClick('up'); });
 
 function initGIS() {
-  if (!GID || GID === '%GOOGLE_CLIENT_ID%') return;
+  if (!GID || GID === '%GOOGLE_CLIENT_ID%' || GID === '') return;
   if (!window.google || !window.google.accounts) { setTimeout(initGIS, 500); return; }
   try {
     window.google.accounts.id.initialize({
-      client_id: GID,
-      callback:  handleGoogleCred,
-      auto_select: false,
+      client_id:             GID,
+      callback:              handleGoogleCred,
+      auto_select:           false,
       cancel_on_tap_outside: true,
-      ux_mode: 'popup'
+      ux_mode:               'popup'
     });
-    var opts = {theme:'outline', size:'large', shape:'pill', width:340};
+    var opts = {theme:'outline', size:'large', shape:'pill', width:300};
     var c1 = document.getElementById('gis-in');
     if (c1) { c1.innerHTML=''; window.google.accounts.id.renderButton(c1, Object.assign({},opts,{text:'signin_with'})); }
     var c2 = document.getElementById('gis-up');
     if (c2) { c2.innerHTML=''; window.google.accounts.id.renderButton(c2, Object.assign({},opts,{text:'signup_with'})); }
-  } catch(e) {}
+    console.log('GIS initialized with client_id:', GID.slice(0,12)+'...');
+  } catch(e) {
+    document.getElementById('in-err').textContent = 'GIS init error: ' + e.message;
+  }
 }
 if (window.google && window.google.accounts) initGIS();
-window.addEventListener('load', function(){ setTimeout(initGIS, 300); });
+window.addEventListener('load', function(){ setTimeout(initGIS, 400); });
 
 // Password reset
 var rt = new URLSearchParams(location.search).get('reset_token');
