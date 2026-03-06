@@ -366,62 +366,38 @@ def google_verify():
 
 @app.route("/api/transcribe", methods=["POST"])
 def transcribe():
-    """Receive MediaRecorder audio, transcribe via Anthropic Claude."""
     if "audio" not in request.files:
         return jsonify({"error": "No audio", "fallback": True})
     audio_file  = request.files["audio"]
     audio_bytes = audio_file.read()
-
     if len(audio_bytes) < 500:
-        return jsonify({"text": "", "fallback": True})
-
-    if not ANTHROPIC_API_KEY:
-        return jsonify({"text": "", "fallback": True, "error": "No API key"})
-
+        return jsonify({"text": "", "fallback": True, "error": "Audio too short"})
+    if not OPENAI_API_KEY:
+        return jsonify({"text": "", "fallback": True, "error": "OPENAI_API_KEY missing — add it in Render to enable voice"})
     try:
-        import base64
-        audio_b64 = base64.b64encode(audio_bytes).decode()
-        mime      = audio_file.content_type or "audio/webm"
-
-        payload = {
-            "model": "claude-haiku-4-5-20251001",
-            "max_tokens": 200,
-            "messages": [{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": "Transcribe this audio exactly as spoken. Return ONLY the spoken words, nothing else. No punctuation changes, no commentary."
-                    },
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": mime,
-                            "data": audio_b64
-                        }
-                    }
-                ]
-            }]
-        }
+        boundary = "aria" + secrets.token_hex(8)
+        mime     = audio_file.content_type or "audio/webm"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="speech.webm"\r\n'
+            f"Content-Type: {mime}\r\n\r\n"
+        ).encode() + audio_bytes + (
+            f"\r\n--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n'
+            f"--{boundary}--\r\n"
+        ).encode()
         req = urllib.request.Request(
-            "https://api.anthropic.com/v1/messages",
-            data=json.dumps(payload).encode(),
-            headers={
-                "Content-Type": "application/json",
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01"
-            }
+            "https://api.openai.com/v1/audio/transcriptions",
+            data=body,
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                     "Content-Type": f"multipart/form-data; boundary={boundary}"}
         )
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read().decode())
-            text = result["content"][0]["text"].strip()
-            return jsonify({"text": text})
+            text = result.get("text", "").strip()
+            return jsonify({"text": text}) if text else jsonify({"text": "", "fallback": True, "error": "Empty"})
     except urllib.error.HTTPError as e:
-        err_body = e.read().decode()
-        # Claude doesn't support audio documents yet — fall back to a prompt-based approach
-        # Ask user to type instead
-        return jsonify({"text": "", "fallback": True, "error": err_body[:100]})
+        return jsonify({"text": "", "fallback": True, "error": "Whisper: " + e.read().decode()[:100]})
     except Exception as e:
         return jsonify({"text": "", "fallback": True, "error": str(e)})
 
@@ -1383,28 +1359,30 @@ function startAmbient() {
   ambRunning = true;
   try {
     var ctx = getCtx();
-    // Clean up any leftover oscillators
     if (ambOsc)  { try { ambOsc.stop();  } catch(e) {} ambOsc  = null; }
     if (ambOsc2) { try { ambOsc2.stop(); } catch(e) {} ambOsc2 = null; }
 
+    // Main gain — slow rise over 8 seconds
     ambGain = ctx.createGain();
     ambGain.gain.setValueAtTime(0, ctx.currentTime);
-    ambGain.gain.linearRampToValueAtTime(0.030, ctx.currentTime + 3.5);
+    ambGain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 8.0);
     ambGain.connect(ctx.destination);
 
+    // 174 Hz — Solfeggio healing frequency, very low volume
     ambOsc = ctx.createOscillator();
     ambOsc.type = 'sine';
-    ambOsc.frequency.value = 174;
+    ambOsc.frequency.setValueAtTime(174, ctx.currentTime);
     ambOsc.connect(ambGain);
     ambOsc.start();
 
-    // Soft harmonic
+    // 528 Hz — DNA repair frequency, even softer
     var g2 = ctx.createGain();
-    g2.gain.value = 0.010;
+    g2.gain.setValueAtTime(0, ctx.currentTime);
+    g2.gain.linearRampToValueAtTime(0.008, ctx.currentTime + 10.0);
     g2.connect(ctx.destination);
     ambOsc2 = ctx.createOscillator();
     ambOsc2.type = 'sine';
-    ambOsc2.frequency.value = 348;
+    ambOsc2.frequency.value = 528;
     ambOsc2.connect(g2);
     ambOsc2.start();
   } catch(e) { ambRunning = false; }
@@ -1415,16 +1393,19 @@ function stopAmbient() {
   ambRunning = false;
   var o1 = ambOsc; var o2 = ambOsc2; var g = ambGain;
   ambOsc = null; ambOsc2 = null; ambGain = null;
+  if (!_actx) return;
   try {
-    if (g && _actx) {
-      g.gain.cancelScheduledValues(_actx.currentTime);
-      g.gain.setValueAtTime(g.gain.value, _actx.currentTime);
-      g.gain.linearRampToValueAtTime(0, _actx.currentTime + 0.4);
+    // Slow fade out over 3 seconds
+    var now = _actx.currentTime;
+    if (g) {
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.linearRampToValueAtTime(0, now + 3.0);
     }
     setTimeout(function(){
       try{if(o1)o1.stop();}catch(e){}
       try{if(o2)o2.stop();}catch(e){}
-    }, 500);
+    }, 3100);
   } catch(e) {}
 }
 
@@ -1745,96 +1726,67 @@ function startSpeechRec() {
 }
 
 function startMediaRec() {
-  // On Android 14, we run SpeechRecognition AND MediaRecorder in parallel.
-  // SR gives us the text; MediaRec keeps the mic stream alive so SR works.
-  // Whichever gives us text first wins.
-  var srText = null;
-  var srDone = false;
-  var recStream = null;
-
   navigator.mediaDevices.getUserMedia({audio:true, video:false})
     .then(function(stream) {
-      recStream = stream;
+      stopAmbient();
       setSphereState('listening');
-      stLbl.textContent   = 'Listening…';
-      respBox.textContent = 'Listening…';
+      stLbl.textContent   = 'Listening\u2026';
+      respBox.textContent = 'Listening\u2026';
       startViz(stream);
       isRecording = true;
 
-      // Try SpeechRecognition on top of the open mic stream
-      if (SR) {
-        var rec2 = new SR();
-        rec2.lang            = langSel.value;
-        rec2.continuous      = false;
-        rec2.interimResults  = true;
-        rec2.maxAlternatives = 1;
-        var f2 = ''; var i2 = '';
-
-        rec2.onresult = function(ev) {
-          f2 = ''; i2 = '';
-          for (var i = 0; i < ev.results.length; i++) {
-            if (ev.results[i].isFinal) f2 += ev.results[i][0].transcript + ' ';
-            else i2 += ev.results[i][0].transcript;
-          }
-          var disp = (f2 + i2).trim();
-          if (disp) respBox.textContent = disp;
-        };
-
-        rec2.onend = function() {
-          if (srDone) return;
-          srDone = true;
-          var got = (f2 + i2).trim();
-          // Stop mic stream
-          try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e){}
-          stopViz(); isRecording = false;
-          if (got.length > 1) {
-            askAria(got);
-          } else {
-            setIdle('Tap and speak — try again.');
-          }
-        };
-
-        rec2.onerror = function(ev) {
-          if (srDone) return;
-          if (ev.error === 'not-allowed') {
-            srDone = true;
-            try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e){}
-            stopViz(); isRecording = false;
-            setIdle('Mic blocked — use typing.');
-            activateManual();
-          }
-          // other errors: just let it end naturally
-        };
-
-        // Auto-stop after 12s
-        var autoStop = setTimeout(function() {
-          if (!srDone) { try { rec2.stop(); } catch(e){} }
-        }, 12000);
-
-        try {
-          rec2.start();
-        } catch(e) {
-          clearTimeout(autoStop);
-          srDone = true;
-          try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e2){}
-          stopViz(); isRecording = false;
-          setIdle('Mic error — use typing.');
-          activateManual();
-        }
-      } else {
-        // No SR at all — just record and tell user to type
-        setTimeout(function() {
-          if (isRecording) {
-            try { stream.getTracks().forEach(function(t){t.stop();}); } catch(e){}
-            stopViz(); isRecording = false;
-            setIdle('Voice not supported — use typing.');
-            activateManual();
-          }
-        }, 200);
-      }
+      var chunks = [];
+      var mime = ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4']
+        .find(function(m){ return MediaRecorder.isTypeSupported(m); }) || '';
+      mediaRec = new MediaRecorder(stream, mime ? {mimeType:mime} : {});
+      mediaRec.ondataavailable = function(e){ if(e.data && e.data.size > 0) chunks.push(e.data); };
+      mediaRec.onstop = function() {
+        isRecording = false;
+        stream.getTracks().forEach(function(t){ t.stop(); });
+        stopViz();
+        var blob = new Blob(chunks, {type: mime || 'audio/webm'});
+        if (blob.size < 500) { setIdle('Too short \u2014 tap and hold while speaking.'); return; }
+        // Send to server for transcription
+        STATE = 'thinking';
+        sphere.classList.remove('listening');
+        stLbl.textContent = 'Transcribing\u2026';
+        respBox.classList.add('thinking');
+        var fd = new FormData();
+        fd.append('audio', blob, 'speech.webm');
+        fetch('/api/transcribe', {method:'POST', body:fd})
+          .then(function(r){ return r.json(); })
+          .then(function(d){
+            respBox.classList.remove('thinking');
+            if (d.text && d.text.trim().length > 1) {
+              respBox.textContent = d.text.trim();
+              askAria(d.text.trim());
+            } else {
+              var err = d.error || '';
+              if (err.indexOf('OPENAI') > -1 || err.indexOf('No API') > -1) {
+                respBox.textContent = 'Add OPENAI_API_KEY to Render for voice. Using typing mode.';
+              } else if (err) {
+                respBox.textContent = 'Transcription error: ' + err;
+              } else {
+                respBox.textContent = 'Could not hear \u2014 please type your question.';
+              }
+              setIdle('');
+              stLbl.textContent = 'Type below \u2193';
+              activateManual();
+              setTimeout(function(){ manInput.focus(); }, 200);
+            }
+          })
+          .catch(function(e){
+            respBox.classList.remove('thinking');
+            respBox.textContent = 'Network error \u2014 please type.';
+            setIdle(''); activateManual();
+          });
+      };
+      mediaRec.start(250); // collect data every 250ms
+      // Auto-stop after 13s
+      setTimeout(function(){ if(isRecording) stopMediaRec(); }, 13000);
     })
     .catch(function() {
-      setIdle('Mic denied — use typing.');
+      setIdle('Mic denied \u2014 use typing.');
       activateManual();
     });
 }
