@@ -1073,7 +1073,15 @@ let recognition   = null;
 let silenceTimer  = null;
 let noSpeechTimer = null;
 let finalText     = "";
-let isManual      = false;
+// Auto-detect mobile and switch to manual mode
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+let isManual = isMobile;
+if (isMobile) {
+  document.getElementById("manualBox").style.display = "flex";
+  document.getElementById("modeToggle").textContent = "Voice Mode";
+  document.getElementById("stateLabel").textContent = "Type your question below";
+  document.getElementById("response").textContent = "Type your hair concern below and tap Send.";
+}
 let conversationHistory = [];
 let lastRecommendedProduct = "";
 
@@ -1580,28 +1588,18 @@ const SESSION_ID = 'srd_' + Math.random().toString(36).substr(2,9);
 
 function handleSubscriptionResponse(data){
   if(!data) return;
-  const count    = data.response_count || 0;
-  const limit    = data.free_limit || 3;
-  const subbed   = data.subscribed || false;
-  const remaining = Math.max(0, limit - count);
+  const subbed = data.subscribed || false;
 
+  // Hide banner for active subscribers
   if(subbed) {
-    // Hide all paywall elements for subscribers
     document.getElementById('paywallCounter').style.display = 'none';
     document.getElementById('paywallBanner').style.display  = 'none';
     return;
   }
 
-  // Show counter if they've used at least 1 free response
-  if(count >= 1 && count < limit){
-    const counter = document.getElementById('paywallCounter');
-    counter.style.display = 'block';
-    document.getElementById('pw-count').textContent = remaining;
-    setTimeout(()=>{ counter.style.display='none'; }, 4000);
-  }
-
-  // Show soft paywall banner after limit hit
-  if(data.show_paywall && !_paywallDismissed){
+  // Show upgrade banner after every 3rd response (non-blocking — responses still work)
+  const count = data.response_count || 0;
+  if(count > 0 && count % 3 === 0 && !_paywallDismissed){
     setTimeout(()=>{
       document.getElementById('paywallBanner').style.display = 'block';
     }, 800);
@@ -1655,10 +1653,6 @@ def recommend():
     user       = get_current_user()
     subscribed = is_subscribed(user["id"]) if user else False
 
-    # Count responses for gating
-    count = get_session_count(session_id, user["id"] if user else None)
-    show_paywall = not subscribed and count >= FREE_RESPONSE_LIMIT
-
     lang_names = {
         "en-US":"English","es-ES":"Spanish","fr-FR":"French",
         "pt-BR":"Portuguese","de-DE":"German","ar-SA":"Arabic",
@@ -1667,11 +1661,11 @@ def recommend():
     lang_name  = lang_names.get(lang, "English")
     lang_instr = f"\n\nIMPORTANT: Your ENTIRE response must be in {lang_name}."
 
-    # ── CHOOSE SYSTEM PROMPT BASED ON TIER ───────────────────────────────────
-    if subscribed:
-        # Full premium experience
-        profile_context = ""
-        if user:
+    # ── EVERYONE gets full Aria — premium gets saved history + profile context
+    show_paywall  = False
+    profile_context = ""
+    if user:
+        if subscribed:
             profile = get_hair_profile(user["id"])
             if profile.get("hair_type") or profile.get("hair_concerns"):
                 profile_context = f"""
@@ -1683,13 +1677,9 @@ RETURNING CLIENT PROFILE:
 - Treatments history: {profile.get("treatments","none saved")}
 - Products tried: {profile.get("products_tried","none saved")}
 Reference this naturally in your response."""
-            save_chat_message(user["id"], "user", user_text)
-        active_prompt = SYSTEM_PROMPT + profile_context + lang_instr
-        max_tokens    = 350
-    else:
-        # Free tier — basic response only, always nudge upgrade
-        active_prompt = FREE_SYSTEM_PROMPT + lang_instr
-        max_tokens    = 180
+        save_chat_message(user["id"], "user", user_text)
+    active_prompt = SYSTEM_PROMPT + profile_context + lang_instr
+    max_tokens    = 350
 
     if not ANTHROPIC_API_KEY:
         return jsonify({"recommendation": None, "error": "No API key"}), 500
