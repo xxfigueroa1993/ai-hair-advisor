@@ -1036,11 +1036,9 @@ tipSubmitBtn.addEventListener("click", async () => {
   } catch(e) {}
 
   // If real money tip (amount > 0), open Shopify checkout in new tab
-  if (finalAmt !== "0" && finalAmt !== "custom") {
-    const amtCents = Math.round(parseFloat(finalAmt) * 100);
-    // Replace 42109000908880 with your tip product variant ID
-    const shopifyUrl = "https://supportdr-com.myshopify.com/cart/42109000908880:" + 1 +
-      "?properties[tip_amount]=$" + finalAmt + "&checkout";
+  if (finalAmt !== "0" && finalAmt !== "skip") {
+    const qty = Math.max(1, Math.round(parseFloat(finalAmt) || 1));
+    const shopifyUrl = "https://supportrd.com/cart/42109000908880:" + qty + "?checkout=true";
     window.open(shopifyUrl, "_blank");
   }
 
