@@ -1038,7 +1038,7 @@ tipSubmitBtn.addEventListener("click", async () => {
   // If real money tip (amount > 0), open Shopify checkout in new tab
   if (finalAmt !== "0" && finalAmt !== "skip") {
     const qty = Math.max(1, Math.round(parseFloat(finalAmt) || 1));
-    const shopifyUrl = "https://supportrd.com/cart/42109000908880:" + qty;
+    const shopifyUrl = "https://supportrd.com/products/hair-advisor-tip";
     window.open(shopifyUrl, "_blank");
   }
 
