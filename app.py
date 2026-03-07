@@ -2334,6 +2334,57 @@ def google_verify():
 def ping():
     return jsonify({"ok": True, "status": "awake"})
 
+
+# ── CONTENT ENGINE API ENDPOINTS ──────────────────────────────────────────────
+ENGINE_LOG = []  # In-memory log of recent runs
+
+@app.route("/api/content-engine/run", methods=["POST","OPTIONS"])
+def content_engine_run():
+    admin_key = request.headers.get("X-Admin-Key","")
+    if admin_key != os.environ.get("ADMIN_KEY","srd_admin_2024"):
+        return jsonify({"error":"Unauthorized"}), 401
+
+    def run_in_background():
+        entry = {
+            "date": datetime.datetime.utcnow().isoformat(),
+            "topic": "generating...",
+            "shopify_url": None,
+            "pinterest": False,
+            "reddit": False,
+            "error": None
+        }
+        ENGINE_LOG.insert(0, entry)
+        if len(ENGINE_LOG) > 50:
+            ENGINE_LOG.pop()
+        try:
+            from content_engine import run_engine
+            result = run_engine()
+            if isinstance(result, dict):
+                entry.update({
+                    "topic":       result.get("topic", "completed"),
+                    "shopify_url": result.get("shopify_url"),
+                    "pinterest":   result.get("pinterest", False),
+                    "reddit":      result.get("reddit", False),
+                })
+            else:
+                entry["topic"] = "completed"
+        except Exception as e:
+            entry["error"] = str(e)
+            entry["topic"] = "error"
+            print(f"Content engine run error: {e}")
+
+    t = threading.Thread(target=run_in_background, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "message": "Engine started in background"})
+
+
+@app.route("/api/content-engine/log", methods=["GET"])
+def content_engine_log():
+    admin_key = request.args.get("admin_key","")
+    if admin_key != os.environ.get("ADMIN_KEY","srd_admin_2024"):
+        return jsonify({"error":"Unauthorized"}), 401
+    return jsonify({"runs": ENGINE_LOG})
+
 @app.route("/admin-codes")
 def admin_codes_page():
     admin_key = request.args.get("key","")
