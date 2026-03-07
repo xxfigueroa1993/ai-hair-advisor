@@ -1454,68 +1454,99 @@ function noHear() {
   speak(msg, false);
 }
 
-/* ── START LISTENING ── */
-function startListening() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) { responseBox.textContent = "Please use Chrome or switch to Manual Mode."; return; }
+/* ── WHISPER VOICE RECORDING ── */
+let mediaRecorder = null;
+let audioChunks   = [];
+let recordingTimer = null;
 
+async function startListening() {
   playAmbient("intro");
-  finalText = "";
   setState("listening"); setColor(...LISTEN);
   stateLabel.textContent  = "Listening…";
-  responseBox.textContent = conversationHistory.length > 0 ? "Ask a follow-up or describe a new concern…" : "Listening…";
-
+  responseBox.textContent = conversationHistory.length > 0 ? "Ask a follow-up…" : "Listening…";
   requestAnimationFrame(micReactiveLoop);
-  initMic();
 
-  noSpeechTimer = setTimeout(() => {
-    if (appState !== "listening") return;
-    try { recognition.stop(); } catch(e) {}
-    noHear();
-  }, 7000);
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  recognition = new SR();
-  recognition.lang = langSelect.value;
-  recognition.continuous = true;
-  recognition.interimResults = true;
+    // Also use stream for visualizer
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const src = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.6;
+    src.connect(analyser);
+    micData = new Uint8Array(analyser.frequencyBinCount);
 
-  recognition.onresult = (event) => {
-    clearTimeout(silenceTimer);
-    clearTimeout(noSpeechTimer);
-    voiceActivityLevel = 1.0;
-    let interim = ""; finalText = "";
-    for (let i = 0; i < event.results.length; i++) {
-      if (event.results[i].isFinal) finalText += event.results[i][0].transcript + " ";
-      else interim += event.results[i][0].transcript;
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream, { mimeType: getSupportedMimeType() });
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      if (audioChunks.length === 0) { noHear(); return; }
+      await sendToWhisper();
+    };
+    mediaRecorder.start();
+
+    // Auto-stop after 10 seconds
+    recordingTimer = setTimeout(() => stopListening(), 10000);
+
+  } catch(e) {
+    console.warn("Mic error:", e);
+    responseBox.textContent = "Microphone access denied. Please allow mic and try again.";
+    setState("idle"); setColor(...IDLE);
+    stateLabel.textContent = "Tap to begin";
+  }
+}
+
+function getSupportedMimeType() {
+  const types = ["audio/webm","audio/webm;codecs=opus","audio/ogg;codecs=opus","audio/mp4"];
+  for (const t of types) { if (MediaRecorder.isTypeSupported(t)) return t; }
+  return "";
+}
+
+function stopListening() {
+  clearTimeout(recordingTimer);
+  if (mediaRecorder && mediaRecorder.state === "recording") {
+    mediaRecorder.stop();
+  }
+}
+
+async function sendToWhisper() {
+  setState("idle"); setColor(...IDLE);
+  stateLabel.textContent  = "Thinking…";
+  responseBox.textContent = "Thinking…";
+
+  try {
+    const mimeType = getSupportedMimeType() || "audio/webm";
+    const blob = new Blob(audioChunks, { type: mimeType });
+    const formData = new FormData();
+    formData.append("audio", blob, "audio.webm");
+
+    const resp = await fetch("https://ai-hair-advisor.onrender.com/api/transcribe", {
+      method: "POST",
+      body: formData
+    });
+    const data = await resp.json();
+    const text = (data.text || "").trim();
+
+    if (text.length > 2) {
+      responseBox.textContent = text;
+      processText(text);
+    } else {
+      noHear();
     }
-    responseBox.textContent = (finalText + interim).trim() || "Listening…";
-    silenceTimer = setTimeout(() => { try { recognition.stop(); } catch(e) {} }, 3000);
-  };
-
-  recognition.onend = () => {
-    clearTimeout(silenceTimer); clearTimeout(noSpeechTimer);
-    if (appState !== "listening") return;
-    const captured = finalText.trim();
-    if (captured.length > 2) processText(captured); else noHear();
-  };
-
-  recognition.onerror = (e) => {
-    clearTimeout(silenceTimer); clearTimeout(noSpeechTimer);
-    if (e.error === "no-speech") noHear();
-  };
-
-  recognition.start();
+  } catch(e) {
+    console.error("Whisper error:", e);
+    noHear();
+  }
 }
 
 /* ── CLICK ── */
 halo.addEventListener("click", () => {
   if (isManual) return;
   if (appState === "listening") {
-    clearTimeout(silenceTimer); clearTimeout(noSpeechTimer);
-    try { recognition.stop(); } catch(e) {}
-    setState("idle"); setColor(...IDLE);
-    stateLabel.textContent  = "Tap to begin";
-    responseBox.textContent = "";
+    stopListening();
     return;
   }
   if (appState === "speaking") {
@@ -2314,6 +2345,54 @@ Sitemap: https://auto-engine.onrender.com/sitemap.xml
 @app.route("/google65f6d985572e55c5.html")
 def google_verify():
     return "google-site-verification: google65f6d985572e55c5.html"
+
+
+# ── WHISPER TRANSCRIPTION ─────────────────────────────────────────────────────
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+@app.route("/api/transcribe", methods=["POST","OPTIONS"])
+def transcribe():
+    if not OPENAI_API_KEY:
+        return jsonify({"error": "No OpenAI key"}), 500
+    try:
+        audio_file = request.files.get("audio")
+        if not audio_file:
+            return jsonify({"error": "No audio"}), 400
+
+        import urllib.request as urlreq
+
+        boundary = "SRDBoundary" + secrets.token_hex(8)
+        audio_data = audio_file.read()
+
+        CRLF = b"\r\n"
+        body = b""
+        body += b"--" + boundary.encode() + CRLF
+        body += b'Content-Disposition: form-data; name="model"' + CRLF + CRLF
+        body += b"whisper-1" + CRLF
+        body += b"--" + boundary.encode() + CRLF
+        body += b'Content-Disposition: form-data; name="language"' + CRLF + CRLF
+        body += b"en" + CRLF
+        body += b"--" + boundary.encode() + CRLF
+        body += b'Content-Disposition: form-data; name="file"; filename="audio.webm"' + CRLF
+        body += b"Content-Type: audio/webm" + CRLF + CRLF
+        body += audio_data + CRLF
+        body += b"--" + boundary.encode() + b"--" + CRLF
+
+        req = urlreq.Request(
+            "https://api.openai.com/v1/audio/transcriptions",
+            data=body,
+            headers={
+                "Authorization": "Bearer " + OPENAI_API_KEY,
+                "Content-Type": "multipart/form-data; boundary=" + boundary
+            },
+            method="POST"
+        )
+        with urlreq.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+            return jsonify({"text": result.get("text", "")})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 @app.route("/api/ping", methods=["GET"])
 def ping():
