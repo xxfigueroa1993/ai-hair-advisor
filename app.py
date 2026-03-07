@@ -1073,15 +1073,8 @@ let recognition   = null;
 let silenceTimer  = null;
 let noSpeechTimer = null;
 let finalText     = "";
-// Auto-detect mobile and switch to manual mode
 const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-let isManual = isMobile;
-if (isMobile) {
-  document.getElementById("manualBox").style.display = "flex";
-  document.getElementById("modeToggle").textContent = "Voice Mode";
-  document.getElementById("stateLabel").textContent = "Type your question below";
-  document.getElementById("response").textContent = "Type your hair concern below and tap Send.";
-}
+let isManual = false;
 let conversationHistory = [];
 let lastRecommendedProduct = "";
 
