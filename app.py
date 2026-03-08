@@ -2277,42 +2277,86 @@ SRD_PAGE_LOADER = """<link href="https://fonts.googleapis.com/css2?family=Cormor
 </script>"""
 
 SRD_NAV_CSS = """
+/* ── Exact fonts from supportrd.com @font-face ── */
+@font-face{font-family:Inter;font-weight:400;font-style:normal;font-display:swap;src:url("https://supportrd.com/cdn/fonts/inter/inter_n4.b2a3f24c19b4de56e8871f609e73ca7f6d2e2bb9.woff2") format("woff2")}
+@font-face{font-family:Inter;font-weight:700;font-style:normal;font-display:swap;src:url("https://supportrd.com/cdn/fonts/inter/inter_n7.02711e6b374660cfc7915d1afc1c204e633421e4.woff2") format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:600;font-style:normal;font-display:swap;src:url("https://supportrd.com/cdn/fonts/barlow_condensed/barlowcondensed_n6.30a391fe19ded5366170913f031e653a88992edc.woff2") format("woff2")}
+@font-face{font-family:"Barlow Condensed";font-weight:700;font-style:normal;font-display:swap;src:url("https://supportrd.com/cdn/fonts/barlow_condensed/barlowcondensed_n7.b8dc813bf1d64de77250a6675c25535283e1677a.woff2") format("woff2")}
+
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906;min-height:100vh}
+body{font-family:Inter,sans-serif;background:#f0ebe8;color:#0d0906;min-height:100vh}
 
 :root{
+  /* Exact values from theme :root */
+  --font-body--family:Inter,sans-serif;
+  --font-body--weight:400;
+  --font-heading--family:"Barlow Condensed",sans-serif;
+  --font-heading--weight:600;
+  --font-subheading--family:"Barlow Condensed",sans-serif;
+  --font-subheading--weight:600;
+
+  --letter-spacing-sm:0.06em;
+  --letter-spacing-md:0.13em;
+
+  --gap-xl:1.25rem;
+  --gap-md:0.9rem;
+  --gap-sm:0.7rem;
+  --padding-lg:1rem;
+  --padding-sm:0.7rem;
+
+  --icon-size-xs:0.85rem;
+  --icon-size-sm:1.25rem;
+  --icon-stroke-width:1.5px;
+
+  --drawer-animation-speed:0.2s;
+  --drawer-padding:calc(var(--padding-sm) + 7px);
+  --drawer-height:100dvh;
+  --drawer-width:95vw;
+  --drawer-max-width:500px;
+  --drawer-menu-inline-padding:2.5rem;
+
+  --layer-menu-drawer:18;
+  --layer-overlay:16;
+
+  --opacity-subdued-text:0.7;
+  --animation-speed:0.125s;
+  --ease-out-cubic:cubic-bezier(0.33,1,0.68,1);
+
+  --menu-font-sm--size:0.875rem;
+  --menu-font-sm--line-height:calc(1.1 + 0.5 * min(16 / 14));
+  --menu-font-2xl--size:1.75rem;
+  --menu-font-2xl--line-height:calc(1.1 + 0.5 * min(16 / 28));
+
+  /* Resolved menu vars (type_font_primary_link=heading, type_font_primary_size=sm, type_case_primary_link=uppercase) */
+  --menu-top-level-font-family:var(--font-heading--family);
+  --menu-top-level-font-weight:var(--font-heading--weight);
+  --menu-top-level-font-style:normal;
+  --menu-top-level-font-size:var(--menu-font-sm--size);
+  --menu-top-level-font-line-height:var(--menu-font-sm--line-height);
+  --menu-top-level-font-case:uppercase;
+  --menu-top-level-font-color:#0d0906;
+  --menu-top-level-font-color-rgb:13,9,6;
+  --menu-top-level-letter-spacing:var(--letter-spacing-md);
+  --menu-horizontal-gap:var(--gap-xl);
+
   --color-foreground:#0d0906;
   --color-background:#ffffff;
   --color-border:rgba(13,9,6,0.08);
   --page-width:1200px;
   --header-height:56px;
-  --gap-xl:32px;
-  --gap-md:12px;
-  --padding-lg:16px;
-  --menu-top-level-font-family:'Jost',sans-serif;
-  --menu-top-level-font-size-desktop:0.75rem;
-  --menu-top-level-font-weight:700;
-  --menu-top-level-font-style:normal;
-  --menu-top-level-font-case:uppercase;
-  --menu-top-level-font-color:#0d0906;
-  --menu-top-level-font-color-rgb:13,9,6;
-  --menu-top-level-font-line-height:1;
-  --menu-top-level-letter-spacing:0.08em;
-  --menu-horizontal-gap:var(--gap-xl,32px);
-  --opacity-subdued-text:0.45;
-  --drawer-animation-speed:0.3s;
-  --layer-menu-drawer:9999;
 }
 
+/* ── sticky header ── */
 #header-component{
   position:sticky;top:0;z-index:1000;
   background:#fff;
   border-bottom:1px solid var(--color-border);
 }
 
+/* ── 3-col grid — header-row.liquid ── */
 .header{
   display:grid;
-  grid-template-columns:1fr auto 1fr;
+  grid-template-columns:auto auto 1fr;
   align-items:stretch;
   max-width:var(--page-width);
   margin:0 auto;
@@ -2320,31 +2364,27 @@ body{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906;min-height:1
   height:var(--header-height);
 }
 
-.header__column{display:flex;align-items:center;}
+.header__column{display:flex;align-items:center;min-width:0;}
 .header__column--left{justify-content:flex-start;}
-.header__column--center{justify-content:center;height:100%;}
+.header__column--center{justify-content:flex-start;height:100%;}
 .header__column--right{justify-content:flex-end;}
 
-/* Logo = text "SupportRD.com" — bold, small, from screenshot */
+/* ── logo: Inter 400, shop.name text ── */
 .header-logo{
   display:flex;height:100%;align-items:center;
   text-decoration:none;
-  font-family:'Jost',sans-serif;
+  font-family:var(--font-body--family);
   font-size:0.875rem;
-  font-weight:700;
-  color:#0d0906;
-  white-space:nowrap;
-  letter-spacing:0.02em;
-  flex-shrink:0;
+  font-weight:var(--font-body--weight);
+  font-style:normal;
+  color:var(--color-foreground);
+  white-space:nowrap;flex-shrink:0;
 }
-.header-logo:hover{text-decoration:none;color:#0d0906;}
-/* The store has no logo image — logo.liquid falls back to shop.name as text */
-.header-logo__image-container{display:none;}
-.header-logo__image{display:none;}
+.header-logo:hover{text-decoration:none;color:var(--color-foreground);}
+.header-logo__image-container,.header-logo__image{display:none;}
 
-/* nav */
-.header-menu{height:100%;display:flex;align-items:center;}
-.header-menu__inner{height:100%;display:flex;align-items:center;}
+/* ── header-menu ── */
+.header-menu,.header-menu__inner{height:100%;display:flex;align-items:center;}
 nav.menu-list{display:flex;height:100%;}
 .overflow-menu,.menu-list__list{
   display:flex;list-style:none;margin:0;padding:0;height:100%;gap:0;
@@ -2355,24 +2395,26 @@ nav.menu-list{display:flex;height:100%;}
   flex-direction:column;position:relative;
 }
 .menu-list__list-item::after{
-  content:'';width:100%;height:8px;margin-bottom:-8px;
+  content:'';width:100%;
+  height:var(--padding-lg);
+  margin-bottom:calc(-1 * var(--padding-lg));
 }
 .menu-list__link{
   font-family:var(--menu-top-level-font-family);
   font-weight:var(--menu-top-level-font-weight);
-  font-size:var(--menu-top-level-font-size-desktop);
+  font-size:var(--menu-top-level-font-size);
   font-style:var(--menu-top-level-font-style);
   text-transform:var(--menu-top-level-font-case);
   letter-spacing:var(--menu-top-level-letter-spacing);
   color:var(--menu-top-level-font-color);
+  line-height:var(--menu-top-level-font-line-height);
   text-decoration:none;
   display:flex;flex-direction:column;justify-content:center;
   cursor:pointer;height:100%;margin-block:0;
-  transition:opacity 0.15s;
 }
 .menu-list__link:hover,.menu-list__link:focus{color:var(--menu-top-level-font-color);}
 .menu-list__list:has(.menu-list__list-item:hover) .menu-list__link{
-  color:rgba(var(--menu-top-level-font-color-rgb),0.4);
+  color:rgba(var(--menu-top-level-font-color-rgb),var(--opacity-subdued-text));
 }
 .menu-list__list:has(.menu-list__list-item:hover) .menu-list__list-item:hover .menu-list__link{
   color:var(--menu-top-level-font-color);
@@ -2380,54 +2422,46 @@ nav.menu-list{display:flex;height:100%;}
 .menu-list__link-title{
   padding-inline:calc(var(--menu-horizontal-gap) / 2);
 }
-/* active: dark underline (from screenshot — not pink, it's dark) */
 .menu-list__link--active{
   color:var(--color-foreground) !important;
   box-shadow:inset 0 -2px 0 var(--color-foreground);
   opacity:1 !important;
 }
 
-/* header-actions */
+/* ── header-actions ── */
 header-actions{
   display:flex;
   margin-inline-start:calc(-1 * var(--gap-md));
 }
 .header-actions__action{
   display:flex;align-items:center;justify-content:center;
-  color:#0d0906;text-decoration:none;
-  padding:0 10px;height:var(--header-height);
+  color:var(--color-foreground);text-decoration:none;
+  padding:0 0.625rem;height:var(--header-height);
   position:relative;background:none;border:none;cursor:pointer;
 }
-.header-actions__action svg{display:block;}
+.header-actions__action svg{display:block;stroke-width:var(--icon-stroke-width);}
 .account-button__icon{width:15px;height:17px;}
 
-/* cart bubble — RED from screenshot */
-.header-actions__cart-icon{
-  --cart-bubble-size:18px;
-  --cart-bubble-top:8px;
-  --cart-bubble-right:3px;
-  position:relative;
-}
+/* cart bubble */
+.header-actions__cart-icon{position:relative;}
 .cart-bubble{
   position:absolute;
-  width:var(--cart-bubble-size);height:var(--cart-bubble-size);
-  top:var(--cart-bubble-top);right:var(--cart-bubble-right);
+  width:20px;height:20px;
+  top:4.5px;right:2.5px;
   background:#c0392b;color:#fff;
-  font-size:9px;font-weight:700;
+  font-size:9px;font-family:var(--font-body--family);font-weight:700;
   border-radius:50%;
-  display:none;align-items:center;justify-content:center;
-  line-height:1;
+  display:none;align-items:center;justify-content:center;line-height:1;
 }
 .cart-bubble.visible{display:flex;}
 
-/* hamburger */
+/* ── hamburger ── */
 .header__icon--menu{
   display:none;background:none;border:none;cursor:pointer;
-  color:#0d0906;padding:16px;
-  align-items:center;justify-content:center;
-  height:var(--header-height);
+  color:var(--color-foreground);padding:var(--padding-lg);
+  align-items:center;justify-content:center;height:var(--header-height);
 }
-.header__icon--menu svg{width:20px;height:20px;display:block;}
+.header__icon--menu svg{width:var(--icon-size-sm);height:var(--icon-size-sm);display:block;}
 
 @media screen and (max-width:749px){
   .header{grid-template-columns:auto 1fr auto;padding:0 16px;}
@@ -2436,48 +2470,69 @@ header-actions{
   header-actions{justify-self:flex-end;}
 }
 
-/* drawer */
+/* ── drawer backdrop ── */
 .menu-drawer__backdrop{
   position:fixed;top:0;left:0;width:100vw;height:100dvh;
   backdrop-filter:brightness(0.75);
-  z-index:9998;opacity:0;
-  transition:opacity 0.3s ease;pointer-events:none;
+  z-index:calc(var(--layer-menu-drawer) - 1);
+  opacity:0;transition:opacity var(--drawer-animation-speed) ease;
+  pointer-events:none;
 }
 .menu-drawer__backdrop.open{opacity:1;pointer-events:auto;}
+
+/* ── drawer panel ── */
 .menu-drawer{
   position:fixed;transform:translateX(-100%);visibility:hidden;
-  top:0;left:0;height:100dvh;width:25rem;max-width:85vw;
-  z-index:9999;background:#fff;overflow-y:auto;
+  top:0;left:0;
+  height:var(--drawer-height);
+  width:var(--drawer-width);
+  max-width:var(--drawer-max-width);
+  z-index:var(--layer-menu-drawer);
+  background:var(--color-background);overflow-y:auto;
   display:flex;flex-direction:column;
-  border-right:1px solid rgba(13,9,6,0.08);
+  border-right:1px solid var(--color-border);
   box-shadow:4px 0 24px rgba(0,0,0,0.12);
-  transition:transform 0.3s ease,visibility 0.3s ease;
+  transition:transform var(--drawer-animation-speed) ease,visibility var(--drawer-animation-speed) ease;
 }
 .menu-drawer.open{transform:translateX(0);visibility:visible;}
 .menu-drawer__close-button{
   align-self:flex-end;display:flex;align-items:center;justify-content:center;
-  padding:16px;background:none;border:none;cursor:pointer;
-  color:#0d0906;transition:opacity 0.2s;
+  padding:var(--padding-lg);background:none;border:none;cursor:pointer;
+  color:var(--color-foreground);transition:opacity 0.2s;
 }
 .menu-drawer__close-button:hover{opacity:0.6;}
-.menu-drawer__close-button svg{width:20px;height:20px;}
+.menu-drawer__close-button svg{width:var(--icon-size-sm);height:var(--icon-size-sm);}
 .menu-drawer__navigation{padding:0;}
-.menu-drawer__menu{list-style:none;padding-inline:16px;margin:0;}
+.menu-drawer__menu{
+  list-style:none;
+  padding-inline:var(--drawer-menu-inline-padding);
+  margin:0;
+}
 .menu-drawer__menu > .menu-drawer__list-item{
-  display:flex;min-height:52px;
+  display:flex;
+  min-height:calc(2 * var(--padding-lg) + var(--icon-size-xs));
 }
 .menu-drawer__menu-item{
   display:flex;padding:2px 0;text-decoration:none;
   justify-content:space-between;align-items:center;width:100%;
 }
 .menu-drawer__menu-item--mainlist{
-  min-height:52px;
-  font-family:'Jost',sans-serif;font-weight:700;
-  font-size:1.25rem;text-transform:uppercase;
-  letter-spacing:0.06em;color:#0d0906;
+  min-height:calc(2 * var(--padding-lg) + var(--icon-size-xs));
+  font-family:var(--menu-top-level-font-family);
+  font-weight:var(--menu-top-level-font-weight);
+  font-style:var(--menu-top-level-font-style);
+  font-size:var(--menu-font-2xl--size);
+  line-height:var(--menu-font-2xl--line-height);
+  text-transform:var(--menu-top-level-font-case);
+  letter-spacing:var(--menu-top-level-letter-spacing);
+  color:var(--menu-top-level-font-color);
 }
-.menu-drawer__menu-item--mainlist:hover{opacity:0.6;}
-.menu-drawer__menu-item--active{opacity:0.5;}
+.menu-drawer__menu-item--mainlist:hover{
+  color:rgba(var(--menu-top-level-font-color-rgb),var(--opacity-subdued-text));
+}
+.menu-drawer__menu-item--active{
+  color:rgba(var(--menu-top-level-font-color-rgb),var(--opacity-subdued-text));
+}
 .menu-drawer__menu-item-text{overflow:hidden;text-overflow:ellipsis;}
 """
 
@@ -2537,7 +2592,7 @@ SRD_NAV_HTML = """
     <div class="header__column header__column--right" data-testid="header-top-right">
       <header-actions>
         <a href="https://supportrd.com/search" class="header-actions__action" aria-label="Search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </a>
         <a href="https://supportrd.com/account/login" class="header-actions__action" aria-label="Account">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="17" viewBox="0 0 15 17" fill="none" class="account-button__icon">
@@ -2545,7 +2600,7 @@ SRD_NAV_HTML = """
           </svg>
         </a>
         <a href="https://supportrd.com/cart" class="header-actions__action header-actions__cart-icon" aria-label="Cart">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 2v1a3 3 0 0 0 6 0V2"/></svg>
           <span class="cart-bubble" id="cart-count"></span>
         </a>
       </header-actions>
