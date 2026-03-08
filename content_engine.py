@@ -35,19 +35,39 @@ SEED_TOPICS = [
     "hair loss treatment at home",
     "curly hair moisture routine",
     "how to grow hair faster",
-    "scalp treatment for hair loss",
     "deep conditioning routine",
     "frizzy hair solutions",
-    "hair care routine for dry hair",
+    "best oils for hair growth",
     "how to repair bleached hair",
     "relaxed hair care tips",
-    "hair thinning solutions women",
-    "best hair growth serum",
-    "how to get shiny hair naturally",
-    "dandruff treatment home remedy",
-    "hair breakage causes and treatment",
     "postpartum hair loss solutions",
     "protein treatment for hair",
+    "natural ingredients for hair growth",
+    "how to moisturize dry natural hair",
+    "why is my hair falling out",
+    "hair porosity explained",
+    "how to detangle matted hair",
+    "Caribbean hair care secrets",
+    "rosemary oil for hair growth",
+    "aloe vera benefits for hair",
+    "how to strengthen weak hair",
+    "overnight hair mask recipes",
+    "why hair stops growing",
+    "heat damage repair for hair",
+    "best shampoo for hair loss",
+    "onion juice for hair regrowth",
+    "how to get thicker hair naturally",
+    "split ends treatment at home",
+    "hair care routine for mixed hair",
+    "how to reduce hair shedding",
+    "biotin for hair growth does it work",
+    "co-washing natural hair guide",
+    "how to revive dull lifeless hair",
+    "hair growth stages explained",
+    "why does my hair break off",
+    "Dominican blowout at home",
+    "ayurvedic hair care routine",
+    "how to seal moisture in natural hair",
 ]
 
 REDDIT_COMMUNITIES = ["Hair","Haircare","BlackHair","curlyhair","FancyFollicles","NaturalHair"]
@@ -233,8 +253,31 @@ def scrape_reddit_trends():
     return None
 
 
+def _get_recent_topics(limit=10):
+    """Get recently used topics from DB to avoid repeats."""
+    try:
+        import sqlite3
+        db = sqlite3.connect(BLOG_DB)
+        rows = db.execute("SELECT title FROM posts ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
+        db.close()
+        return [r[0].lower() for r in rows]
+    except:
+        return []
+
+def _topic_is_duplicate(topic, recent_topics):
+    """Check if topic is too similar to recent ones."""
+    topic_words = set(topic.lower().split())
+    for recent in recent_topics:
+        recent_words = set(recent.lower().split())
+        overlap = len(topic_words & recent_words)
+        if overlap >= 3:
+            return True
+    return False
+
 def get_todays_topic():
     day = datetime.datetime.now().timetuple().tm_yday
+    recent_topics = _get_recent_topics(10)
+
     all_scrapers = [
         ("Weibo",       scrape_weibo_trends),
         ("Xiaohongshu", scrape_xiaohongshu_trends),
@@ -248,11 +291,19 @@ def get_todays_topic():
         try:
             trend = scraper()
             if trend and len(trend) > 5:
+                if _topic_is_duplicate(trend, recent_topics):
+                    print(f"{name} trend too similar to recent post — skipping: {trend}")
+                    continue
                 print(f"Topic sourced from {name}: {trend}")
                 return trend
         except Exception as e:
             print(f"{name} error: {e}")
-    topic = SEED_TOPICS[day % len(SEED_TOPICS)]
+
+    # Pick a seed topic not used recently
+    available = [t for t in SEED_TOPICS if not _topic_is_duplicate(t, recent_topics)]
+    if not available:
+        available = SEED_TOPICS  # all used, reset
+    topic = random.choice(available)
     print(f"Using seed topic: {topic}")
     return topic
 
@@ -335,7 +386,7 @@ def parse_content(raw):
     }
 
 
-BLOG_DB = "/tmp/srd_blog.db"
+BLOG_DB = "/data/srd_blog.db"
 
 def _init_blog_db():
     import sqlite3
