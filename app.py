@@ -2376,6 +2376,7 @@ body{{font-family:Inter,sans-serif;background:#f0ebe8;color:#0d0906;min-height:1
   font-style:normal;
   color:var(--color-foreground);
   white-space:nowrap;flex-shrink:0;
+  padding-left:0;
 }}
 .header-logo:hover{{text-decoration:none;color:var(--color-foreground);}}
 .header-logo__image-container,.header-logo__image{{display:none;}}
@@ -2455,7 +2456,7 @@ header-actions{{
 /* ── hamburger ── */
 .header__icon--menu{{
   display:none;background:none;border:none;cursor:pointer;
-  color:var(--color-foreground);padding:var(--padding-lg);
+  color:var(--color-foreground);padding:var(--padding-lg) var(--padding-lg) var(--padding-lg) 0;
   align-items:center;justify-content:center;height:var(--header-height);
 }}
 .header__icon--menu svg{{width:var(--icon-size-sm);height:var(--icon-size-sm);display:block;}}
