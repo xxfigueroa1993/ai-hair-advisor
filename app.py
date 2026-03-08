@@ -1987,22 +1987,40 @@ def reset_password():
 # ── CONTENT ENGINE SCHEDULER (3x daily: 9am, 2pm, 7pm UTC) ──────────────────
 def _start_content_scheduler():
     import time as _t
-    # Run hours UTC: 9, 14, 19
-    RUN_HOURS = {9, 14, 19}
-    _fired = set()  # track which hours we've fired today
+
+    def _pick_todays_times():
+        """Pick 3 random run times per day, seeded by date so consistent within the day."""
+        import random as _r
+        today = datetime.datetime.utcnow().date()
+        seed = int(today.strftime("%Y%m%d"))
+        rng = _r.Random(seed)
+        # Morning 7-11, Afternoon 12-17, Evening 18-23
+        windows = [(7,11),(12,17),(18,23)]
+        times = set()
+        for lo, hi in windows:
+            h = rng.randint(lo, hi)
+            m = rng.randint(0, 59)
+            times.add((h, m))
+        return times
+
+    _fired = set()
+    _todays_times = _pick_todays_times()
+    print(f"✅ Content engine scheduler started — today\'s run times (UTC): {sorted(_todays_times)}")
 
     def scheduler():
+        nonlocal _fired, _todays_times
         while True:
             now = datetime.datetime.utcnow()
-            key = (now.date(), now.hour)
-            if now.hour in RUN_HOURS and now.minute == 0 and key not in _fired:
+            today = now.date()
+            # Refresh times at midnight
+            if not any(k[0] == today for k in _fired | {(today, 0)}):
+                _todays_times = _pick_todays_times()
+                _fired = set()
+                print(f"⏰ New day — today\'s run times (UTC): {sorted(_todays_times)}")
+            key = (today, now.hour, now.minute)
+            if (now.hour, now.minute) in _todays_times and key not in _fired:
                 _fired.add(key)
-                # Prune old keys (keep only today)
-                today = now.date()
-                for k in list(_fired):
-                    if k[0] != today:
-                        _fired.discard(k)
-                print(f"⏰ Content engine trigger at {now.hour}:00 UTC...")
+                print(f"⏰ Content engine trigger at {now.hour}:{now.minute:02d} UTC...")
                 try:
                     from content_engine import run_engine
                     run_engine()
@@ -2012,34 +2030,68 @@ def _start_content_scheduler():
 
     t = threading.Thread(target=scheduler, daemon=True)
     t.start()
-    print("✅ Content engine scheduler started (runs at 9am, 2pm, 7pm UTC)")
 
 _start_content_scheduler()
 
 
 
+# ── BLOG DATABASE (SQLite — persists across restarts) ─────────────────────────
+BLOG_DB = "/tmp/srd_blog.db"
+
+def _init_blog_db():
+    db = sqlite3.connect(BLOG_DB)
+    db.execute("""CREATE TABLE IF NOT EXISTS posts (
+        handle TEXT PRIMARY KEY,
+        title TEXT,
+        html TEXT,
+        meta TEXT,
+        chinese_title TEXT,
+        chinese_summary TEXT,
+        date TEXT
+    )""")
+    db.commit()
+    db.close()
+
+_init_blog_db()
+
+def blog_save_post(post):
+    db = sqlite3.connect(BLOG_DB)
+    db.execute("""INSERT OR REPLACE INTO posts
+        (handle, title, html, meta, chinese_title, chinese_summary, date)
+        VALUES (?,?,?,?,?,?,?)""",
+        (post.get("handle"), post.get("title"), post.get("html"),
+         post.get("meta",""), post.get("chinese_title",""),
+         post.get("chinese_summary",""), post.get("date","")))
+    db.commit()
+    db.close()
+
+def blog_get_index(limit=90):
+    db = sqlite3.connect(BLOG_DB)
+    rows = db.execute("SELECT handle, title, meta, date FROM posts ORDER BY date DESC LIMIT ?", (limit,)).fetchall()
+    db.close()
+    return [{"handle":r[0],"title":r[1],"meta":r[2],"date":r[3]} for r in rows]
+
+def blog_get_post(handle):
+    db = sqlite3.connect(BLOG_DB)
+    row = db.execute("SELECT handle, title, html, meta, chinese_title, chinese_summary, date FROM posts WHERE handle=?", (handle,)).fetchone()
+    db.close()
+    if not row: return None
+    return {"handle":row[0],"title":row[1],"html":row[2],"meta":row[3],
+            "chinese_title":row[4],"chinese_summary":row[5],"date":row[6]}
+
 # ── BLOG API ENDPOINTS (for auto-engine to fetch) ────────────────────────────
 @app.route("/api/blog-posts", methods=["GET"])
 def api_blog_posts():
     """Return list of all blog posts as JSON."""
-    BLOG_DIR = "/tmp/srd_blog"
-    try:
-        with open(f"{BLOG_DIR}/index.json","r") as f:
-            posts = json.load(f)
-    except:
-        posts = []
-    return jsonify(posts)
+    return jsonify(blog_get_index())
 
 @app.route("/api/blog-post/<handle>", methods=["GET"])
 def api_blog_post(handle):
     """Return a single blog post as JSON."""
-    BLOG_DIR = "/tmp/srd_blog"
-    try:
-        with open(f"{BLOG_DIR}/{handle}.json","r") as f:
-            post = json.load(f)
+    post = blog_get_post(handle)
+    if post:
         return jsonify(post)
-    except:
-        return jsonify({"error": "not found"}), 404
+    return jsonify({"error": "not found"}), 404
 
 
 # ── PUBLIC BLOG ───────────────────────────────────────────────────
