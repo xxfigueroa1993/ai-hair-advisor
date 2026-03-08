@@ -349,13 +349,13 @@ Format the blog post in clean HTML (body content only). Start with <h1> for the 
     with urllib.request.urlopen(req, timeout=30) as resp:
         result = json.loads(resp.read().decode("utf-8"))
         raw = result["content"][0]["text"].strip()
-        # Strip markdown code fences if present
-        if raw.startswith("```html"):
-            raw = raw[7:]
-        if raw.startswith("```"):
-            raw = raw[3:]
-        if raw.endswith("```"):
-            raw = raw[:-3]
+        import re as _re
+        raw = _re.sub(r"^```[a-zA-Z]*", "", raw)
+        raw = _re.sub(r"```$", "", raw)
+        raw = raw.rstrip()
+        while raw.endswith("---") or raw.endswith("**") or raw.endswith("```"):
+            raw = raw[:-3].rstrip()
+        raw = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", raw)
         return raw.strip()
 
 
