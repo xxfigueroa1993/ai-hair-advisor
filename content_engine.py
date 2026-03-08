@@ -348,7 +348,15 @@ Format the blog post in clean HTML (body content only). Start with <h1> for the 
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         result = json.loads(resp.read().decode("utf-8"))
-        return result["content"][0]["text"].strip()
+        raw = result["content"][0]["text"].strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```html"):
+            raw = raw[7:]
+        if raw.startswith("```"):
+            raw = raw[3:]
+        if raw.endswith("```"):
+            raw = raw[:-3]
+        return raw.strip()
 
 
 def parse_content(raw):
