@@ -2106,9 +2106,6 @@ def api_blog_post(handle):
 
 
 # ── PUBLIC BLOG ───────────────────────────────────────────────────
-import glob
-
-BLOG_DIR = "/tmp/srd_blog"
 
 @app.route("/api/hair-trends")
 def hair_trends():
