@@ -2639,45 +2639,55 @@ def blog_get_post(handle):
 
 @app.route("/blog-embed")
 def blog_embed():
-    posts = blog_get_index()
-    cards = ""
-    for p in posts:
-        date = p.get("date","")[:10]
-        cards += f"""
-        <article class="post-card">
-          <a href="https://hairtips.supportrd.com/blog/{p['handle']}" target="_blank">
-            <h2>{p['title']}</h2>
-            <p class="meta">{p.get('meta','')}</p>
-            <span class="date">{date}</span>
-          </a>
-        </article>"""
-    if not cards:
-        cards = '<p class="empty">No posts yet — check back soon.</p>'
-    return f"""<!DOCTYPE html>
+    return """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-*{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:'Jost',sans-serif;background:transparent;color:#0d0906}}
-.post-card{{background:#fff;border-radius:16px;margin-bottom:20px;transition:transform 0.2s;box-shadow:0 2px 12px rgba(0,0,0,0.06);border:1px solid rgba(193,163,162,0.12)}}
-.post-card:hover{{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,0.10)}}
-.post-card a{{display:block;padding:28px 32px;text-decoration:none;color:inherit}}
-.post-card h2{{font-family:'Cormorant Garamond',serif;font-size:24px;color:#0d0906;margin-bottom:8px;line-height:1.3}}
-.post-card .meta{{font-size:13px;color:rgba(0,0,0,0.45);line-height:1.6;margin-bottom:12px}}
-.post-card .date{{font-size:11px;color:#c1a3a2;letter-spacing:0.08em}}
-.empty{{text-align:center;color:rgba(0,0,0,0.3);padding:60px;font-size:14px}}
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Jost', sans-serif; background: #f9f7f5; color: #0d0906; padding: 24px 20px; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+  .card { background: #fff; border-radius: 16px; border: 1px solid rgba(193,163,162,0.2); box-shadow: 0 2px 12px rgba(0,0,0,0.05); transition: transform 0.2s, box-shadow 0.2s; }
+  .card:hover { transform: translateY(-3px); box-shadow: 0 8px 28px rgba(0,0,0,0.10); }
+  .card a { display: block; padding: 28px; text-decoration: none; color: inherit; }
+  .card h2 { font-family: 'Cormorant Garamond', serif; font-size: 22px; font-weight: 600; line-height: 1.3; color: #0d0906; margin-bottom: 10px; }
+  .card p { font-size: 13px; color: rgba(0,0,0,0.5); line-height: 1.6; margin-bottom: 14px; }
+  .card span { font-size: 11px; color: #c1a3a2; letter-spacing: 0.08em; text-transform: uppercase; }
+  .loading { text-align: center; padding: 60px 20px; color: rgba(0,0,0,0.3); font-size: 14px; }
+  .err { text-align: center; padding: 40px; color: #c1a3a2; font-size: 13px; }
 </style>
 </head>
 <body>
-{cards}
+<div id="grid"><div class="loading">Loading articles\u2026</div></div>
 <script>
-function sendHeight(){{window.parent.postMessage({{height:document.body.scrollHeight}},'*');}}
-window.onload=sendHeight;window.onresize=sendHeight;
+(async function() {
+  try {
+    const res = await fetch('https://ai-hair-advisor.onrender.com/api/blog-posts');
+    const posts = await res.json();
+    const grid = document.getElementById('grid');
+    if (!posts || posts.length === 0) {
+      grid.innerHTML = '<div class="err">No posts yet \u2014 check back soon.</div>';
+    } else {
+      grid.innerHTML = posts.map(function(p) {
+        var date = (p.date || '').slice(0, 10);
+        return '<div class="card"><a href="https://hairtips.supportrd.com/blog/' + p.handle + '" target="_blank"><h2>' + p.title + '</h2><p>' + (p.meta || '') + '</p><span>' + date + '</span></a></div>';
+      }).join('');
+    }
+  } catch(e) {
+    document.getElementById('grid').innerHTML = '<div class="err">Could not load articles.</div>';
+  }
+  setTimeout(function() {
+    window.parent.postMessage({ height: document.body.scrollHeight }, '*');
+  }, 400);
+})();
+window.addEventListener('resize', function() {
+  window.parent.postMessage({ height: document.body.scrollHeight }, '*');
+});
 </script>
-</body></html>"""
+</body>
+</html>"""
 
 @app.route("/blog")
 def blog_index():
