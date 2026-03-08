@@ -335,32 +335,36 @@ def parse_content(raw):
     }
 
 
-BLOG_DIR = "/tmp/srd_blog"
+BLOG_DB = "/tmp/srd_blog.db"
+
+def _init_blog_db():
+    import sqlite3
+    db = sqlite3.connect(BLOG_DB)
+    db.execute("""CREATE TABLE IF NOT EXISTS posts (
+        handle TEXT PRIMARY KEY,
+        title TEXT,
+        html TEXT,
+        meta TEXT,
+        chinese_title TEXT,
+        chinese_summary TEXT,
+        date TEXT
+    )""")
+    db.commit()
+    db.close()
 
 def publish_to_server(content):
-    os.makedirs(BLOG_DIR, exist_ok=True)
-    post = {
-        "title": content["title"], "handle": content["handle"],
-        "html": content["html"], "meta": content["meta"],
-        "chinese_title": content.get("chinese_title",""),
-        "chinese_summary": content.get("chinese_summary",""),
-        "date": datetime.datetime.utcnow().isoformat(),
-    }
-    with open(f"{BLOG_DIR}/{content['handle']}.json", "w") as f:
-        json.dump(post, f)
-
-    index_path = f"{BLOG_DIR}/index.json"
-    try:
-        with open(index_path, "r") as f:
-            index = json.load(f)
-    except:
-        index = []
-
-    if content["handle"] not in [p["handle"] for p in index]:
-        index.insert(0, {"title":content["title"],"handle":content["handle"],"meta":content["meta"],"date":post["date"]})
-    index = index[:90]
-    with open(index_path, "w") as f:
-        json.dump(index, f)
+    import sqlite3
+    _init_blog_db()
+    post_date = datetime.datetime.utcnow().isoformat()
+    db = sqlite3.connect(BLOG_DB)
+    db.execute("""INSERT OR REPLACE INTO posts
+        (handle, title, html, meta, chinese_title, chinese_summary, date)
+        VALUES (?,?,?,?,?,?,?)""",
+        (content["handle"], content["title"], content["html"],
+         content.get("meta",""), content.get("chinese_title",""),
+         content.get("chinese_summary",""), post_date))
+    db.commit()
+    db.close()
 
     url = f"https://ai-hair-advisor.onrender.com/blog/{content['handle']}"
     print(f"Published: {url}")
