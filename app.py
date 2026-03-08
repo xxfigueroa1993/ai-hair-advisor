@@ -2360,7 +2360,7 @@ body{font-family:Inter,sans-serif;background:#f0ebe8;color:#0d0906;min-height:10
   align-items:stretch;
   max-width:var(--page-width);
   margin:0 auto;
-  padding:0 32px;
+  padding:0 32px 0 0;
   height:var(--header-height);
 }
 
