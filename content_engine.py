@@ -332,7 +332,7 @@ REQUIREMENTS:
 - Chinese title (Simplified Chinese, for trend monitoring) labeled "CHINESE_TITLE:"
 - Chinese summary (150 chars Simplified Chinese) labeled "CHINESE_SUMMARY:"
 
-Format the blog post in clean HTML (body content only). Start with <h1> for the title."""
+CRITICAL: Output raw HTML only. No markdown. No code fences. No ``` or --- or **. Start directly with <h1> for the title. End with the last HTML tag."""
 
     payload = json.dumps({
         "model": "claude-haiku-4-5-20251001",
