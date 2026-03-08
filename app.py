@@ -1879,6 +1879,17 @@ def analytics():
 
 <h2>Recent Sessions (last 50)</h2>
 <table><tr><th>Time</th><th>Lang</th><th>Message</th><th>Product</th><th>Concern</th></tr>{rows}</table>
+<script>
+fetch("https://supportrd.com/cart.js")
+  .then(function(r){{return r.json();}})
+  .then(function(d){{
+    var count = d.item_count;
+    if(count > 0){{
+      var el = document.getElementById("cart-count");
+      if(el) el.textContent = count;
+    }}
+  }}).catch(function(){{}});
+</script>
 </body></html>"""
 
 
@@ -2280,9 +2291,14 @@ def blog_index():
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906;min-height:100vh}}
 header{{background:#fff;border-bottom:1px solid rgba(193,163,162,0.2)}}
-.site-nav{{display:flex;justify-content:center;gap:28px;padding:16px 24px;border-bottom:1px solid rgba(193,163,162,0.15);flex-wrap:wrap}}
+.site-nav{{display:flex;justify-content:space-between;align-items:center;padding:14px 32px;border-bottom:1px solid rgba(193,163,162,0.15)}}
+.nav-left{{display:flex;gap:24px;flex-wrap:wrap;align-items:center}}
+.nav-right{{display:flex;gap:18px;align-items:center;position:relative}}
 .site-nav a{{font-family:'Jost',sans-serif;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#0d0906;text-decoration:none;opacity:0.6;transition:opacity 0.2s}}
 .site-nav a:hover,.site-nav a.active{{opacity:1;color:#c1a3a2}}
+.nav-right a{{opacity:0.6;display:flex;align-items:center;position:relative}}
+.nav-right a:hover{{opacity:1}}
+.cart-count{{position:absolute;top:-6px;right:-8px;background:#c1a3a2;color:#fff;font-size:9px;width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:'Jost',sans-serif}}
 .header-brand{{text-align:center;padding:40px 24px 32px}}
 header h1{{font-family:'Cormorant Garamond',serif;font-size:42px;font-style:italic;color:#0d0906}}
 header p{{font-size:13px;color:rgba(0,0,0,0.4);margin-top:8px;letter-spacing:0.08em}}
@@ -2304,12 +2320,26 @@ footer a{{color:#c1a3a2;text-decoration:none}}
 <body>
 <header>
   <nav class="site-nav">
-    <a href="https://supportrd.com">Home</a>
-    <a href="https://supportrd.com/collections/all">Catalog</a>
-    <a href="https://supportrd.com/pages/contact">Contact</a>
-    <a href="https://supportrd.com/pages/hair-dashboard">Dashboard</a>
-    <a href="https://supportrd.com/pages/custom-order">Custom Order</a>
-    <a href="https://hairtips.supportrd.com/blog" class="active">Blog</a>
+    <div class="nav-left">
+      <a href="https://supportrd.com">Home</a>
+      <a href="https://supportrd.com/collections/all">Catalog</a>
+      <a href="https://supportrd.com/pages/contact">Contact</a>
+      <a href="https://supportrd.com/pages/hair-dashboard">Dashboard</a>
+      <a href="https://supportrd.com/pages/custom-order">Custom Order</a>
+      <a href="https://hairtips.supportrd.com/blog" class="active">Blog</a>
+    </div>
+    <div class="nav-right">
+      <a href="https://supportrd.com/search" title="Search">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </a>
+      <a href="https://supportrd.com/account/login" title="Sign In">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </a>
+      <a href="https://supportrd.com/cart" title="Cart" class="cart-link">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+        <span class="cart-count" id="cart-count"></span>
+      </a>
+    </div>
   </nav>
   <div class="header-brand">
     <h1>Hair Care Journal</h1>
