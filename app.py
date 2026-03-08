@@ -2280,539 +2280,285 @@ SRD_NAV_CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906;min-height:100vh}
 
-/* ── CSS variables from theme files ── */
 :root{
   --color-foreground:#0d0906;
   --color-background:#ffffff;
   --color-border:rgba(13,9,6,0.08);
-  --color-accent:#c1a3a2;
   --page-width:1200px;
-  --header-padding:32px;
-  --header-height:64px;
-  --drawer-width:100%;
-  --drawer-max-width:85vw;
-  --drawer-animation-speed:0.3s;
-  --icon-size-xs:20px;
-  --padding-lg:16px;
-  --gap-md:12px;
+  --header-height:56px;
   --gap-xl:32px;
-  /* menu-font-styles.liquid: type_font_primary_link default='heading', type_font_primary_size default='1rem', type_case_primary_link default='none' */
+  --gap-md:12px;
+  --padding-lg:16px;
   --menu-top-level-font-family:'Jost',sans-serif;
-  --menu-top-level-font-size:1rem;
-  --menu-top-level-font-size-desktop:1rem;
-  --menu-top-level-font-weight:400;
+  --menu-top-level-font-size-desktop:0.75rem;
+  --menu-top-level-font-weight:700;
   --menu-top-level-font-style:normal;
-  --menu-top-level-font-case:none;
+  --menu-top-level-font-case:uppercase;
   --menu-top-level-font-color:#0d0906;
   --menu-top-level-font-color-rgb:13,9,6;
-  --menu-top-level-font-line-height:1.2;
-  /* drawer uses --menu-font-2xl--size */
-  --menu-top-level-font-size-drawer:1.5rem;
+  --menu-top-level-font-line-height:1;
+  --menu-top-level-letter-spacing:0.08em;
   --menu-horizontal-gap:var(--gap-xl,32px);
-  --opacity-subdued-text:0.5;
+  --opacity-subdued-text:0.45;
+  --drawer-animation-speed:0.3s;
   --layer-menu-drawer:9999;
 }
 
-/* ── #header-component — sticky wrapper (header-component.js) ── */
 #header-component{
   position:sticky;top:0;z-index:1000;
-  background:var(--color-background);
+  background:#fff;
   border-bottom:1px solid var(--color-border);
 }
 
-/* ── .header inner row — header-row.liquid: 3-column grid ── */
 .header{
   display:grid;
   grid-template-columns:1fr auto 1fr;
   align-items:stretch;
-  max-width:var(--page-width,1200px);
+  max-width:var(--page-width);
   margin:0 auto;
-  padding:0 var(--header-padding,32px);
-  height:var(--header-height,64px);
+  padding:0 32px;
+  height:var(--header-height);
 }
 
-/* ── header__column — from header-row.liquid ── */
 .header__column{display:flex;align-items:center;}
-.header__column--left{justify-content:flex-start;gap:0;}
+.header__column--left{justify-content:flex-start;}
 .header__column--center{justify-content:center;height:100%;}
 .header__column--right{justify-content:flex-end;}
 
-/* ── header-logo — logo.liquid ── */
+/* Logo = text "SupportRD.com" — bold, small, from screenshot */
 .header-logo{
-  display:flex;height:100%;align-items:center;justify-content:center;
+  display:flex;height:100%;align-items:center;
   text-decoration:none;
-  font-size:1rem;
   font-family:'Jost',sans-serif;
-  font-weight:600;
-  font-style:normal;
-  color:var(--color-foreground);
+  font-size:0.875rem;
+  font-weight:700;
+  color:#0d0906;
+  white-space:nowrap;
+  letter-spacing:0.02em;
   flex-shrink:0;
 }
-.header-logo:hover{text-decoration:none;}
-.header-logo__image-container{display:flex;align-items:center;}
-/* logo.liquid: height from settings.logo_height / settings.logo_height_mobile via CSS vars */
-.header-logo__image{
-  object-fit:contain;
-  height:40px;
-  width:auto;
-  max-width:180px;
-}
-@media screen and (max-width:749px){
-  .header-logo{padding:0;}
-  .header-logo__image{height:32px;}
-}
+.header-logo:hover{text-decoration:none;color:#0d0906;}
+/* The store has no logo image — logo.liquid falls back to shop.name as text */
+.header-logo__image-container{display:none;}
+.header-logo__image{display:none;}
 
-/* ── header-menu / menu-list — from header-menu block + menu-list stylesheet ── */
+/* nav */
 .header-menu{height:100%;display:flex;align-items:center;}
 .header-menu__inner{height:100%;display:flex;align-items:center;}
-
-/* nav.menu-list — the <nav> element */
-nav.menu-list{
-  display:flex;
-  height:100%;
-  --menu-horizontal-gap:var(--gap-xl,32px);
+nav.menu-list{display:flex;height:100%;}
+.overflow-menu,.menu-list__list{
+  display:flex;list-style:none;margin:0;padding:0;height:100%;gap:0;
 }
-
-/* .overflow-menu (the overflow-list component) — treated as ul */
-.overflow-menu{
-  display:flex;
-  height:100%;
-  list-style:none;
-  margin:0;
-  padding:var(--focus-outline-size,4px);
-  margin:calc(-1 * var(--focus-outline-size,4px));
-  background-color:transparent;
-  gap:0;
-  margin-inline:calc(-1 * var(--menu-horizontal-gap,32px) / 2);
-}
-
-/* menu-list__list — the actual <ul> of nav items */
-.menu-list__list{
-  display:flex;
-  list-style:none;
-  margin:0;padding:0;
-  height:100%;
-  justify-content:var(--grid-area-alignment,center);
-}
-
-/* menu-list__list-item — from header-menu block stylesheet */
 .menu-list__list-item{
-  flex-shrink:0;
-  white-space:nowrap;
-  display:flex;
-  align-items:center;
-  height:100%;
-  flex-direction:column;
-  position:relative;
+  flex-shrink:0;white-space:nowrap;
+  display:flex;align-items:center;height:100%;
+  flex-direction:column;position:relative;
 }
-/* ::after creates the hover zone below the link (--header-padding tall) */
-.menu-list__list-item:not([slot='overflow'])::after{
-  content:'';
-  width:100%;
-  height:var(--header-padding,16px);
-  margin-bottom:calc(-1 * var(--header-padding,16px));
+.menu-list__list-item::after{
+  content:'';width:100%;height:8px;margin-bottom:-8px;
 }
-
-/* menu-list__link — from header-menu block stylesheet */
 .menu-list__link{
-  font-family:var(--menu-top-level-font-family,'Jost',sans-serif);
-  font-style:var(--menu-top-level-font-style,normal);
-  font-weight:var(--menu-top-level-font-weight,400);
-  font-size:var(--menu-top-level-font-size,1rem);
-  line-height:var(--menu-top-level-font-line-height,1.2);
-  text-transform:var(--menu-top-level-font-case,none);
-  color:var(--menu-top-level-font-color,#0d0906);
+  font-family:var(--menu-top-level-font-family);
+  font-weight:var(--menu-top-level-font-weight);
+  font-size:var(--menu-top-level-font-size-desktop);
+  font-style:var(--menu-top-level-font-style);
+  text-transform:var(--menu-top-level-font-case);
+  letter-spacing:var(--menu-top-level-letter-spacing);
+  color:var(--menu-top-level-font-color);
   text-decoration:none;
-  display:flex;
-  flex-direction:column;
-  justify-content:center;
-  cursor:pointer;
-  height:100%;
-  margin-block:0;
-  transition:color 0.2s;
+  display:flex;flex-direction:column;justify-content:center;
+  cursor:pointer;height:100%;margin-block:0;
+  transition:opacity 0.15s;
 }
-@media screen and (min-width:750px){
-  .menu-list__link{font-size:var(--menu-top-level-font-size-desktop,1rem);}
+.menu-list__link:hover,.menu-list__link:focus{color:var(--menu-top-level-font-color);}
+.menu-list__list:has(.menu-list__list-item:hover) .menu-list__link{
+  color:rgba(var(--menu-top-level-font-color-rgb),0.4);
 }
-.menu-list__link:hover,.menu-list__link:focus{
-  color:var(--menu-top-level-font-color,#0d0906);
+.menu-list__list:has(.menu-list__list-item:hover) .menu-list__list-item:hover .menu-list__link{
+  color:var(--menu-top-level-font-color);
 }
-
-/* subdued hover effect — from header-menu block stylesheet :has() rules */
-.menu-list__list:has(.menu-list__list-item:hover) .menu-list__link,
-.menu-list__list:has(.menu-list__list-item:focus-within) .menu-list__link{
-  color:rgba(var(--menu-top-level-font-color-rgb,13,9,6),var(--opacity-subdued-text,0.5));
-}
-.menu-list__list:has(.menu-list__list-item:hover) .menu-list__list-item:hover .menu-list__link,
-.menu-list__list:has(.menu-list__list-item:focus-within) .menu-list__list-item:focus-within .menu-list__link{
-  color:var(--menu-top-level-font-color,#0d0906);
-}
-
-/* menu-list__link-title padding — from header-menu block stylesheet */
 .menu-list__link-title{
-  padding-inline:calc(var(--gap-xl,32px) / 2);
+  padding-inline:calc(var(--menu-horizontal-gap) / 2);
 }
-
-/* active state — from header-menu block: link.active → menu-list__link--active */
+/* active: dark underline (from screenshot — not pink, it's dark) */
 .menu-list__link--active{
-  color:var(--color-accent,#c1a3a2) !important;
-  box-shadow:inset 0 -2px 0 var(--color-accent,#c1a3a2);
+  color:var(--color-foreground) !important;
+  box-shadow:inset 0 -2px 0 var(--color-foreground);
   opacity:1 !important;
 }
 
-/* ── header-actions — header-actions.liquid stylesheet ── */
+/* header-actions */
 header-actions{
   display:flex;
-  /* margin-inline-start: calc(var(--gap-md) * -1) */
-  margin-inline-start:calc(-1 * var(--gap-md,12px));
+  margin-inline-start:calc(-1 * var(--gap-md));
 }
-
-/* .header-actions__action — the individual icon buttons/links */
 .header-actions__action{
   display:flex;align-items:center;justify-content:center;
-  color:var(--color-foreground);
-  text-decoration:none;
-  padding:0 10px;
-  height:var(--header-height,64px);
-  position:relative;
-  transition:opacity 0.2s;
-  background:none;border:none;cursor:pointer;
-  opacity:0.65;
+  color:#0d0906;text-decoration:none;
+  padding:0 10px;height:var(--header-height);
+  position:relative;background:none;border:none;cursor:pointer;
 }
-.header-actions__action:hover{opacity:1;}
 .header-actions__action svg{display:block;}
-
-/* account icon exact size from header-actions.liquid */
 .account-button__icon{width:15px;height:17px;}
 
-/* cart bubble — from header-actions.liquid stylesheet */
+/* cart bubble — RED from screenshot */
 .header-actions__cart-icon{
-  --cart-bubble-size:20px;
-  --cart-bubble-top:4.5px;
-  --cart-bubble-right:2.5px;
+  --cart-bubble-size:18px;
+  --cart-bubble-top:8px;
+  --cart-bubble-right:3px;
   position:relative;
 }
 .cart-bubble{
   position:absolute;
-  width:var(--cart-bubble-size,20px);
-  height:var(--cart-bubble-size,20px);
-  top:var(--cart-bubble-top,4.5px);
-  right:var(--cart-bubble-right,2.5px);
-  background:#0d0906;
-  color:#fff;
-  font-size:9px;
+  width:var(--cart-bubble-size);height:var(--cart-bubble-size);
+  top:var(--cart-bubble-top);right:var(--cart-bubble-right);
+  background:#c0392b;color:#fff;
+  font-size:9px;font-weight:700;
   border-radius:50%;
-  display:none;
-  align-items:center;justify-content:center;
-  padding:0 3px;line-height:1;
+  display:none;align-items:center;justify-content:center;
+  line-height:1;
 }
 .cart-bubble.visible{display:flex;}
 
-/* ── header-drawer trigger (hamburger) — header-drawer.liquid ── */
-/* Uses <details>/<summary> in real theme. We replicate with a button. */
+/* hamburger */
 .header__icon--menu{
-  display:none;
-  background:none;border:none;cursor:pointer;
-  color:var(--color-foreground);
-  padding:var(--padding-lg,16px);
+  display:none;background:none;border:none;cursor:pointer;
+  color:#0d0906;padding:16px;
   align-items:center;justify-content:center;
-  height:var(--header-height,64px);
+  height:var(--header-height);
 }
-.header__icon--menu svg{
-  width:var(--icon-size-xs,20px);
-  height:var(--icon-size-xs,20px);
-  display:block;
-}
+.header__icon--menu svg{width:20px;height:20px;display:block;}
 
-/* ── mobile breakpoint (max 749px) — matches theme's 750px breakpoint ── */
 @media screen and (max-width:749px){
-  .header{
-    grid-template-columns:auto 1fr auto;
-    padding:0 16px;
-  }
+  .header{grid-template-columns:auto 1fr auto;padding:0 16px;}
   .header__column--center{display:none;}
   .header__icon--menu{display:flex;}
   header-actions{justify-self:flex-end;}
 }
 
-/* ── menu-drawer backdrop — header-drawer.liquid: .menu-drawer__backdrop ── */
+/* drawer */
 .menu-drawer__backdrop{
-  position:fixed;top:0;left:0;
-  width:100vw;height:100dvh;
+  position:fixed;top:0;left:0;width:100vw;height:100dvh;
   backdrop-filter:brightness(0.75);
-  z-index:calc(var(--layer-menu-drawer,9999) - 1);
-  opacity:0;
-  transition:opacity var(--drawer-animation-speed,0.3s) ease;
-  pointer-events:none;
+  z-index:9998;opacity:0;
+  transition:opacity 0.3s ease;pointer-events:none;
 }
 .menu-drawer__backdrop.open{opacity:1;pointer-events:auto;}
-
-/* ── menu-drawer panel — header-drawer.liquid: .menu-drawer ── */
 .menu-drawer{
-  position:fixed;
-  transform:translateX(-100%);
-  visibility:hidden;
-  top:0;left:0;
-  height:100dvh;
-  width:25rem;
-  max-width:var(--drawer-max-width,85vw);
-  z-index:var(--layer-menu-drawer,9999);
-  background-color:var(--color-background,#fff);
-  overflow-y:auto;
+  position:fixed;transform:translateX(-100%);visibility:hidden;
+  top:0;left:0;height:100dvh;width:25rem;max-width:85vw;
+  z-index:9999;background:#fff;overflow-y:auto;
   display:flex;flex-direction:column;
-  border-right:1px solid var(--color-border);
+  border-right:1px solid rgba(13,9,6,0.08);
   box-shadow:4px 0 24px rgba(0,0,0,0.12);
-  transition:transform var(--drawer-animation-speed,0.3s) ease,visibility var(--drawer-animation-speed,0.3s) ease;
+  transition:transform 0.3s ease,visibility 0.3s ease;
 }
-.menu-drawer.open{
-  transform:translateX(0);
-  visibility:visible;
-}
-
-/* close button — header-drawer.liquid: .menu-drawer__close-button */
+.menu-drawer.open{transform:translateX(0);visibility:visible;}
 .menu-drawer__close-button{
-  position:relative;right:auto;top:auto;
-  width:fit-content;height:fit-content;
-  color:inherit;
-  padding:var(--padding-lg,16px);
-  background:none;border:none;cursor:pointer;
-  align-self:flex-end;
-  display:flex;align-items:center;justify-content:center;
-  transition:opacity 0.2s;
+  align-self:flex-end;display:flex;align-items:center;justify-content:center;
+  padding:16px;background:none;border:none;cursor:pointer;
+  color:#0d0906;transition:opacity 0.2s;
 }
 .menu-drawer__close-button:hover{opacity:0.6;}
-.menu-drawer__close-button svg{width:var(--icon-size-xs,20px);height:var(--icon-size-xs,20px);}
-
-/* nav inside drawer */
+.menu-drawer__close-button svg{width:20px;height:20px;}
 .menu-drawer__navigation{padding:0;}
-
-/* drawer menu list — header-drawer.liquid: .menu-drawer__menu */
-.menu-drawer__menu{
-  list-style:none;
-  padding-inline:var(--padding-lg,16px);
-  margin:0;
-}
-.menu-drawer__menu.has-submenu{margin-block-end:0.5rem;}
-
-/* each list item */
+.menu-drawer__menu{list-style:none;padding-inline:16px;margin:0;}
 .menu-drawer__menu > .menu-drawer__list-item{
-  display:flex;
-  min-height:calc(2 * var(--padding-lg,16px) + var(--icon-size-xs,20px));
+  display:flex;min-height:52px;
 }
-
-/* main-list items — header-drawer.liquid: .menu-drawer__menu-item--mainlist */
-/* font from menu-font-styles.liquid with menu_type='drawer' → --menu-font-2xl--size */
 .menu-drawer__menu-item{
-  display:flex;
-  padding:2px 0;
-  position:relative;
-  text-decoration:none;
-  justify-content:space-between;
-  align-items:center;
-  width:100%;
+  display:flex;padding:2px 0;text-decoration:none;
+  justify-content:space-between;align-items:center;width:100%;
 }
 .menu-drawer__menu-item--mainlist{
-  min-height:calc(2 * var(--padding-lg,16px) + var(--icon-size-xs,20px));
-  font-family:var(--menu-top-level-font-family,'Jost',sans-serif);
-  font-style:var(--menu-top-level-font-style,normal);
-  font-weight:var(--menu-top-level-font-weight,400);
-  font-size:var(--menu-top-level-font-size-drawer,1.5rem);
-  line-height:1.2;
-  text-transform:var(--menu-top-level-font-case,none);
-  color:var(--menu-top-level-font-color,#0d0906);
-  text-decoration:none;
+  min-height:52px;
+  font-family:'Jost',sans-serif;font-weight:700;
+  font-size:1.25rem;text-transform:uppercase;
+  letter-spacing:0.06em;color:#0d0906;
 }
-.menu-drawer__menu-item--mainlist:hover{color:var(--menu-top-level-font-color,#0d0906);}
-.menu-drawer__menu-item--active{color:var(--color-accent,#c1a3a2) !important;}
+.menu-drawer__menu-item--mainlist:hover{opacity:0.6;}
+.menu-drawer__menu-item--active{opacity:0.5;}
 .menu-drawer__menu-item-text{overflow:hidden;text-overflow:ellipsis;}
 """
 
 SRD_NAV_HTML = """
-<!-- menu-drawer backdrop (header-drawer.liquid: .menu-drawer__backdrop) -->
 <div class="menu-drawer__backdrop" id="srd-backdrop" onclick="srdCloseDrawer()"></div>
-
-<!-- menu-drawer panel (header-drawer.liquid: .menu-drawer) -->
 <div class="menu-drawer" id="srd-drawer" role="dialog" aria-modal="true" aria-label="Menu">
-  <!-- close button (.menu-drawer__close-button) -->
   <button class="menu-drawer__close-button" onclick="srdCloseDrawer()" type="button" aria-label="Close menu">
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
       <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
     </svg>
   </button>
-  <!-- nav (.menu-drawer__navigation) with menu-font-styles drawer vars -->
   <nav class="menu-drawer__navigation" aria-label="Navigation">
     <ul class="menu-drawer__menu has-submenu" role="list">
-      <li class="menu-drawer__list-item">
-        <a href="https://supportrd.com" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist">
-          <span class="menu-drawer__menu-item-text">Home</span>
-        </a>
-      </li>
-      <li class="menu-drawer__list-item">
-        <a href="https://supportrd.com/collections/all" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist">
-          <span class="menu-drawer__menu-item-text">Catalog</span>
-        </a>
-      </li>
-      <li class="menu-drawer__list-item">
-        <a href="https://supportrd.com/pages/contact" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist">
-          <span class="menu-drawer__menu-item-text">Contact</span>
-        </a>
-      </li>
-      <li class="menu-drawer__list-item">
-        <a href="https://supportrd.com/pages/hair-dashboard" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist">
-          <span class="menu-drawer__menu-item-text">Dashboard</span>
-        </a>
-      </li>
-      <li class="menu-drawer__list-item">
-        <a href="https://supportrd.com/pages/custom-order" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist">
-          <span class="menu-drawer__menu-item-text">Custom Order</span>
-        </a>
-      </li>
-      <li class="menu-drawer__list-item">
-        <a href="https://hairtips.supportrd.com/blog" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist menu-drawer__menu-item--active">
-          <span class="menu-drawer__menu-item-text">Blog</span>
-        </a>
-      </li>
+      <li class="menu-drawer__list-item"><a href="https://supportrd.com" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist"><span class="menu-drawer__menu-item-text">Home</span></a></li>
+      <li class="menu-drawer__list-item"><a href="https://supportrd.com/collections/all" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist"><span class="menu-drawer__menu-item-text">Catalog</span></a></li>
+      <li class="menu-drawer__list-item"><a href="https://supportrd.com/pages/contact" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist"><span class="menu-drawer__menu-item-text">Contact</span></a></li>
+      <li class="menu-drawer__list-item"><a href="https://supportrd.com/pages/hair-dashboard" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist"><span class="menu-drawer__menu-item-text">Dashboard</span></a></li>
+      <li class="menu-drawer__list-item"><a href="https://supportrd.com/pages/custom-order" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist"><span class="menu-drawer__menu-item-text">Custom Order</span></a></li>
+      <li class="menu-drawer__list-item"><a href="https://hairtips.supportrd.com/blog" class="menu-drawer__menu-item menu-drawer__menu-item--mainlist menu-drawer__menu-item--active"><span class="menu-drawer__menu-item-text">Blog</span></a></li>
     </ul>
   </nav>
 </div>
-
-<!-- header-component (header-row.liquid: 3-column grid) -->
 <div id="header-component">
   <div class="header" role="banner">
-
-    <!-- LEFT: hamburger (header-drawer.liquid) + logo (logo.liquid) -->
     <div class="header__column header__column--left" data-testid="header-top-left">
-      <!-- hamburger: header-drawer.liquid summary.header__icon--menu -->
-      <button
-        class="header__icon header__icon--menu"
-        onclick="srdOpenDrawer()"
-        aria-label="Menu"
-        aria-expanded="false"
-        aria-controls="srd-drawer"
-        type="button"
-      >
-        <!-- icon-menu.svg -->
+      <button class="header__icon header__icon--menu" onclick="srdOpenDrawer()" aria-label="Menu" type="button">
         <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
           <line x1="2" y1="5" x2="18" y2="5"/>
           <line x1="2" y1="10" x2="18" y2="10"/>
           <line x1="2" y1="15" x2="18" y2="15"/>
         </svg>
       </button>
-      <!-- logo: logo.liquid a.header-logo > span.header-logo__image-container > img.header-logo__image -->
+      <!-- logo.liquid text fallback: shop.name when no logo image set -->
       <a href="https://supportrd.com" class="header-logo" aria-label="SupportRD">
         <span class="header-logo__image-container header-logo__image-container--original" data-testid="header-logo">
-          <img
-            src="https://cdn.shopify.com/s/files/1/0593/2715/2208/files/woman-waking-up.jpg?v=1771636828"
-            alt="SupportRD"
-            class="header-logo__image"
-          >
+          <img src="https://cdn.shopify.com/s/files/1/0593/2715/2208/files/woman-waking-up.jpg?v=1771636828" alt="SupportRD" class="header-logo__image">
         </span>
+        SupportRD.com
       </a>
     </div>
-
-    <!-- CENTER: desktop nav (header-menu block) -->
     <div class="header__column header__column--center" data-testid="header-top-center">
       <div class="header-menu">
         <div class="header-menu__inner">
-          <!-- nav.menu-list with menu-font-styles inline vars (menu_type='mega_menu') -->
           <nav class="menu-list" aria-label="Primary navigation">
-            <!-- overflow-list renders as ul.overflow-menu > li.menu-list__list-item -->
-            <ul class="overflow-menu menu-list__list" role="list" data-testid="header-menu-overflow-list">
-              <li class="menu-list__list-item" role="presentation">
-                <a href="https://supportrd.com" class="menu-list__link">
-                  <span class="menu-list__link-title">Home</span>
-                </a>
-              </li>
-              <li class="menu-list__list-item" role="presentation">
-                <a href="https://supportrd.com/collections/all" class="menu-list__link">
-                  <span class="menu-list__link-title">Catalog</span>
-                </a>
-              </li>
-              <li class="menu-list__list-item" role="presentation">
-                <a href="https://supportrd.com/pages/contact" class="menu-list__link">
-                  <span class="menu-list__link-title">Contact</span>
-                </a>
-              </li>
-              <li class="menu-list__list-item" role="presentation">
-                <a href="https://supportrd.com/pages/hair-dashboard" class="menu-list__link">
-                  <span class="menu-list__link-title">Dashboard</span>
-                </a>
-              </li>
-              <li class="menu-list__list-item" role="presentation">
-                <a href="https://supportrd.com/pages/custom-order" class="menu-list__link">
-                  <span class="menu-list__link-title">Custom Order</span>
-                </a>
-              </li>
-              <li class="menu-list__list-item" role="presentation">
-                <a href="https://hairtips.supportrd.com/blog" class="menu-list__link menu-list__link--active" aria-current="page">
-                  <span class="menu-list__link-title">Blog</span>
-                </a>
-              </li>
+            <ul class="overflow-menu menu-list__list" role="list">
+              <li class="menu-list__list-item" role="presentation"><a href="https://supportrd.com" class="menu-list__link"><span class="menu-list__link-title">Home</span></a></li>
+              <li class="menu-list__list-item" role="presentation"><a href="https://supportrd.com/collections/all" class="menu-list__link"><span class="menu-list__link-title">Catalog</span></a></li>
+              <li class="menu-list__list-item" role="presentation"><a href="https://supportrd.com/pages/contact" class="menu-list__link"><span class="menu-list__link-title">Contact</span></a></li>
+              <li class="menu-list__list-item" role="presentation"><a href="https://supportrd.com/pages/hair-dashboard" class="menu-list__link"><span class="menu-list__link-title">Dashboard</span></a></li>
+              <li class="menu-list__list-item" role="presentation"><a href="https://supportrd.com/pages/custom-order" class="menu-list__link"><span class="menu-list__link-title">Custom Order</span></a></li>
+              <li class="menu-list__list-item" role="presentation"><a href="https://hairtips.supportrd.com/blog" class="menu-list__link menu-list__link--active" aria-current="page"><span class="menu-list__link-title">Blog</span></a></li>
             </ul>
           </nav>
         </div>
       </div>
     </div>
-
-    <!-- RIGHT: header-actions (header-actions.liquid) -->
     <div class="header__column header__column--right" data-testid="header-top-right">
       <header-actions>
-        <!-- search -->
         <a href="https://supportrd.com/search" class="header-actions__action" aria-label="Search">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-          </svg>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </a>
-        <!-- account: exact SVG path from header-actions.liquid -->
         <a href="https://supportrd.com/account/login" class="header-actions__action" aria-label="Account">
           <svg xmlns="http://www.w3.org/2000/svg" width="15" height="17" viewBox="0 0 15 17" fill="none" class="account-button__icon">
-            <path stroke="currentColor" stroke-linejoin="round" stroke-width="1.3"
-              d="M10.375 3.813a3.063 3.063 0 1 1-6.125 0 3.063 3.063 0 0 1 6.125 0ZM7.313 9.5c-3.667 0-6.24 2.691-6.563 6.125h13.125C13.552 12.191 10.979 9.5 7.312 9.5Z"/>
+            <path stroke="currentColor" stroke-linejoin="round" stroke-width="1.3" d="M10.375 3.813a3.063 3.063 0 1 1-6.125 0 3.063 3.063 0 0 1 6.125 0ZM7.313 9.5c-3.667 0-6.24 2.691-6.563 6.125h13.125C13.552 12.191 10.979 9.5 7.312 9.5Z"/>
           </svg>
         </a>
-        <!-- cart: icon-cart.svg + cart-bubble (header-actions.liquid) -->
-        <a href="https://supportrd.com/cart" class="header-actions__action header-actions__cart-icon" aria-label="Cart" aria-describedby="cart-bubble-text">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
-            <line x1="3" y1="6" x2="21" y2="6"/>
-            <path d="M16 10a4 4 0 0 1-8 0"/>
-          </svg>
-          <span class="cart-bubble" id="cart-count" id="cart-bubble-text"></span>
+        <a href="https://supportrd.com/cart" class="header-actions__action header-actions__cart-icon" aria-label="Cart">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+          <span class="cart-bubble" id="cart-count"></span>
         </a>
       </header-actions>
     </div>
-
   </div>
 </div>
-
 <script>
 (function(){
-  function srdOpenDrawer(){
-    var d=document.getElementById('srd-drawer');
-    var b=document.getElementById('srd-backdrop');
-    d.classList.add('open');
-    b.classList.add('open');
-    document.body.style.overflow='hidden';
-  }
-  function srdCloseDrawer(){
-    var d=document.getElementById('srd-drawer');
-    var b=document.getElementById('srd-backdrop');
-    d.classList.remove('open');
-    b.classList.remove('open');
-    document.body.style.overflow='';
-  }
-  window.srdOpenDrawer=srdOpenDrawer;
-  window.srdCloseDrawer=srdCloseDrawer;
+  function srdOpenDrawer(){document.getElementById('srd-drawer').classList.add('open');document.getElementById('srd-backdrop').classList.add('open');document.body.style.overflow='hidden';}
+  function srdCloseDrawer(){document.getElementById('srd-drawer').classList.remove('open');document.getElementById('srd-backdrop').classList.remove('open');document.body.style.overflow='';}
+  window.srdOpenDrawer=srdOpenDrawer;window.srdCloseDrawer=srdCloseDrawer;
   document.addEventListener('keydown',function(e){if(e.key==='Escape')srdCloseDrawer();});
-  // cart count from supportrd.com/cart.js
-  fetch('https://supportrd.com/cart.js')
-    .then(function(r){return r.json();})
-    .then(function(d){
-      if(d.item_count>0){
-        var el=document.getElementById('cart-count');
-        if(el){el.textContent=d.item_count;el.classList.add('visible');}
-      }
-    }).catch(function(){});
+  fetch('https://supportrd.com/cart.js').then(function(r){return r.json();}).then(function(d){if(d.item_count>0){var el=document.getElementById('cart-count');if(el){el.textContent=d.item_count;el.classList.add('visible');}}}).catch(function(){});
 })();
 </script>"""
 
