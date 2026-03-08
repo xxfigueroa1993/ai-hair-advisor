@@ -2285,12 +2285,7 @@ header p{{font-size:13px;color:rgba(0,0,0,0.4);margin-top:8px;letter-spacing:0.0
 .container{{max-width:900px;margin:0 auto;padding:40px 24px}}
 .section-label{{font-size:11px;color:#c1a3a2;letter-spacing:0.14em;text-transform:uppercase;margin-bottom:12px}}
 .section-title{{font-family:'Cormorant Garamond',serif;font-size:30px;font-style:italic;margin-bottom:24px;color:#0d0906}}
-.pin-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:52px}}
-.pin-card{{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);cursor:pointer;transition:transform 0.2s}}
-.pin-card:hover{{transform:translateY(-3px)}}
-.pin-card img{{width:100%;height:190px;object-fit:cover;display:block}}
-.pin-card .pin-title{{padding:10px 12px;font-size:11px;color:rgba(0,0,0,0.55);line-height:1.4}}
-.pin-loading{{text-align:center;padding:40px;color:rgba(0,0,0,0.3);font-size:13px;grid-column:1/-1}}
+
 .post-card{{background:#fff;border-radius:16px;margin-bottom:20px;transition:transform 0.2s;box-shadow:0 2px 12px rgba(0,0,0,0.06)}}
 .post-card:hover{{transform:translateY(-2px)}}
 .post-card a{{display:block;padding:28px 32px;text-decoration:none;color:inherit}}
@@ -2308,9 +2303,7 @@ footer a{{color:#c1a3a2;text-decoration:none}}
   <p>Expert tips, routines and advice from SupportRD</p>
 </header>
 <div class="container">
-  <div class="section-label">&#10022; Trending in hair care</div>
-  <div class="section-title">What's Inspiring Us This Week</div>
-  <div class="pin-grid" id="pin-grid"><div class="pin-loading">Loading trending hair inspiration...</div></div>
+
   <div class="section-label">&#10022; Expert guides</div>
   <div class="section-title">Hair Care Journal</div>
   {cards}
