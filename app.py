@@ -2198,6 +2198,53 @@ def pinterest_trends():
         print(f"Pinterest scrape error: {e}")
     return jsonify({"ok": True, "pins": pins, "query": query})
 
+
+@app.route("/blog-embed")
+def blog_embed():
+    posts = blog_get_index()
+    cards = ""
+    for p in posts:
+        date = p.get("date","")[:10]
+        cards += f"""
+        <article class="post-card">
+          <a href="https://hairtips.supportrd.com/blog/{p['handle']}" target="_blank">
+            <h2>{p['title']}</h2>
+            <p class="meta">{p.get('meta','')}</p>
+            <span class="date">{date}</span>
+          </a>
+        </article>"""
+    if not cards:
+        cards = '<p class="empty">No posts yet — check back soon.</p>'
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:'Jost',sans-serif;background:transparent;color:#0d0906}}
+.post-card{{background:#fff;border-radius:16px;margin-bottom:20px;transition:transform 0.2s;box-shadow:0 2px 12px rgba(0,0,0,0.06)}}
+.post-card:hover{{transform:translateY(-2px)}}
+.post-card a{{display:block;padding:28px 32px;text-decoration:none;color:inherit}}
+.post-card h2{{font-family:'Cormorant Garamond',serif;font-size:24px;color:#0d0906;margin-bottom:8px;line-height:1.3}}
+.post-card .meta{{font-size:13px;color:rgba(0,0,0,0.45);line-height:1.6;margin-bottom:12px}}
+.post-card .date{{font-size:11px;color:#c1a3a2;letter-spacing:0.08em}}
+.empty{{text-align:center;color:rgba(0,0,0,0.3);padding:60px;font-size:14px}}
+</style>
+</head>
+<body>
+{cards}
+<script>
+// Send height to parent so iframe resizes automatically
+function sendHeight(){{
+  window.parent.postMessage({{height:document.body.scrollHeight}},'*');
+}}
+window.onload=sendHeight;
+window.onresize=sendHeight;
+</script>
+</body></html>"""
+
 @app.route("/blog")
 def blog_index():
     try:
