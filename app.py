@@ -2279,7 +2279,11 @@ def blog_index():
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
 body{{font-family:'Jost',sans-serif;background:#f0ebe8;color:#0d0906;min-height:100vh}}
-header{{text-align:center;padding:60px 24px 40px;background:#fff;border-bottom:1px solid rgba(193,163,162,0.2)}}
+header{{background:#fff;border-bottom:1px solid rgba(193,163,162,0.2)}}
+.site-nav{{display:flex;justify-content:center;gap:28px;padding:16px 24px;border-bottom:1px solid rgba(193,163,162,0.15);flex-wrap:wrap}}
+.site-nav a{{font-family:'Jost',sans-serif;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#0d0906;text-decoration:none;opacity:0.6;transition:opacity 0.2s}}
+.site-nav a:hover,.site-nav a.active{{opacity:1;color:#c1a3a2}}
+.header-brand{{text-align:center;padding:40px 24px 32px}}
 header h1{{font-family:'Cormorant Garamond',serif;font-size:42px;font-style:italic;color:#0d0906}}
 header p{{font-size:13px;color:rgba(0,0,0,0.4);margin-top:8px;letter-spacing:0.08em}}
 .container{{max-width:900px;margin:0 auto;padding:40px 24px}}
@@ -2299,8 +2303,18 @@ footer a{{color:#c1a3a2;text-decoration:none}}
 </head>
 <body>
 <header>
-  <h1>Hair Care Journal</h1>
-  <p>Expert tips, routines and advice from SupportRD</p>
+  <nav class="site-nav">
+    <a href="https://supportrd.com">Home</a>
+    <a href="https://supportrd.com/collections/all">Catalog</a>
+    <a href="https://supportrd.com/pages/contact">Contact</a>
+    <a href="https://supportrd.com/pages/hair-dashboard">Dashboard</a>
+    <a href="https://supportrd.com/pages/custom-order">Custom Order</a>
+    <a href="https://hairtips.supportrd.com/blog" class="active">Blog</a>
+  </nav>
+  <div class="header-brand">
+    <h1>Hair Care Journal</h1>
+    <p>Expert tips, routines and advice from SupportRD</p>
+  </div>
 </header>
 <div class="container">
 
