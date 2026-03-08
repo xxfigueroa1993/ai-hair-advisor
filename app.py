@@ -2036,7 +2036,7 @@ _start_content_scheduler()
 
 
 # ── BLOG DATABASE (SQLite — persists across restarts) ─────────────────────────
-BLOG_DB = "/tmp/srd_blog.db"
+BLOG_DB = "/data/srd_blog.db"
 
 def _init_blog_db():
     db = sqlite3.connect(BLOG_DB)
@@ -2589,7 +2589,7 @@ loadCodes();
 
 <!-- ── CONTENT ENGINE ── -->
 <h2 style="font-size:18px;color:#c1a3a2;margin-bottom:4px;">⚙️ Auto Content Engine</h2>
-<p>Generates a new SEO blog post, Pinterest pin and Reddit post. Runs automatically at 9am UTC daily. Trigger manually here anytime.</p>
+<p>Generates a new SEO blog post, Pinterest pin and Reddit post. Runs automatically 3x daily at random times (sourcing trends from Weibo, Xiaohongshu, Douyin, Baidu, Pinterest & Reddit). Trigger manually anytime.</p>
 
 <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:20px;">
   <button onclick="runEngine(false)">▶ Run Now</button>
