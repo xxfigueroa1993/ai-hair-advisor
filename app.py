@@ -2615,7 +2615,15 @@ SRD_NAV_HTML = """
 </script>"""
 
 def blog_get_index():
-    return blog_get_all_posts()
+    try:
+        db = sqlite3.connect(BLOG_DB, timeout=10, check_same_thread=False)
+        db.row_factory = sqlite3.Row
+        rows = db.execute("SELECT handle, title, meta, date FROM posts ORDER BY date DESC LIMIT 90").fetchall()
+        db.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        print(f"blog_get_index error: {e}")
+        return []
 
 def blog_get_post(handle):
     try:
